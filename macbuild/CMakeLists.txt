@@ -232,6 +232,25 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 	add_dependencies(NOLF2Launcher
 		EXE_Lithtech NOLF2_ObjectDLL NOLF2_ClientShellDLL NOLF2_ClientFXDLL)
 
+	# ★★ HARDENED RUNTIME ON *EVERY* EXECUTABLE, NOT JUST THE APP.
+	#
+	# Notarisation is a property of the whole submitted bundle: Apple rejects it
+	# unless every Mach-O inside is signed with a Developer ID AND carries the
+	# hardened-runtime flag. Xcode signs each target with ITS OWN settings and
+	# the already-signed binaries keep that signature when they are copied in,
+	# so setting the flag only on the launcher is not enough — verified with
+	# `codesign -dvv`, which showed the launcher at flags=0x10002(adhoc,runtime)
+	# while the engine and all three modules sat at flags=0x2(adhoc), i.e. NO
+	# runtime. That bundle would have failed notarisation.
+	#
+	# ⚠️ Signing everything with ONE Team ID is also what lets the engine
+	# dlopen() the three modules under the hardened runtime without needing the
+	# com.apple.security.cs.disable-library-validation entitlement.
+	foreach(_t EXE_Lithtech NOLF2_ObjectDLL NOLF2_ClientShellDLL NOLF2_ClientFXDLL)
+		set_target_properties(${_t} PROPERTIES
+			XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
+	endforeach()
+
 	# Assemble the bundle: the engine beside the launcher, the three dlopen'd
 	# modules in Frameworks/. The launcher passes absolute paths to them via
 	# LT_CSHELL_MODULE / LT_OBJECT_MODULE / LT_CLIENTFX_MODULE, so their exact
