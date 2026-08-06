@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Retail game data — NEVER COMMIT. Copyrighted, ~3.8 GB, and publishing it
+# would turn a source release into redistribution of the shipped game.
+# The port reads it from a folder the user picks at launch; it is not ours.
+# ---------------------------------------------------------------------------
+FullGame/
+
+# Build output
+build/
+build-*/
+*.xcodeproj/
+DerivedData/
+*.o
+*.obj
+*.lto
+*.dylib
+*.a
+
+# ---------------------------------------------------------------------------
+# AI-facing working notes — MUST NOT APPEAR IN THIS REPO.
+# These live OUTSIDE the tree (../NOLF2_Claude/) so they cannot be committed
+# by accident; these patterns are the second line of defence, and
+# .githooks/pre-commit is the third. See CONTRIBUTING notes in README.
+# ---------------------------------------------------------------------------
+*HANDOFF*.md
+*handoff*.md
+CONTINUE_PROMPT.md
+NEXT_SESSION_PROMPT.md
+NEXT_CONTEXT_PROMPT.md
+PORT_STATUS.md
+.claude/
+CLAUDE.md
+
+# Separate side project — its own repo, not part of the port
+CharacterViewer_Metal/
+_retired/
+
+# Scratch / junk
+failedBuild.txt
+*.log
+.DS_Store
+*.swp
+*~

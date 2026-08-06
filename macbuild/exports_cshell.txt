@@ -1,0 +1,5 @@
+# Everything libCShell.dylib exports to the outside world.  See the
+# "one dylib per game module" note in macbuild/CMakeLists.txt for why the rest
+# MUST stay private.  This is the name the engine dlsym()s after dlopen
+# (runtime/kernel/src/sys/win/bindmgr.cpp bm_BindModule).
+_SetMasterDatabase

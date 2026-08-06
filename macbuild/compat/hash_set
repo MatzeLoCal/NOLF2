@@ -1,0 +1,26 @@
+// macOS/libc++ compat for the removed SGI/MSVC <hash_set>.
+// Maps std::hash_set / std::hash_multiset onto std::unordered_set. The SGI
+// signature hash_set<Value, HashFcn, EqualKey> matches unordered_set<Key,
+// Hash, KeyEqual>, so existing 3-arg typedefs port unchanged.
+#ifndef __LT_COMPAT_HASH_SET__
+#define __LT_COMPAT_HASH_SET__
+
+#include <unordered_set>
+#include <functional>
+#include <memory>
+
+namespace std {
+    template <class K,
+              class H = std::hash<K>,
+              class E = std::equal_to<K>,
+              class A = std::allocator<K> >
+    using hash_set = std::unordered_set<K, H, E, A>;
+
+    template <class K,
+              class H = std::hash<K>,
+              class E = std::equal_to<K>,
+              class A = std::allocator<K> >
+    using hash_multiset = std::unordered_multiset<K, H, E, A>;
+}
+
+#endif // __LT_COMPAT_HASH_SET__

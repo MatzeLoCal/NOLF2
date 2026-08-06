@@ -1,0 +1,6 @@
+# Everything libObject.lto exports to the outside world.  See the
+# "one dylib per game module" note in macbuild/CMakeLists.txt for why the rest
+# MUST stay private.  These are the names the engine dlsym()s after dlopen
+# (runtime/kernel/src/sys/win/bindmgr.cpp, runtime/shared/src/classbind.cpp).
+_SetMasterDatabase
+_ObjectDLLSetup

@@ -1,0 +1,55 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# Refuse to commit material that must never reach the public repo.
+#
+# .gitignore is not enough on its own: `git add -f` overrides it, and once a
+# file is in history, removing it needs a history rewrite. This hook is the
+# last check that actually blocks the commit.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# ---------------------------------------------------------------------------
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+fail=0
+
+# 1. AI-facing working notes. They live in ../NOLF2_Claude/, outside this tree.
+ai=$(printf '%s\n' "$staged" | grep -iE '(handoff|continue_prompt|next_session_prompt|next_context_prompt|port_status)' || true)
+if [ -n "$ai" ]; then
+    echo "pre-commit: BLOCKED — AI working notes must not be committed:"
+    printf '  %s\n' $ai
+    fail=1
+fi
+
+# 2. Retail game data.
+#    ⚠️ `sdk/` is EXEMPT: the upstream source release ships sdk/rez/Engine.REZ
+#    (103 KB of engine resources) and the RenderStyles tree. Those are part of
+#    the code release, not the retail game, and the engine needs them. Blocking
+#    every *.rez outright would reject them — which is exactly what the first
+#    version of this hook did.
+retail=$(printf '%s\n' "$staged" \
+    | grep -ivE '^sdk/' \
+    | grep -iE '^FullGame/|\.rez$|\.dtx$|\.ltb$|\.sgt$' || true)
+if [ -n "$retail" ]; then
+    echo "pre-commit: BLOCKED — retail game assets must not be committed:"
+    printf '  %s\n' $retail | head -20
+    fail=1
+fi
+
+# 3. Anything very large (GitHub hard-rejects >100 MB; warn well below).
+for f in $staged; do
+    [ -f "$f" ] || continue
+    sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+    if [ "$sz" -gt 41943040 ]; then
+        echo "pre-commit: BLOCKED — $f is $((sz / 1048576)) MB (>40 MB)"
+        fail=1
+    fi
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Nothing was committed. If one of these is genuinely intended,"
+    echo "commit it explicitly with --no-verify and say why in the message."
+    exit 1
+fi
+exit 0

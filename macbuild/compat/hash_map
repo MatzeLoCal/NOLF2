@@ -1,0 +1,26 @@
+// macOS/libc++ compat for the removed SGI/MSVC <hash_map>.
+// Maps std::hash_map / std::hash_multimap onto std::unordered_map. The SGI
+// signature hash_map<Key, Data, HashFcn, EqualKey> matches unordered_map<Key,
+// T, Hash, KeyEqual>, so existing 4-arg typedefs port unchanged.
+#ifndef __LT_COMPAT_HASH_MAP__
+#define __LT_COMPAT_HASH_MAP__
+
+#include <unordered_map>
+#include <functional>
+#include <memory>
+
+namespace std {
+    template <class K, class T,
+              class H = std::hash<K>,
+              class E = std::equal_to<K>,
+              class A = std::allocator<std::pair<const K, T> > >
+    using hash_map = std::unordered_map<K, T, H, E, A>;
+
+    template <class K, class T,
+              class H = std::hash<K>,
+              class E = std::equal_to<K>,
+              class A = std::allocator<std::pair<const K, T> > >
+    using hash_multimap = std::unordered_multimap<K, T, H, E, A>;
+}
+
+#endif // __LT_COMPAT_HASH_MAP__

@@ -1,0 +1,22 @@
+# Everything libClientFx.dylib exports to the outside world.  See the
+# "one dylib per game module" note in macbuild/CMakeLists.txt for why the rest
+# MUST stay private.
+#
+# ClientFX is the THIRD dylib built from the shared NOLF2 sources (after
+# libObject.lto and libCShell.dylib), so it is squarely in the §8.1 weak-symbol
+# coalescing trap: dyld picks ONE definition of every weak symbol (template
+# instantiations, inline functions, some vtables) across all loaded images,
+# first image wins, regardless of two-level namespace.  Unrestricted, this
+# library exported 1148 symbols into that pool.
+#
+# These are the names CClientFXDB::LoadFxDll dlsym()s, plus the interface-database
+# merge entry point.  Do NOT widen this list.
+_SetMasterDatabase
+_fxGetNum
+_fxGetRef
+_fxSetPlayer
+_fxSetAppFocus
+_fxDelete
+_fxSetCreateFunction
+_fxCreatePropList
+_fxFreePropList
