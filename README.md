@@ -61,6 +61,11 @@ NOLF2Launcher.app/Contents/MacOS/Lithtech         the engine
 NOLF2Launcher.app/Contents/Frameworks/            libCShell / libObject / libClientFx
 ```
 
+> ⚠️ **Do not use Product → Archive.** It runs the install action and replaces
+> every build product with a symlink into Xcode's archive intermediates; once
+> those are cleaned, ordinary builds fail with `ld: open() failed, errno=2` on
+> their own output. Use `macbuild/release.sh` to produce a signed build.
+>
 > The Swift target is defined only for the Xcode generator — CMake supports
 > Swift under Xcode and Ninja, not Unix Makefiles. The Makefiles build below
 > still builds the engine exactly as before.

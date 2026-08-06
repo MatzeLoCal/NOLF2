@@ -43,10 +43,20 @@ xcodebuild -project "$BUILD/LithtechMacFoundation.xcodeproj" \
 # hardened runtime, or notarisation is rejected — the enclosing app's signature
 # is not enough. Re-signing here is belt-and-braces: the CMake targets already
 # set ENABLE_HARDENED_RUNTIME, and this guarantees the timestamp too.
+# ⚠️ --identifier EXPLICITLY. These are plain Mach-O files, not bundles, so
+# there is no Info.plist for codesign to take an identifier from: without this
+# it invents one per build ("Lithtech-55554944aad12..."), which is unstable
+# across builds. Xcode's PRODUCT_BUNDLE_IDENTIFIER does not apply to unbundled
+# products, so it has to be set here.
 echo "==> Signing embedded modules"
-for f in "$APP/Contents/Frameworks/"* "$APP/Contents/MacOS/Lithtech"; do
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
-done
+sign_one() {   # sign_one <file> <identifier>
+    codesign --force --options runtime --timestamp \
+             --identifier "$2" --sign "$IDENTITY" "$1"
+}
+sign_one "$APP/Contents/Frameworks/libCShell.dylib"   com.schonder.nolf2mac.cshell
+sign_one "$APP/Contents/Frameworks/libObject.lto"     com.schonder.nolf2mac.object
+sign_one "$APP/Contents/Frameworks/libClientFx.dylib" com.schonder.nolf2mac.clientfx
+sign_one "$APP/Contents/MacOS/Lithtech"               com.schonder.nolf2mac.lithtech
 echo "==> Signing the app"
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 

@@ -6,7 +6,7 @@ add_library (ltmem STATIC
 	ltmemheap.cpp
 	ltmemstats.cpp
 	ltmemtrack.cpp
-	StdAfx.cpp)
+	stdafx.cpp)
 include_directories (../../sdk/inc
 	../../runtime/shared/src
 	../../runtime/kernel/src

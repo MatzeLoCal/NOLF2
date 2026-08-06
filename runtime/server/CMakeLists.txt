@@ -69,7 +69,7 @@ set(libsources
 	../shared/src/ratetracker.cpp
 	src/s_client.cpp
 	src/s_concommand.cpp
-	src/s_intersect.cpp
+	src/s_Intersect.cpp
 	src/s_net.cpp
 	src/s_object.cpp
 	src/server_consolestate.cpp

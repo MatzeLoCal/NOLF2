@@ -28,6 +28,20 @@ if(CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_CONFIGURATION_TYPES "Release;RelWithDebInfo" CACHE STRING "" FORCE)
 endif()
 
+# ⚠️ DO NOT USE PRODUCT -> ARCHIVE IN XCODE. Use macbuild/release.sh.
+#
+# Archive runs the *install* action. With CMake's `install_name @rpath/...`,
+# Xcode replaced EVERY build product in build-xcode/ with a symlink into
+# DerivedData/.../ArchiveIntermediates/.../@rpath/, and once those intermediates
+# were cleaned the links dangled — so the next ordinary build died with
+#   ld: open() failed, errno=2 ... for '.../ObjectDLL/Release/libObject.lto'
+# on its own OUTPUT path. Twenty products were affected; the cure was deleting
+# every symlink under build-xcode that pointed into ArchiveIntermediates.
+#
+# SKIP_INSTALL stops the install action from touching these products at all,
+# which keeps an accidental Archive from wrecking the tree again.
+set(CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL "YES")
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 set(CMAKE_C_STANDARD 11)
@@ -237,7 +251,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 	set_target_properties(NOLF2Launcher PROPERTIES
 		OUTPUT_NAME                                     "NOLF2Launcher"
 		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
-		MACOSX_BUNDLE_GUI_IDENTIFIER                    "org.nolf2mac.launcher"
+		MACOSX_BUNDLE_GUI_IDENTIFIER                    "com.schonder.nolf2mac.launcher"
+		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER       "com.schonder.nolf2mac.launcher"
 		MACOSX_BUNDLE_BUNDLE_VERSION                    "1"
 		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.1.0"
 		XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET        "12.0"
@@ -271,6 +286,14 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 		set_target_properties(${_t} PROPERTIES
 			XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
 	endforeach()
+
+	# ⚠️ SET IDENTIFIERS HERE, NOT IN XCODE'S UI. This project is GENERATED —
+	# `cmake -G Xcode` overwrites it, so anything typed into the Xcode
+	# inspector is silently lost on the next regeneration. Without an explicit
+	# identifier codesign invents one per build (it was
+	# "Lithtech-55554944aad12..."), which is unstable across builds.
+	set_target_properties(EXE_Lithtech PROPERTIES
+		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.schonder.nolf2mac.lithtech")
 
 	# Assemble the bundle: the engine beside the launcher, the three dlopen'd
 	# modules in Frameworks/. The launcher passes absolute paths to them via

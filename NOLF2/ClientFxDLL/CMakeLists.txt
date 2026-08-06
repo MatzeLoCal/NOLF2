@@ -2,7 +2,7 @@
 cmake_minimum_required (VERSION 3.5)
 project (NOLF2_ClientFXDLL)
 add_library (NOLF2_ClientFXDLL SHARED
-	BaseFX.cpp
+	BaseFx.cpp
 	bouncychunkfx.cpp
 	camjitterfx.cpp
 	camwobblefx.cpp
