@@ -7,6 +7,27 @@ project(LithtechMacFoundation CXX C)
 # The vendored sub-CMakeLists declare cmake_minimum_required(3.5); allow them.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
+# ⚠️ NO Debug CONFIGURATION ON THE MULTI-CONFIG (Xcode) GENERATOR.
+#
+# Xcode builds Debug by default, so a fresh ⌘B used to fail immediately — and
+# Debug is not a supported configuration for this port:
+#
+#  * `_DEBUG` pulls in Win32-only debug code (stacktrace.h's <imagehlp.h>, the
+#    UberAssert clipboard/_CrtDbgReport tail). Those two are now guarded, but
+#  * it still fails to LINK: GetFrameStats, CountPercent::In/Out/Clear and
+#    CUIDebug::DebugPrint are Debug-only diagnostics that this port never
+#    implemented, and
+#  * more fundamentally, the port compiles asserts OUT on purpose for retail
+#    parity — the game code is full of diagnostic asserts that were never
+#    executed at retail and that abort here.
+#
+# RelWithDebInfo is the useful middle: full symbols for crash reports, but the
+# retail `_FINAL` code path. Re-add "Debug" here if you ever want to take the
+# link errors on.
+if(CMAKE_CONFIGURATION_TYPES)
+	set(CMAKE_CONFIGURATION_TYPES "Release;RelWithDebInfo" CACHE STRING "" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 set(CMAKE_C_STANDARD 11)

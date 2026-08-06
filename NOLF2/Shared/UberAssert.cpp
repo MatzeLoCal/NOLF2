@@ -60,6 +60,17 @@ bool UberAssert( long nLine, char const* szFile, char const* szExp, char const* 
 	OutputDebugString(szFileInfo);
 	OutputDebugString(szMsg);
 
+	// ⚠️ WIN32-ONLY TAIL (macOS port). The rest of this function is portable —
+	// the compat shim covers GetModuleFileName and OutputDebugString — but the
+	// clipboard copy (User32) and _CrtDbgReport (the MSVC debug CRT's assert
+	// dialog) have no macOS equivalent.
+	//
+	// The return value is the contract: TRUE means "break into the debugger",
+	// which the UBER_ASSERT macros act on. There is no dialog to answer here, so
+	// the assert is written to stderr and we return false — the run continues,
+	// which is the same practical behaviour as the Release build where asserts
+	// are compiled out entirely for retail parity.
+#if defined(_WIN32)
 	if( OpenClipboard( NULL ) )
 	{
 		HGLOBAL hMem;
@@ -88,6 +99,11 @@ bool UberAssert( long nLine, char const* szFile, char const* szExp, char const* 
 	}
 
 	return false;
+#else
+	fprintf( stderr, "\n*** UBER_ASSERT  %s:%ld\n%s\n", szFile, nLine, szMsg );
+	fflush( stderr );
+	return false;
+#endif
 }
 
 

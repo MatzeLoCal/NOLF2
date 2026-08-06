@@ -19,7 +19,22 @@ void DoStackTrace ( LPTSTR szString  ,
                     DWORD  dwNumSkip  );
 
 
-#ifdef _DEBUG
+// ⚠️ `_WIN32` AS WELL AS `_DEBUG` (macOS port). Everything below drives the
+// Win32 DbgHelp API — it includes <imagehlp.h> and <tchar.h> and declares
+// wrappers around SymInitialize / SymGetLineFromAddr — none of which exists on
+// macOS. A Debug build therefore died with
+// "fatal error: 'imagehlp.h' file not found".
+//
+// Guarding HERE rather than at each call site fixes all three includers at
+// once: NOLF2/Shared/stacktrace.cpp, NOLF2/Shared/UberAssert.cpp (which
+// includes this header UNCONDITIONALLY) and runtime/shared/src/stacktrace.cpp.
+// It also matches the engine's own copy, which has always used
+// `#if defined(_DEBUG) && defined(_WIN32)`.
+//
+// Release was unaffected because the CMakeLists defines `_DEBUG` only for the
+// Debug configuration — and Xcode builds Debug by default while the Makefiles
+// build is Release, which is why this surfaced only under Xcode.
+#if defined(_DEBUG) && defined(_WIN32)
 /*----------------------------------------------------------------------
        John Robbins - Microsoft Systems Journal Bugslayer Column
 ------------------------------------------------------------------------
@@ -716,7 +731,7 @@ protected   :
 
 } ;
 
-#endif // _DEBUG
+#endif // _DEBUG && _WIN32
 #endif // _STACKTRACE_H
 
 

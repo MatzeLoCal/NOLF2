@@ -15,7 +15,21 @@
 
 // Only used in debug builds of the engine...
 
-#ifdef _DEBUG
+// ⚠️ `_WIN32` AS WELL AS `_DEBUG`. stacktrace.h pulls in <imagehlp.h> and
+// <tchar.h> and drives the Win32 DbgHelp API (SymGetLineFromAddr, ...), none of
+// which exists on macOS — so a Debug build here died with
+// "fatal error: 'imagehlp.h' file not found".
+//
+// This is exactly the guard the ENGINE's own copy of this file already uses
+// (runtime/shared/src/stacktrace.cpp:20, `#if defined(_DEBUG) && defined(_WIN32)`);
+// the game's copy simply never got the platform half. The `#else` branch below
+// already provides a DoStackTrace that reports it is unsupported, so nothing
+// else has to change.
+//
+// Why this only appeared now: the CMakeLists defines `_DEBUG` for the Debug
+// configuration and `_FINAL` otherwise, and Xcode builds Debug by default while
+// the Makefiles build is Release.
+#if defined(_DEBUG) && defined(_WIN32)
 
 #include "stacktrace.h"
 #include <vector>
@@ -316,4 +330,4 @@ void DoStackTrace ( LPTSTR szString  ,
 	sprintf(szString, "DoStackTrace not supported in release builds");
 }
 
-#endif // _DEBUG
+#endif // _DEBUG && _WIN32
