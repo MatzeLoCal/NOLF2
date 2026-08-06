@@ -42,16 +42,36 @@ cmake -S macbuild -B build-xcode -G Xcode
 open build-xcode/LithtechMacFoundation.xcodeproj
 ```
 
-## The launcher
+## The launcher (and the app bundle)
+
+The launcher, the engine and the three game modules are assembled into a single
+`NOLF2Launcher.app` by the **Xcode** build:
 
 ```sh
-./launcher/build_launcher.sh
-open build-mac/NOLF2Launcher.app
+cmake -S macbuild -B build-xcode -G Xcode
+open build-xcode/LithtechMacFoundation.xcodeproj
 ```
+
+Build the `NOLF2Launcher` scheme (or `xcodebuild -target NOLF2Launcher`). The
+resulting bundle contains everything:
+
+```
+NOLF2Launcher.app/Contents/MacOS/NOLF2Launcher    the launcher
+NOLF2Launcher.app/Contents/MacOS/Lithtech         the engine
+NOLF2Launcher.app/Contents/Frameworks/            libCShell / libObject / libClientFx
+```
+
+> The Swift target is defined only for the Xcode generator — CMake supports
+> Swift under Xcode and Ninja, not Unix Makefiles. The Makefiles build below
+> still builds the engine exactly as before.
 
 The launcher asks for your retail folder, validates it, lets you add extra
 `.rez` archives (loaded in order — later entries override earlier ones), and
-starts the engine with the correct working directory.
+starts the engine with the correct working directory and the absolute paths of
+the three game modules.
+
+If the game ever fails to start, the engine's output is captured to
+`~/Library/Logs/NOLF2Mac/engine.log` — please attach it to a bug report.
 
 Its settings live in `~/Library/Application Support/NOLF2Mac/`. **Nothing is
 ever written into your game folder.**

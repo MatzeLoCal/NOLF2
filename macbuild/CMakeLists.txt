@@ -165,3 +165,91 @@ target_link_options(NOLF2_ClientFXDLL PRIVATE
 	"LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports_clientfx.txt")
 set_property(TARGET NOLF2_ClientFXDLL APPEND PROPERTY LINK_DEPENDS
 	${CMAKE_CURRENT_SOURCE_DIR}/exports_clientfx.txt)
+
+# ---------------------------------------------------------------------------
+# NOLF2Launcher.app — the SwiftUI front end, and the shippable bundle.
+#
+# ⚠️ GUARDED ON THE XCODE GENERATOR. CMake supports Swift only under Xcode and
+# Ninja; enabling it unconditionally would BREAK the "Unix Makefiles" build that
+# everything else in this project uses. So:
+#
+#     cmake -S macbuild -B build-mac    -G "Unix Makefiles"   engine only
+#     cmake -S macbuild -B build-xcode  -G Xcode              engine + .app
+#
+# The Xcode project is what produces a signable, notarizable bundle: it embeds
+# the engine and the three dlopen'd game modules, so a tester needs no symlinks
+# and no environment set up by hand.
+# ---------------------------------------------------------------------------
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+	enable_language(Swift)
+
+	set(LAUNCHER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../launcher)
+
+	# The background artwork is optional and NOT in the repository (copyrighted
+	# promotional material). Bundle it when the user has supplied it locally;
+	# the launcher falls back to a plain background when it is absent.
+	set(LAUNCHER_RESOURCES "")
+	if(EXISTS ${LAUNCHER_DIR}/Resources/NOLF2_Background.jpg)
+		list(APPEND LAUNCHER_RESOURCES ${LAUNCHER_DIR}/Resources/NOLF2_Background.jpg)
+		message(STATUS "Launcher: bundling background artwork")
+	else()
+		message(STATUS "Launcher: no background artwork; using the fallback")
+	endif()
+
+	add_executable(NOLF2Launcher MACOSX_BUNDLE
+		${LAUNCHER_DIR}/NOLF2Launcher.swift
+		${LAUNCHER_RESOURCES})
+
+	set_source_files_properties(${LAUNCHER_RESOURCES} PROPERTIES
+		MACOSX_PACKAGE_LOCATION Resources)
+
+	# ⚠️ CLEAR THE INHERITED C/C++ FLAGS. This directory does
+	# `add_compile_options(-include .../msvc_crt_compat.h)` plus a set of clang
+	# warning flags, and CMake applies directory options to EVERY target in it —
+	# so swiftc receives `-include` and fails with
+	# "Driver threw unknown argument: '-include'". Clearing the property on this
+	# target alone leaves every engine target's flags exactly as they were;
+	# scoping the directory options by COMPILE_LANGUAGE would touch the engine
+	# build, which is not worth the risk for one Swift file.
+	set_target_properties(NOLF2Launcher PROPERTIES COMPILE_OPTIONS "")
+
+	set_target_properties(NOLF2Launcher PROPERTIES
+		OUTPUT_NAME                                     "NOLF2Launcher"
+		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
+		MACOSX_BUNDLE_GUI_IDENTIFIER                    "org.nolf2mac.launcher"
+		MACOSX_BUNDLE_BUNDLE_VERSION                    "1"
+		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.1.0"
+		XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET        "12.0"
+		XCODE_ATTRIBUTE_SWIFT_VERSION                   "5.0"
+		# Hardened runtime is required for notarisation. Signing everything with
+		# ONE Team ID is what lets the engine dlopen the game modules without a
+		# library-validation exception — set DEVELOPMENT_TEAM to enable it.
+		XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME         "YES"
+		XCODE_ATTRIBUTE_CODE_SIGN_STYLE                 "Automatic")
+
+	# The launcher is useless without the engine and the game logic, so building
+	# it builds them.
+	add_dependencies(NOLF2Launcher
+		EXE_Lithtech NOLF2_ObjectDLL NOLF2_ClientShellDLL NOLF2_ClientFXDLL)
+
+	# Assemble the bundle: the engine beside the launcher, the three dlopen'd
+	# modules in Frameworks/. The launcher passes absolute paths to them via
+	# LT_CSHELL_MODULE / LT_OBJECT_MODULE / LT_CLIENTFX_MODULE, so their exact
+	# location only has to be consistent, not special.
+	add_custom_command(TARGET NOLF2Launcher POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory
+			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:EXE_Lithtech>"
+			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/MacOS/Lithtech"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:NOLF2_ClientShellDLL>"
+			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks/libCShell.dylib"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:NOLF2_ObjectDLL>"
+			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks/libObject.lto"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:NOLF2_ClientFXDLL>"
+			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks/libClientFx.dylib"
+		COMMENT "Embedding engine and game modules into NOLF2Launcher.app")
+endif()

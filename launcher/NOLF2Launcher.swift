@@ -122,6 +122,75 @@ enum EngineLocator {
     }
 }
 
+// MARK: - The three dlopen'd game modules
+//
+// ★★ THE ENGINE IS ONLY HALF THE GAME. All the game logic lives in three
+// modules the engine dlopen()s at runtime:
+//
+//     libCShell.dylib   the client shell — menus, HUD, the whole front end
+//     libObject.lto     the server-side game logic
+//     libClientFx.dylib the effects library
+//
+// ⚠️ Each defaults to a path relative to the CURRENT DIRECTORY ("./libCShell.dylib"),
+// which only resolves on a development machine where someone has symlinked them
+// into the game folder. A tester has no such symlinks — so the launcher finds
+// them itself and passes ABSOLUTE paths through the engine's own overrides.
+// Without this the engine starts, finds no client shell, falls back to the
+// built-in null shell, and renders a BLACK SCREEN with no error.
+
+enum GameModules {
+    static let names = ["libCShell.dylib", "libObject.lto", "libClientFx.dylib"]
+    static let envVars = ["LT_CSHELL_MODULE", "LT_OBJECT_MODULE", "LT_CLIENTFX_MODULE"]
+
+    /// Search, in order: beside the engine (shipping bundle), the bundle's
+    /// Frameworks directory, and the CMake build layout, where each module
+    /// lands in its own subdirectory next to `client/Lithtech`.
+    static func locate(enginePath: String) -> [String: String] {
+        let fm = FileManager.default
+        let engineDir = URL(fileURLWithPath: enginePath).deletingLastPathComponent()
+        var roots = [engineDir,
+                     Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks"),
+                     engineDir.deletingLastPathComponent()]
+        // …plus one level of subdirectories of the build root (ObjectDLL/,
+        // ClientShellDLL/, ClientFxDLL/).
+        if let subs = try? fm.contentsOfDirectory(at: engineDir.deletingLastPathComponent(),
+                                                 includingPropertiesForKeys: nil) {
+            roots.append(contentsOf: subs.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            })
+        }
+
+        var found: [String: String] = [:]
+        for (name, env) in zip(names, envVars) {
+            for r in roots {
+                let c = r.appendingPathComponent(name)
+                if fm.fileExists(atPath: c.path) {
+                    found[env] = c.path
+                    break
+                }
+            }
+        }
+        return found
+    }
+
+    /// Which modules could not be found — reported before launching, rather
+    /// than letting the player stare at a black screen.
+    static func missing(enginePath: String) -> [String] {
+        let found = locate(enginePath: enginePath)
+        return zip(names, envVars).filter { found[$0.1] == nil }.map { $0.0 }
+    }
+}
+
+enum EngineLog {
+    /// A standard macOS location, so a bug report can just say "attach this".
+    static var url: URL {
+        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Logs/NOLF2Mac", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("engine.log")
+    }
+}
+
 // MARK: - Background artwork
 //
 // ⚠️ THE ARTWORK IS DELIBERATELY NOT IN THE REPOSITORY. It is copyrighted
@@ -433,6 +502,14 @@ struct LauncherView: View {
             args.append("-rez"); args.append(a)
         }
 
+        // Fail loudly HERE rather than launching into a black screen.
+        let absent = GameModules.missing(enginePath: enginePath)
+        if !absent.isEmpty {
+            launchError = "Missing game module(s): \(absent.joined(separator: ", ")). "
+                        + "The engine cannot run without them."
+            return
+        }
+
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: enginePath)
         // ⚠️ The engine resolves its archives relative to the CURRENT DIRECTORY,
@@ -441,13 +518,40 @@ struct LauncherView: View {
         proc.arguments = args
 
         var env = ProcessInfo.processInfo.environment
+        // ★★ Without this the engine loads its built-in NULL client shell and
+        // renders a black screen — no menu, no game, no error message.
+        env["LT_LOAD_CSHELL"] = "1"
+        // Absolute paths to the three dlopen'd modules, so this works on a
+        // machine that has no dev symlinks in the game folder.
+        for (k, v) in GameModules.locate(enginePath: enginePath) { env[k] = v }
         if settings.muteFaultyWaterfall { env["LT_MUTE_SOUNDS"] = "waterfall_lg_dist" }
         proc.environment = env
+
+        // Capture the engine's output. A black screen is otherwise silent, and
+        // this is the file a bug report should carry.
+        FileManager.default.createFile(atPath: EngineLog.url.path, contents: nil)
+        if let h = try? FileHandle(forWritingTo: EngineLog.url) {
+            proc.standardOutput = h
+            proc.standardError = h
+        }
 
         do {
             try proc.run()
             settings.save()
-            NSApp.terminate(nil)
+            // Give it a moment: if the engine dies immediately, the player
+            // should see why instead of the launcher vanishing.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                let died = !proc.isRunning
+                let status = proc.isRunning ? 0 : proc.terminationStatus
+                DispatchQueue.main.async {
+                    if died && status != 0 {
+                        launchError = "The engine exited immediately (status \(status)). "
+                                    + "See \(EngineLog.url.path)"
+                    } else {
+                        NSApp.terminate(nil)
+                    }
+                }
+            }
         } catch {
             launchError = "Could not start the engine: \(error.localizedDescription)"
         }
