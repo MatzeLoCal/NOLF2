@@ -41,3 +41,10 @@ failedBuild.txt
 .DS_Store
 *.swp
 *~
+
+# ---------------------------------------------------------------------------
+# Launcher background artwork — copyrighted promotional material, supplied
+# locally by the user, never redistributed here. Same rule as FullGame/.
+# The launcher falls back to a plain background when it is absent.
+# ---------------------------------------------------------------------------
+launcher/Resources/

@@ -42,7 +42,21 @@ cmake -S macbuild -B build-xcode -G Xcode
 open build-xcode/LithtechMacFoundation.xcodeproj
 ```
 
-## Running
+## The launcher
+
+```sh
+./launcher/build_launcher.sh
+open build-mac/NOLF2Launcher.app
+```
+
+The launcher asks for your retail folder, validates it, lets you add extra
+`.rez` archives (loaded in order — later entries override earlier ones), and
+starts the engine with the correct working directory.
+
+Its settings live in `~/Library/Application Support/NOLF2Mac/`. **Nothing is
+ever written into your game folder.**
+
+## Running directly
 
 Point the build at your retail installation:
 
