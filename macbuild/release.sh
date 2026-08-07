@@ -29,6 +29,23 @@ APP=$BUILD/Release/NOLF2Launcher.app
 TEAM=$(printf '%s' "$IDENTITY" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
 [ -n "$TEAM" ] || { echo "Could not parse a Team ID out of the identity."; exit 1; }
 
+# ⚠️ CLEAR ARCHIVE RESIDUE FIRST.
+#
+# Product -> Archive in Xcode runs the *install* action and replaces the build
+# products with symlinks into DerivedData/.../ArchiveIntermediates/. Once those
+# intermediates are cleaned the links dangle, and an ordinary build then fails
+# with either "ld: open() failed, errno=2" on its own output or "MkDir ...
+# NOLF2Launcher.app" — both of which look like signing faults and are not.
+# This script is the supported distribution path, so it must not be derailed by
+# whatever happened in the IDE beforehand.
+if [ -d "$BUILD" ]; then
+    find "$BUILD" -type l 2>/dev/null | while read -r l; do
+        case "$(readlink "$l")" in
+            *ArchiveIntermediates*) echo "    clearing archive residue: $l"; rm -f "$l" ;;
+        esac
+    done
+fi
+
 echo "==> Configuring"
 cmake -S "$ROOT/macbuild" -B "$BUILD" -G Xcode > /dev/null
 
