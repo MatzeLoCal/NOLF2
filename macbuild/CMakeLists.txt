@@ -231,12 +231,18 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 		message(STATUS "Launcher: no background artwork; using the fallback")
 	endif()
 
+	# ⚠️ THE ARTWORK IS *NOT* AN XCODE RESOURCE — it is copied in POST_BUILD.
+	#
+	# Xcode's resource-copy phase preserves extended attributes, and the file
+	# carries `com.apple.provenance` (macOS stamps it on downloaded files; it
+	# survives `xattr -c` and is re-applied to a fresh copy of the bytes). The
+	# copy then fails with a bare
+	#   error: copy(...NOLF2_Background.jpg...): Operation not permitted
+	# which looks like a build fault and is really a TCC one. Copying it the same
+	# way the engine and game modules go in sidesteps the resource phase entirely
+	# and does not care about xattrs.
 	add_executable(NOLF2Launcher MACOSX_BUNDLE
-		${LAUNCHER_DIR}/NOLF2Launcher.swift
-		${LAUNCHER_RESOURCES})
-
-	set_source_files_properties(${LAUNCHER_RESOURCES} PROPERTIES
-		MACOSX_PACKAGE_LOCATION Resources)
+		${LAUNCHER_DIR}/NOLF2Launcher.swift)
 
 	# ⚠️ CLEAR THE INHERITED C/C++ FLAGS. This directory does
 	# `add_compile_options(-include .../msvc_crt_compat.h)` plus a set of clang
@@ -315,4 +321,15 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 			"$<TARGET_FILE:NOLF2_ClientFXDLL>"
 			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks/libClientFx.dylib"
 		COMMENT "Embedding engine and game modules into NOLF2Launcher.app")
+
+	# The optional background artwork, copied the same way for the reason above.
+	if(LAUNCHER_RESOURCES)
+		add_custom_command(TARGET NOLF2Launcher POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E make_directory
+				"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Resources"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${LAUNCHER_DIR}/Resources/NOLF2_Background.jpg"
+				"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Resources/NOLF2_Background.jpg"
+			COMMENT "Adding launcher background artwork")
+	endif()
 endif()

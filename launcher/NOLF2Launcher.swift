@@ -43,6 +43,15 @@ struct Settings: Codable {
     var muteFaultyWaterfall: Bool = true      // known issue; see README
     var recentFolders: [String] = []
 
+    // Display. ★ These exist because a double-clicked .app CANNOT be given
+    // environment variables — every one of the engine's display and
+    // troubleshooting switches was unreachable for anyone not launching it from
+    // a terminal. The launcher is the only place a tester can get at them.
+    var fullscreen: Bool = true
+    var windowSize: String = "1280x800"       // used only when windowed
+    var disable3DSound: Bool = false          // LT_NO_SOUND_3D
+    var disableMusic: Bool = false            // LT_NO_MUSIC
+
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask)[0]
@@ -107,6 +116,22 @@ enum GameFolder {
         if file("Game", in: folder) != nil { out.append("Game") }
         out.append(contentsOf: extras)
         return out
+    }
+}
+
+/// Windowed sizes offered, filtered to what the display can actually show.
+/// Mirrors the ladder the renderer reports for the in-game Display Options
+/// (nullrender.cpp), so the two agree.
+enum Resolutions {
+    static let ladder = ["800x600", "1024x768", "1280x720", "1280x800",
+                         "1440x900", "1600x900", "1680x1050", "1920x1080", "2560x1440"]
+    static var available: [String] {
+        let f = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1080)
+        let out = ladder.filter { r in
+            let p = r.split(separator: "x").compactMap { Int($0) }
+            return p.count == 2 && CGFloat(p[0]) <= f.width && CGFloat(p[1]) <= f.height
+        }
+        return out.isEmpty ? ["800x600"] : out
     }
 }
 
@@ -402,11 +427,52 @@ struct LauncherView: View {
     }
 
     private var optionsSection: some View {
-        Toggle(isOn: $settings.muteFaultyWaterfall) {
-            Text("Mute the faulty distant-waterfall ambience  (known issue)")
-                .font(.system(size: 10)).foregroundColor(Palette.cream)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Display")
+            HStack(spacing: 10) {
+                Picker("", selection: $settings.fullscreen) {
+                    Text("Fullscreen").tag(true)
+                    Text("Windowed").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+                .labelsHidden()
+
+                Picker("", selection: $settings.windowSize) {
+                    ForEach(Resolutions.available, id: \.self) { Text($0).tag($0) }
+                }
+                .frame(width: 130)
+                .labelsHidden()
+                .disabled(settings.fullscreen)
+                .opacity(settings.fullscreen ? 0.4 : 1)
+
+                Text(settings.fullscreen ? "uses the whole display" : "window size")
+                    .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+            }
+
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 3) {
+                    Toggle(isOn: $settings.muteFaultyWaterfall) {
+                        Text("Mute the faulty distant-waterfall ambience")
+                            .font(.system(size: 10)).foregroundColor(Palette.cream)
+                    }
+                    Toggle(isOn: $settings.disable3DSound) {
+                        Text("Disable 3D positional sound")
+                            .font(.system(size: 10)).foregroundColor(Palette.cream)
+                    }
+                    Toggle(isOn: $settings.disableMusic) {
+                        Text("Disable music")
+                            .font(.system(size: 10)).foregroundColor(Palette.cream)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .padding(.top, 3)
+            } label: {
+                Text("Troubleshooting")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Palette.teal)
+            }
         }
-        .toggleStyle(.checkbox)
     }
 
     private var footer: some View {
@@ -525,6 +591,15 @@ struct LauncherView: View {
         // machine that has no dev symlinks in the game folder.
         for (k, v) in GameModules.locate(enginePath: enginePath) { env[k] = v }
         if settings.muteFaultyWaterfall { env["LT_MUTE_SOUNDS"] = "waterfall_lg_dist" }
+        // ⚠️ Set these only when the user asked for them. The engine's
+        // disable-switches now respect their VALUE, but an unset variable is
+        // still the cleanest way to say "default".
+        if settings.disable3DSound { env["LT_NO_SOUND_3D"] = "1" }
+        if settings.disableMusic   { env["LT_NO_MUSIC"]    = "1" }
+        if !settings.fullscreen {
+            env["LT_WINDOWED"]    = "1"
+            env["LT_WINDOW_SIZE"] = settings.windowSize
+        }
         proc.environment = env
 
         // Capture the engine's output. A black screen is otherwise silent, and
