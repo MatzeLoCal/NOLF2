@@ -254,14 +254,14 @@ namespace
 	bool glw_EnvMapDisabled()
 	{
 		static int s_n = -1;
-		if (s_n < 0) s_n = getenv("LT_NO_ENVMAP") ? 1 : 0;
+		if (s_n < 0) { const char *p = getenv("LT_NO_ENVMAP"); s_n = (p && p[0] && p[0] != '0') ? 1 : 0; }
 		return s_n != 0;
 	}
 
 	bool glw_DetailDisabled()
 	{
 		static int s_n = -1;
-		if (s_n < 0) s_n = getenv("LT_NO_DETAIL") ? 1 : 0;
+		if (s_n < 0) { const char *p = getenv("LT_NO_DETAIL"); s_n = (p && p[0] && p[0] != '0') ? 1 : 0; }
 		return s_n != 0;
 	}
 
@@ -1590,6 +1590,9 @@ void GLWorld_DrawDynamicLights()
 	glDepthMask(GL_TRUE);
 	glDepthFunc(GL_LESS);
 	glDisable(GL_TEXTURE_2D);
+	// ⚠️ Alpha test is now set PER SECTION inside glw_LightWorldBlocks (the
+	// foliage-glow fix), so leave it off for whatever draws next.
+	glDisable(GL_ALPHA_TEST);
 }
 
 // Light one parsed render world's blocks with one light (light already in the
@@ -1629,6 +1632,35 @@ static void glw_LightWorldBlocks(const GLWorld &cWorldData, const GLWDynLight &c
 				}
 				else
 					glDisable(GL_TEXTURE_2D);
+
+				// ★★★ THE ADDITIVE PASS MUST HONOUR THE SAME ALPHA CUTOUT AS THE
+				// BASE PASS — otherwise it lights the WHOLE QUAD.
+				//
+				// Tree and foliage surfaces are alpha-tested cards: a rectangle
+				// whose texture is mostly transparent, with the leaf shape cut
+				// out by the authored AlphaRef. This pass used to run with
+				// GL_ALPHA_TEST disabled, so every one of those rectangles was
+				// lit additively in full — firing an AK74 in C03S01 lit up the
+				// woods as a field of glowing white rectangles, card-shaped and
+				// card-sized, appearing only while the muzzle flash existed.
+				//
+				// ⚠️ Use the AUTHORED reference (DTX "AlphaRef <n>"), the same
+				// value and the same GL_GEQUAL func as the base pass — 0 means
+				// ALPHAREF_NONE, i.e. do not alpha-test this surface. Do not
+				// substitute a hard-coded 0.5 (§13: content-based guessing is
+				// gone), and do not gate it on LT_NO_ALPHATEST — that switch
+				// exists to isolate the base pass, and honouring it here would
+				// reintroduce the glow whenever it is set.
+				const unsigned int nLightAlphaRef = cSection.m_pTexture
+				                                  ? GLTex_GetAlphaRef(cSection.m_pTexture)
+				                                  : 0;
+				if (nTexName && nLightAlphaRef != 0)
+				{
+					glAlphaFunc(GL_GEQUAL, (float)nLightAlphaRef / 255.0f);
+					glEnable(GL_ALPHA_TEST);
+				}
+				else
+					glDisable(GL_ALPHA_TEST);
 
 				glBegin(GL_TRIANGLES);
 				const uint32 *pIndices = &cBlock.m_aIndices[cSection.m_nStartIndex];
@@ -1963,7 +1995,7 @@ static void glw_DrawWorld(const GLWorld &cWorld, bool bAllowAlphaTest = true,
 			// smoothly translucent surfaces are blended instead.
 			// LT_NO_ALPHATEST=1 disables the test entirely (bisecting aid).
 			static int s_nNoAlphaTest = -1;
-			if (s_nNoAlphaTest < 0) s_nNoAlphaTest = getenv("LT_NO_ALPHATEST") ? 1 : 0;
+			if (s_nNoAlphaTest < 0) { const char *p = getenv("LT_NO_ALPHATEST"); s_nNoAlphaTest = (p && p[0] && p[0] != '0') ? 1 : 0; }
 
 			// The AUTHORED alpha-test reference (DTX "AlphaRef <n>"), exactly as
 			// the D3D renderer does it: 0 == ALPHAREF_NONE == do not alpha-test

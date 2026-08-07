@@ -2049,7 +2049,8 @@ S32 CMacSoundSys::Enumerate3DProviders(LHPROENUM* phNext, LHPROVIDER* phDest, ch
 	// `LT_SOUND_3D=1` is kept as a no-op so existing commands still work.
 	static char s_szMatching[]    = "DirectSound Hardware";
 	static char s_szNonMatching[] = "CoreAudio 3D (2D fallback)";
-	char* s_szName = getenv("LT_NO_SOUND_3D") ? s_szNonMatching : s_szMatching;
+	const char *pNo3D = getenv("LT_NO_SOUND_3D");
+	char* s_szName = (pNo3D && pNo3D[0] && pNo3D[0] != '0') ? s_szNonMatching : s_szMatching;
 	if (!phNext || !phDest || !psName)
 		return 0;
 	if (*phNext != 0)

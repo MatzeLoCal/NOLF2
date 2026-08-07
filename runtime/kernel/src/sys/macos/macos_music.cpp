@@ -571,7 +571,8 @@ bool LTMusic_InitLevel(const char *sWorkingDir, const char *sControlFile)
 	// the music path contributes no streams at all — which is the point when
 	// you are trying to decide whether a noise comes from music or from an
 	// ambient sharing the same voice pool.
-	if (getenv("LT_NO_MUSIC"))
+	const char *pNoMusic = getenv("LT_NO_MUSIC");
+	if (pNoMusic && pNoMusic[0] && pNoMusic[0] != '0')
 	{
 		fprintf(stderr, "[music] DISABLED by LT_NO_MUSIC\n");
 		return false;

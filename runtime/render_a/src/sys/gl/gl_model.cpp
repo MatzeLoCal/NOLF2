@@ -791,8 +791,19 @@ static float g_fModelAmbient[3] = { 255.0f, 255.0f, 255.0f };
 // commands in the handoff still work.
 static bool glm_UseAmbient()
 {
+	// ⚠️ RESPECT THE VALUE, NOT JUST THE PRESENCE. This used to be
+	// `getenv(...) ? 0 : 1`, so `LT_NO_MODEL_LIGHTING=0` ALSO disabled model
+	// lighting — a user bisecting a bug ran =1 against =0, got the same result
+	// both times, and had in fact tested "off" against "off". A switch whose
+	// documented off-value does not work silently corrupts the bisection it
+	// exists to serve.
 	static int s_n = -1;
-	if (s_n < 0) s_n = getenv("LT_NO_MODEL_LIGHTING") ? 0 : 1;
+	if (s_n < 0)
+	{
+		const char *pEnv = getenv("LT_NO_MODEL_LIGHTING");
+		const bool bDisable = pEnv && pEnv[0] && pEnv[0] != '0';
+		s_n = bDisable ? 0 : 1;
+	}
 	return s_n != 0;
 }
 
