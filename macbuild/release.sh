@@ -93,16 +93,29 @@ if [ -z "$PROFILE" ]; then
     exit 0
 fi
 
-ZIP=$BUILD/NOLF2Launcher.zip
+# ⚠️ TWO DIFFERENT ZIPS. The one uploaded is only a carrier for the bits Apple
+# inspects; the ticket comes back separately and is stapled INTO THE .app. So
+# the archive you distribute must be created AFTER stapling — re-using the
+# submission zip ships an UNSTAPLED app, which then needs an online Gatekeeper
+# check on first launch and fails outright offline.
+SUBMIT_ZIP=$BUILD/NOLF2Launcher-submit.zip
+DIST_ZIP=$BUILD/NOLF2Launcher.zip
+
 echo "==> Submitting to Apple for notarisation"
-rm -f "$ZIP"
-/usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+rm -f "$SUBMIT_ZIP"
+/usr/bin/ditto -c -k --keepParent "$APP" "$SUBMIT_ZIP"
+xcrun notarytool submit "$SUBMIT_ZIP" --keychain-profile "$PROFILE" --wait
 
 echo "==> Stapling"
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 
+echo "==> Packaging the stapled app for distribution"
+rm -f "$DIST_ZIP" "$SUBMIT_ZIP"
+/usr/bin/ditto -c -k --keepParent "$APP" "$DIST_ZIP"
+
 echo ""
-echo "Done. Gatekeeper assessment:"
+echo "Gatekeeper assessment:"
 spctl --assess --type execute --verbose=2 "$APP" || true
+echo ""
+echo "SHIP THIS:  $DIST_ZIP"
