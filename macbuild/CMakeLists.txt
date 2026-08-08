@@ -254,6 +254,17 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 	# build, which is not worth the risk for one Swift file.
 	set_target_properties(NOLF2Launcher PROPERTIES COMPILE_OPTIONS "")
 
+	# The app icon, if the user has supplied it. Same rule as the background:
+	# it is Cate Archer artwork, so it stays OUT of the repository and the app
+	# simply has no custom icon on a clean clone.
+	if(EXISTS ${LAUNCHER_DIR}/Resources/NOLF2.icns)
+		set_target_properties(NOLF2Launcher PROPERTIES
+			MACOSX_BUNDLE_ICON_FILE "NOLF2")
+		message(STATUS "Launcher: bundling app icon")
+	else()
+		message(STATUS "Launcher: no app icon (launcher/Resources/NOLF2.icns)")
+	endif()
+
 	set_target_properties(NOLF2Launcher PROPERTIES
 		OUTPUT_NAME                                     "NOLF2Launcher"
 		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
@@ -321,6 +332,20 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 			"$<TARGET_FILE:NOLF2_ClientFXDLL>"
 			"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Frameworks/libClientFx.dylib"
 		COMMENT "Embedding engine and game modules into NOLF2Launcher.app")
+
+	# ⚠️ The icon goes in POST_BUILD too, for the same xattr reason as the
+	# background — and note MACOSX_BUNDLE_ICON_FILE only writes CFBundleIconFile
+	# into the Info.plist; it does NOT copy the file. Without this the plist
+	# names an icon that is not there and the app shows the generic one.
+	if(EXISTS ${LAUNCHER_DIR}/Resources/NOLF2.icns)
+		add_custom_command(TARGET NOLF2Launcher POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E make_directory
+				"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Resources"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${LAUNCHER_DIR}/Resources/NOLF2.icns"
+				"$<TARGET_BUNDLE_CONTENT_DIR:NOLF2Launcher>/Resources/NOLF2.icns"
+			COMMENT "Adding launcher app icon")
+	endif()
 
 	# The optional background artwork, copied the same way for the reason above.
 	if(LAUNCHER_RESOURCES)
