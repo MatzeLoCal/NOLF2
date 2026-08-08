@@ -270,8 +270,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
 		MACOSX_BUNDLE_GUI_IDENTIFIER                    "com.schonder.nolf2mac.launcher"
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER       "com.schonder.nolf2mac.launcher"
-		MACOSX_BUNDLE_BUNDLE_VERSION                    "1"
-		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.1.1"
+		MACOSX_BUNDLE_BUNDLE_VERSION                    "20"
+		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.2"
 		XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET        "12.0"
 		XCODE_ATTRIBUTE_SWIFT_VERSION                   "5.0"
 		# Hardened runtime is required for notarisation. Signing everything with
