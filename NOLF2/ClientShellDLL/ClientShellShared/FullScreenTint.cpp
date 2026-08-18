@@ -124,7 +124,28 @@ void CFullScreenTint::Draw(HSURFACE hScreen)
     
 	LTRect rcDest;
 	rcDest.Init(0, 0, dwWidth, dwHeight);
-    g_pLTClient->ScaleSurfaceToSurfaceTransparent(hScreen, m_hSurface, 
+
+	// LT_TRACE_OVERLAY=1 -- what the full-screen tint thinks it is covering.
+	// Reports on CHANGE, not once: the screen dims arrive late and the tint is
+	// created before a world exists, so a one-shot line would only ever describe
+	// the startup state (the §28/§70 "a diagnostic that can only fire once"
+	// trap). If the visible tint does not reach the window edges while this
+	// prints the full drawable size, the mis-sizing is BELOW this call -- in the
+	// surface blit -- not in the rect handed to it.
+	if (getenv("LT_TRACE_OVERLAY"))
+	{
+		static uint32 s_nLastW = 0, s_nLastH = 0;
+		if (s_nLastW != dwWidth || s_nLastH != dwHeight)
+		{
+			s_nLastW = dwWidth; s_nLastH = dwHeight;
+			fprintf(stderr, "[tint] full-screen tint dest 0,0..%ux%u  src %d,%d..%d,%d\n",
+			        dwWidth, dwHeight,
+			        (int)m_rcSrc.left, (int)m_rcSrc.top,
+			        (int)m_rcSrc.right, (int)m_rcSrc.bottom);
+		}
+	}
+
+    g_pLTClient->ScaleSurfaceToSurfaceTransparent(hScreen, m_hSurface,
 		&rcDest, &m_rcSrc, m_hTransColor);
 }
 

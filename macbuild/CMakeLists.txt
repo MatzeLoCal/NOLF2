@@ -57,6 +57,25 @@ add_compile_definitions($<IF:$<CONFIG:Debug>,_DEBUG,_FINAL>)
 # never executed at retail. Real faults still surface via signals/lldb.
 add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
 
+# ★★★ OPTIMISATION. This was MISSING for the entire port: CMAKE_BUILD_TYPE is empty
+# (deliberately — the NDEBUG line above keys off "not Debug"), and an empty build type
+# means CMake adds NO -O flag at all, so clang defaulted to -O0. Everything — engine,
+# renderer, game DLLs — ran completely unoptimised.
+#
+# ⚠️ IT IS A PERFORMANCE BUG, NOT A STYLE CHOICE, AND THE PROFILE SAYS SO. A `sample`
+# of the running game showed trivial one-line accessors as TOP-OF-STACK entries
+# (TVector3's ctor, std::vector's size()/data()/operator[], __to_address) — that only
+# happens when nothing inlines. The model skinning path (rm_EmitMesh) dominated the
+# frame purely because every helper it calls was a real function call.
+#
+# -O2, not -O3: -O3's extra vectorisation/unrolling buys little here and enlarges the
+# binary. -g is kept (see the target_compile_options note further down) so backtraces
+# still name engine frames. -fno-strict-aliasing above is what makes this safe on
+# 2003-era code — it is the flag that would otherwise bite at -O2.
+# Override with -DLT_OPT_FLAGS=-O0 for a debugging build.
+set(LT_OPT_FLAGS "-O2" CACHE STRING "Optimisation flags for the macOS port")
+add_compile_options(${LT_OPT_FLAGS})
+
 # Force-include the MSVC CRT compat shim into every TU (stricmp, _strupr, ...).
 add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/compat/msvc_crt_compat.h)
 
@@ -105,7 +124,7 @@ add_subdirectory(${ROOT}/runtime/server ${CMAKE_BINARY_DIR}/server)
 # --- Engine client (EXE_Lithtech) -- platform shell; portables swapped to linux ---
 add_subdirectory(${ROOT}/runtime/client ${CMAKE_BINARY_DIR}/client)
 
-# --- macOS platform shell (Phase 1): Cocoa + OpenGL window + client bridge ---
+# --- macOS platform shell: Cocoa + Metal window + client bridge ---
 target_sources(EXE_Lithtech PRIVATE
     ${ROOT}/runtime/kernel/src/sys/macos/macos_window.mm
     ${ROOT}/runtime/kernel/src/sys/macos/macos_input.mm          # NSEvent keyboard/mouse
@@ -113,20 +132,46 @@ target_sources(EXE_Lithtech PRIVATE
     ${ROOT}/runtime/kernel/src/sys/macos/macos_clientshell.cpp   # null IClientShell (Phase 1 bring-up)
     ${ROOT}/runtime/kernel/src/sys/macos/macos_cres.cpp          # cres.dll PE string resources (game UI text)
     ${ROOT}/runtime/kernel/src/sys/macos/macos_music.cpp         # interactive music (.SGT wave-track scheduler)
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_device.mm       # Metal device/layer/frame + readback
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_texture.mm      # Metal DTX -> MTLTexture upload
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_drawprim.mm     # Metal ILTDrawPrim (2D/console) — the registered one
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_world.mm        # Metal BSP world draw (shares gl_worlddata's parse)
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_model.mm        # Metal model draw (shares gl_model's skinning + lighting)
     ${ROOT}/runtime/render_a/src/sys/nulldib/nullrender.cpp   # renderer front-end (rdll_RenderDLLSetup)
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_worlddata.cpp      # Phase-2 GL world loader/draw
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_texture.cpp        # Phase-2 GL DTX texture upload
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_model.cpp          # Phase-2 GL model meshes + draw
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_drawprim.cpp       # Phase-2 GL ILTDrawPrim (2D/console; replaced macos_nulldrawprim)
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_renderstyle.cpp    # Phase-2 GL render styles (authored model render state)
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_convar.cpp         # renderer console vars (rendererconsolevars.h) -> engine console
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_polygrid.cpp       # OT_POLYGRID (water, ice) height-field draw
-    ${ROOT}/runtime/render_a/src/sys/gl/gl_particles.cpp      # OT_PARTICLESYSTEM (fire, smoke, waterfall)
+    ${ROOT}/runtime/render_a/src/sys/shared/world_renderdata.cpp      # BSP world parse/walk (backend-neutral)
+    ${ROOT}/runtime/render_a/src/sys/shared/model_renderdata.cpp          # model mesh build, skinning + lighting (backend-neutral)
+    ${ROOT}/runtime/render_a/src/sys/shared/render_style.cpp    # authored render styles (LTB parse -> neutral state)
+    ${ROOT}/runtime/render_a/src/sys/shared/render_convar.cpp # renderer console vars (rendererconsolevars.h) -> engine console; BACKEND-NEUTRAL
+    ${ROOT}/runtime/render_a/src/sys/shared/render_globals.cpp # g_pRenderStruct — the engine function table; BACKEND-NEUTRAL
+    ${ROOT}/runtime/render_a/src/sys/shared/render_texture.cpp # RTex_* neutral texture queries
+    ${ROOT}/runtime/render_a/src/sys/shared/render_drawprim.cpp # CRenderDrawPrim — the neutral ILTDrawPrim base
+    ${ROOT}/runtime/render_a/src/sys/shared/render_polygrid.cpp       # OT_POLYGRID (water, ice) height-field draw
+    ${ROOT}/runtime/render_a/src/sys/shared/render_particles.cpp      # OT_PARTICLESYSTEM (fire, smoke, waterfall)
     ${ROOT}/runtime/sound/src/sys/macos/s_coreaudio.cpp       # Phase-3 CoreAudio ILTSoundSys (registers the sound factory)
     ${ROOT}/runtime/render_b/src/sys/d3d/d3dtexinterface.cpp) # ILTTexInterface (renderer-agnostic; console font/UI textures)
-set_source_files_properties(${ROOT}/runtime/kernel/src/sys/macos/macos_window.mm
-    ${ROOT}/runtime/kernel/src/sys/macos/macos_input.mm
+# ⚠️⚠️ TARGET_DIRECTORY IS LOAD-BEARING, NOT DECORATION. Source-file properties
+# are DIRECTORY-scoped, and EXE_Lithtech is defined in runtime/client's scope --
+# so this same call without it set the property in a directory nobody compiles
+# in, and -fobjc-arc silently never reached the compiler. The Metal renderer's
+# static id<MTL*> globals were therefore plain unretained pointers: the render
+# command encoder was deallocated by the autorelease pool at the end of
+# BeginFrame, and Metal aborted the process with "Command encoder released
+# without endEncoding" the first time a frame was opened.
+# ⇒ A compile flag that is set but not applied fails silently and looks correct
+#   in the CMakeLists. Check the generated flags, not the intent.
+set_source_files_properties(
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_device.mm
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_texture.mm
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_drawprim.mm
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_world.mm
+    ${ROOT}/runtime/render_a/src/sys/metal/mtl_model.mm
+    TARGET_DIRECTORY EXE_Lithtech
     PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+# macos_window.mm / macos_input.mm are DELIBERATELY NOT in that list. They were
+# written against the same (never-applied) line and have run as manual
+# retain/release for the whole port, correctly -- AppKit owns the window and the
+# views. Switching them to ARC now is a real behaviour change to working shipped
+# code and has nothing to do with the renderer; do it as its own step if ever.
 # -g on the ENGINE as well as the game DLLs. Asserts are compiled out (NDEBUG,
 # §5), so crashes arrive as bare signals and the backtrace IS the diagnosis —
 # without this, engine frames resolve to a symbol but no source line, which for
@@ -135,14 +180,16 @@ set_source_files_properties(${ROOT}/runtime/kernel/src/sys/macos/macos_window.mm
 target_compile_options(EXE_Lithtech PRIVATE -g)
 
 target_include_directories(EXE_Lithtech PRIVATE
+    ${ROOT}/runtime/render_a/src/sys/metal
     ${ROOT}/runtime/kernel/src/sys/macos
     ${ROOT}/runtime/render_a/src/sys/d3d   # d3d_device/texture/renderstatemgr/rendererframestats.h (vs the d3d9 stub)
     ${ROOT}/runtime/render_a/src
-    ${ROOT}/runtime/render_b/src           # gendrawprim.h (CGenDrawPrim base for the GL drawprim)
+    ${ROOT}/runtime/render_b/src           # gendrawprim.h (CGenDrawPrim base for CRenderDrawPrim)
     ${ROOT}/runtime/render_b/src/sys/d3d)  # d3dtexinterface.h
 # CoreText/CoreGraphics: CUIVectorFont rasterizes the game's TTF UI fonts
 # (runtime/ui/src/cuivectorfont.cpp — the macOS replacement for Win32 GDI).
-target_link_libraries(EXE_Lithtech "-framework Cocoa" "-framework OpenGL"
+target_link_libraries(EXE_Lithtech "-framework Cocoa"
+                                   "-framework Metal" "-framework QuartzCore"
                                    "-framework CoreText" "-framework CoreGraphics"
                                    "-framework AudioToolbox" "-framework AudioUnit"
                                    "-framework CoreAudio")
@@ -270,8 +317,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
 		MACOSX_BUNDLE_GUI_IDENTIFIER                    "com.schonder.nolf2mac.launcher"
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER       "com.schonder.nolf2mac.launcher"
-		MACOSX_BUNDLE_BUNDLE_VERSION                    "20"
-		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.2"
+		MACOSX_BUNDLE_BUNDLE_VERSION                    "0.3"
+		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.3"
 		XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET        "12.0"
 		XCODE_ATTRIBUTE_SWIFT_VERSION                   "5.0"
 		# Hardened runtime is required for notarisation. Signing everything with

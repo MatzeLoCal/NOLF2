@@ -238,15 +238,308 @@ void im_ReadInput(InputMgr*, BYTE *pActionsOn, float axisOffsets[3])
 	}
 }
 
-DeviceBinding* im_GetDeviceBindings(uint32) { return 0; }
-void      im_FreeDeviceBindings(DeviceBinding*) {}
-bool      im_StartDeviceTrack(InputMgr*, uint32, uint32) { return true; }
-bool      im_TrackDevice(DeviceInput*, uint32*) { return false; }
-bool      im_EndDeviceTrack() { return true; }
-DeviceObject* im_GetDeviceObjects(uint32) { return 0; }
-void      im_FreeDeviceObjects(DeviceObject*) {}
-bool      im_GetDeviceName(uint32, char*, uint32) { return false; }
-bool      im_GetDeviceObjectName(char const*, uint32, char*, uint32) { return false; }
+// ======================================================================= //
+// THE CONFIGURATION SIDE -- what the in-game "Customize Controls" menu uses.
+//
+// ⚠️ THESE WERE ALL `return 0/false` STUBS, AND THAT IS WHY REBINDING DID NOT
+// WORK AND WHY §5 DESTROYED THE USER'S autoexec.cfg. The gameplay path
+// (im_AddBinding -> g_aBindings -> im_ReadInput) was complete, but every
+// function the MENU calls returned nothing, and input_SaveBindings wrote
+// nothing -- so a config save emitted console variables and not one
+// AddAction/enabledevice/rangebind line.
+//
+// The Windows build answers these from DirectInput's device enumeration
+// (DeviceDef/TriggerObject, in the #else below). macOS has no DirectInput, so
+// they are answered from g_aBindings/g_aActions plus macos_input.mm's key
+// table, which is the same information in the port's own terms.
+// ======================================================================= //
+
+// Mouse object ids follow DirectInput: 0/1/2 = x/y/z axis, 3+ = buttons.
+enum { kMouseAxisX = 0, kMouseAxisY = 1, kMouseAxisZ = 2, kMouseButton0 = 3 };
+enum { kNumMouseButtons = 3 };
+
+const char *im_MouseObjectName(uint32 nObjectId)
+{
+	switch (nObjectId)
+	{
+		case kMouseAxisX: return "x-axis";
+		case kMouseAxisY: return "y-axis";
+		case kMouseAxisZ: return "z-axis";
+		default: break;
+	}
+	static char s_sBtn[24];
+	LTSNPrintF(s_sBtn, sizeof(s_sBtn), "Button %u", (unsigned)(nObjectId - kMouseButton0));
+	return s_sBtn;
+}
+
+bool im_GetDeviceName(uint32 nDeviceType, char *pStrBuffer, uint32 nBufferSize)
+{
+	if (!pStrBuffer || nBufferSize == 0) return false;
+	const char *pName = 0;
+	if (nDeviceType & DEVICETYPE_KEYBOARD)   pName = "##keyboard";
+	else if (nDeviceType & DEVICETYPE_MOUSE) pName = "##mouse";
+	if (!pName) return false;               // no joystick support on macOS yet
+	LTSNPrintF(pStrBuffer, nBufferSize, "%s", pName);
+	return true;
+}
+
+bool im_GetDeviceObjectName(char const *pszDeviceName, uint32 nObjectId,
+                            char *pszOut, uint32 nOutLen)
+{
+	if (!pszDeviceName || !pszOut || nOutLen == 0) return false;
+	if (im_IsKeyboard(pszDeviceName))
+	{
+		LTSNPrintF(pszOut, nOutLen, "%s", LTMacInput_DIKName(nObjectId));
+		return true;
+	}
+	if (im_IsMouse(pszDeviceName))
+	{
+		LTSNPrintF(pszOut, nOutLen, "%s", im_MouseObjectName(nObjectId));
+		return true;
+	}
+	return false;
+}
+
+// --- Object enumeration: every control the player may bind TO --------------
+DeviceObject *im_GetDeviceObjects(uint32 nDeviceFlags)
+{
+	DeviceObject *pHead = 0, *pTail = 0;
+
+	// Built back-to-front would reverse the menu's order, so append.
+	#define IM_APPEND(obj) do { \
+			if (pTail) pTail->m_pNext = (obj); else pHead = (obj); \
+			pTail = (obj); } while (0)
+
+	if (nDeviceFlags & DEVICETYPE_KEYBOARD)
+	{
+		const unsigned nKeys = LTMacInput_NumKeys();
+		for (unsigned i = 0; i < nKeys; ++i)
+		{
+			const unsigned nDIK = LTMacInput_KeyDIKAt(i);
+			if (!nDIK) continue;
+			DeviceObject *pObj = new DeviceObject;
+			memset(pObj, 0, sizeof(*pObj));
+			pObj->m_DeviceType = DEVICETYPE_KEYBOARD;
+			LTSNPrintF(pObj->m_DeviceName, sizeof(pObj->m_DeviceName), "##keyboard");
+			pObj->m_ObjectType = CONTROLTYPE_BUTTON;
+			LTSNPrintF(pObj->m_ObjectName, sizeof(pObj->m_ObjectName), "%s",
+			           LTMacInput_DIKName(nDIK));
+			pObj->m_nObjectId  = nDIK;
+			pObj->m_pNext      = 0;
+			IM_APPEND(pObj);
+		}
+	}
+
+	if (nDeviceFlags & DEVICETYPE_MOUSE)
+	{
+		// Axes first, then buttons -- the order DirectInput reports them in.
+		for (uint32 n = kMouseAxisX; n <= kMouseAxisZ; ++n)
+		{
+			DeviceObject *pObj = new DeviceObject;
+			memset(pObj, 0, sizeof(*pObj));
+			pObj->m_DeviceType = DEVICETYPE_MOUSE;
+			LTSNPrintF(pObj->m_DeviceName, sizeof(pObj->m_DeviceName), "##mouse");
+			pObj->m_ObjectType = CONTROLTYPE_XAXIS + (n - kMouseAxisX);
+			LTSNPrintF(pObj->m_ObjectName, sizeof(pObj->m_ObjectName), "%s",
+			           im_MouseObjectName(n));
+			pObj->m_nObjectId  = n;
+			pObj->m_pNext      = 0;
+			IM_APPEND(pObj);
+		}
+		for (uint32 b = 0; b < kNumMouseButtons; ++b)
+		{
+			DeviceObject *pObj = new DeviceObject;
+			memset(pObj, 0, sizeof(*pObj));
+			pObj->m_DeviceType = DEVICETYPE_MOUSE;
+			LTSNPrintF(pObj->m_DeviceName, sizeof(pObj->m_DeviceName), "##mouse");
+			pObj->m_ObjectType = CONTROLTYPE_BUTTON;
+			LTSNPrintF(pObj->m_ObjectName, sizeof(pObj->m_ObjectName), "%s",
+			           im_MouseObjectName(kMouseButton0 + b));
+			pObj->m_nObjectId  = kMouseButton0 + b;
+			pObj->m_pNext      = 0;
+			IM_APPEND(pObj);
+		}
+	}
+	#undef IM_APPEND
+	return pHead;
+}
+
+void im_FreeDeviceObjects(DeviceObject *pList)
+{
+	while (pList) { DeviceObject *pNext = pList->m_pNext; delete pList; pList = pNext; }
+}
+
+// --- Binding enumeration: what is bound to what, for the menu's list -------
+DeviceBinding *im_GetDeviceBindings(uint32 nDevice)
+{
+	DeviceBinding *pHead = 0, *pTail = 0;
+
+	for (size_t i = 0; i < g_aBindings.size(); ++i)
+	{
+		const LTMacBinding &cBind = g_aBindings[i];
+		const bool bKB = im_IsKeyboard(cBind.m_sDevice.c_str());
+		const bool bMS = im_IsMouse(cBind.m_sDevice.c_str());
+		if (!(((nDevice & DEVICETYPE_KEYBOARD) && bKB) ||
+		      ((nDevice & DEVICETYPE_MOUSE) && bMS)))
+			continue;
+
+		DeviceBinding *pB = new DeviceBinding;
+		memset(pB, 0, sizeof(*pB));
+		LTSNPrintF(pB->strDeviceName, sizeof(pB->strDeviceName), "%s", cBind.m_sDevice.c_str());
+		// strTriggerName is the DISPLAY name, strRealName the "##n" form --
+		// note the header's comment has them the wrong way round; the menu
+		// shows strTriggerName, and CBindingData reads strRealName back.
+		if (bKB)
+			LTSNPrintF(pB->strTriggerName, sizeof(pB->strTriggerName), "%s",
+			           LTMacInput_DIKName((unsigned)cBind.m_nObject));
+		else
+			LTSNPrintF(pB->strTriggerName, sizeof(pB->strTriggerName), "%s",
+			           (cBind.m_nAxis >= 0) ? im_MouseObjectName((uint32)cBind.m_nAxis)
+			                                : im_MouseObjectName((uint32)cBind.m_nObject));
+		LTSNPrintF(pB->strRealName, sizeof(pB->strRealName), "%s", cBind.m_sTrigger.c_str());
+		pB->m_nObjectId = (uint32)((cBind.m_nAxis >= 0) ? cBind.m_nAxis : cBind.m_nObject);
+		pB->nScale      = cBind.m_fScale;
+		pB->nRangeScaleMin = 0.0f;
+		pB->nRangeScaleMax = 0.0f;
+		pB->nRangeScalePreCenterOffset = 0.0f;
+		pB->pNext = 0;
+
+		GameAction *pAct = new GameAction;
+		memset(pAct, 0, sizeof(*pAct));
+		pAct->nActionCode = cBind.m_nActionCode;
+		LTSNPrintF(pAct->strActionName, sizeof(pAct->strActionName), "%s", cBind.m_sAction.c_str());
+		pAct->nRangeLow  = cBind.m_fRangeLow;
+		pAct->nRangeHigh = cBind.m_fRangeHigh;
+		pAct->pNext      = 0;
+		pB->pActionHead  = pAct;
+
+		if (pTail) pTail->pNext = pB; else pHead = pB;
+		pTail = pB;
+	}
+	return pHead;
+}
+
+void im_FreeDeviceBindings(DeviceBinding *pBindings)
+{
+	while (pBindings)
+	{
+		DeviceBinding *pNext = pBindings->pNext;
+		GameAction *pAct = pBindings->pActionHead;
+		while (pAct) { GameAction *pAN = pAct->pNext; delete pAct; pAct = pAN; }
+		delete pBindings;
+		pBindings = pNext;
+	}
+}
+
+// --- Device tracking: "press a key now" while the menu waits ---------------
+// DirectInput buffers events; we poll live state instead, which is what the
+// menu actually needs -- it calls TrackDevice every frame until something
+// comes back. Reporting a key while it is HELD (rather than only on the down
+// edge) is harmless here: the menu stops polling as soon as it gets one.
+bool g_bMacTracking = false;
+
+// ⚠️⚠️ DOWN-EDGE DETECTION, AND IT IS NOT OPTIONAL.
+//
+// The menu opens "press a key for Forward" in response to the player pressing
+// ENTER -- and Enter is still physically held when tracking begins. Reporting
+// whatever is CURRENTLY down therefore captured Enter instantly, every time,
+// no matter which key the player actually pressed. (Reported from play; the
+// first version of this function had exactly that bug.)
+//
+// DirectInput handed the Windows path buffered EVENTS, so it only ever saw
+// transitions. We poll state, so the edge has to be reconstructed: snapshot
+// everything already held when tracking starts, ignore each of those until it
+// is RELEASED, and report only a key that goes down afterwards.
+enum { kMacTrackKeyMax = 256 };
+static bool g_aMacTrackIgnoreKey[kMacTrackKeyMax];
+static bool g_aMacTrackIgnoreBtn[kNumMouseButtons];
+
+bool im_StartDeviceTrack(InputMgr*, uint32, uint32)
+{
+	g_bMacTracking = true;
+	for (unsigned i = 0; i < kMacTrackKeyMax; ++i)
+		g_aMacTrackIgnoreKey[i] = LTMacInput_IsDIKDown(i);
+	for (unsigned b = 0; b < kNumMouseButtons; ++b)
+		g_aMacTrackIgnoreBtn[b] = LTMacInput_IsMouseButtonDown(b);
+	return true;
+}
+
+bool im_EndDeviceTrack()
+{
+	g_bMacTracking = false;
+	memset(g_aMacTrackIgnoreKey, 0, sizeof(g_aMacTrackIgnoreKey));
+	memset(g_aMacTrackIgnoreBtn, 0, sizeof(g_aMacTrackIgnoreBtn));
+	return true;
+}
+
+// First key that has gone down SINCE tracking started. Keys held at the start
+// are cleared from the ignore list as they are released, so the player can
+// rebind to Enter itself -- they just have to let go of it first.
+static unsigned im_FirstNewKeyDown(void)
+{
+	const unsigned nKeys = LTMacInput_NumKeys();
+	for (unsigned i = 0; i < nKeys; ++i)
+	{
+		const unsigned nDIK = LTMacInput_KeyDIKAt(i);
+		if (!nDIK || nDIK >= kMacTrackKeyMax) continue;
+		const bool bDown = LTMacInput_IsDIKDown(nDIK);
+		if (g_aMacTrackIgnoreKey[nDIK])
+		{
+			if (!bDown) g_aMacTrackIgnoreKey[nDIK] = false;   // released: now armed
+			continue;
+		}
+		if (bDown) return nDIK;
+	}
+	return 0;
+}
+
+bool im_TrackDevice(DeviceInput *pInputArray, uint32 *pInOut)
+{
+	if (!pInputArray || !pInOut || *pInOut == 0) return false;
+	if (!g_bMacTracking) { *pInOut = 0; return false; }
+
+	uint32 nOut = 0;
+	const uint32 nMax = *pInOut;
+
+	const unsigned nDIK = im_FirstNewKeyDown();
+	if (nDIK && nOut < nMax)
+	{
+		DeviceInput &cIn = pInputArray[nOut++];
+		memset(&cIn, 0, sizeof(cIn));
+		cIn.m_DeviceType  = DEVICETYPE_KEYBOARD;
+		LTSNPrintF(cIn.m_DeviceName, sizeof(cIn.m_DeviceName), "##keyboard");
+		cIn.m_ControlType = CONTROLTYPE_BUTTON;
+		LTSNPrintF(cIn.m_ControlName, sizeof(cIn.m_ControlName), "%s", LTMacInput_DIKName(nDIK));
+		cIn.m_ControlCode = (uint16)nDIK;
+		cIn.m_nObjectId   = nDIK;
+		cIn.m_InputValue  = 1;
+	}
+
+	for (uint32 b = 0; b < kNumMouseButtons && nOut < nMax; ++b)
+	{
+		const bool bDown = LTMacInput_IsMouseButtonDown(b);
+		if (g_aMacTrackIgnoreBtn[b])          // held when tracking began
+		{
+			if (!bDown) g_aMacTrackIgnoreBtn[b] = false;
+			continue;
+		}
+		if (!bDown) continue;
+		DeviceInput &cIn = pInputArray[nOut++];
+		memset(&cIn, 0, sizeof(cIn));
+		cIn.m_DeviceType  = DEVICETYPE_MOUSE;
+		LTSNPrintF(cIn.m_DeviceName, sizeof(cIn.m_DeviceName), "##mouse");
+		cIn.m_ControlType = CONTROLTYPE_BUTTON;
+		LTSNPrintF(cIn.m_ControlName, sizeof(cIn.m_ControlName), "%s",
+		           im_MouseObjectName(kMouseButton0 + b));
+		cIn.m_ControlCode = (uint16)(kMouseButton0 + b);
+		cIn.m_nObjectId   = kMouseButton0 + b;
+		cIn.m_InputValue  = 1;
+	}
+
+	*pInOut = nOut;
+	return nOut > 0;
+}
+
 bool      im_ShowDeviceObjects(const char*) { return true; }
 bool      im_ShowInputDevices() { return true; }
 
@@ -273,7 +566,71 @@ LTRESULT input_GetManager(InputMgr **pMgr) {
     if (pMgr) *pMgr = &s_mgr;
     return LT_OK;
 }
-void input_SaveBindings(FILE*) {}
+// ======================================================================= //
+// ★★ input_SaveBindings -- REGISTERED IN g_SaveFns (consolecommands.cpp:862)
+// AND, UNTIL NOW, AN EMPTY STUB. THAT IS THE §5 BUG IN ONE LINE.
+//
+// cc_SaveConfigFile writes the VARFLAG_SAVE console variables and then calls
+// every save function. With this one empty, a config save produced a file with
+// variables and ZERO binding lines -- so writing it over a real autoexec.cfg
+// deleted the player's entire control setup (353 -> 193 lines, §5). The guard
+// in macos_client.cpp is what has been standing in for this function.
+//
+// It emits exactly the syntax autoexec.cfg uses and the console already
+// parses, so the output is re-readable by the same code that loaded it:
+//     AddAction <name> <code>
+//     enabledevice "##keyboard"
+//     rangebind "##keyboard" "##17" 0.000000 0.000000 "Forward"
+//     scaletrigger "##mouse" "##x-axis" 0.002500
+// ⚠️ `rangebind` puts the ranges BEFORE the action name -- see con_RangeBind
+// in consolecommands.cpp. Getting that order wrong writes a file that loads
+// without error and binds nothing.
+// ======================================================================= //
+void input_SaveBindings(FILE *fp)
+{
+	if (!fp) return;
+
+	for (size_t i = 0; i < g_aActions.size(); ++i)
+		fprintf(fp, "AddAction %s %d\n", g_aActions[i].m_sName.c_str(), g_aActions[i].m_nCode);
+	if (!g_aActions.empty()) fprintf(fp, "\n");
+
+	for (size_t i = 0; i < g_aEnabledDevices.size(); ++i)
+		fprintf(fp, "enabledevice \"%s\"\n", g_aEnabledDevices[i].c_str());
+	if (!g_aEnabledDevices.empty()) fprintf(fp, "\n");
+
+	for (size_t i = 0; i < g_aBindings.size(); ++i)
+	{
+		const LTMacBinding &c = g_aBindings[i];
+		fprintf(fp, "rangebind \"%s\" \"%s\" %f %f \"%s\"\n",
+		        c.m_sDevice.c_str(), c.m_sTrigger.c_str(),
+		        c.m_fRangeLow, c.m_fRangeHigh, c.m_sAction.c_str());
+	}
+	if (!g_aBindings.empty()) fprintf(fp, "\n");
+
+	// Only non-default scales are worth writing; 1.0 is what a fresh trigger
+	// already has, and the mouse axes are the only things that set it.
+	for (size_t i = 0; i < g_aBindings.size(); ++i)
+	{
+		const LTMacBinding &c = g_aBindings[i];
+		if (c.m_fScale == 1.0f) continue;
+		fprintf(fp, "scaletrigger \"%s\" \"%s\" %f\n",
+		        c.m_sDevice.c_str(), c.m_sTrigger.c_str(), c.m_fScale);
+	}
+}
+
+// ⚠️ NO SEPARATE BINDINGS FILE, AND THAT IS DELIBERATE — MEASURED, NOT ASSUMED.
+//
+// A keybindings.cfg save/load layer was written here and then REMOVED: NOLF2's
+// own profile system already persists bindings. CUserProfile carries m_bindings[]
+// and ProfileMgr replays them through AddBinding at startup, storing them in
+// Profiles/<name>.txt under [Controls]/[Bindings]. Verified by rebinding in the
+// menu with no keybindings.cfg present: the change survived a restart and
+// Player.txt's mtime moved.
+// ⇒ A second persistence layer was not just redundant, it was DANGEROUS: it
+// cleared every binding and replayed a snapshot, so a quit taken before the
+// profile finished applying would have written a partial set and destroyed the
+// rest on the next launch. The engine's own mechanism already works; do not add
+// one back.
 #else
 
 #include "bdefs.h"

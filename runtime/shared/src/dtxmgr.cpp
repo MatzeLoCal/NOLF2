@@ -119,6 +119,21 @@ TextureData* dtx_Alloc(BPPIdent bpp, uint32 baseWidth, uint32 baseHeight, uint32
 	if (!pRet) 
 		return LTNULL;
 
+	// ⚠️ TIE THE MRU LINK OFF AT BIRTH. LTLink's default constructor is
+	// `force_inline LTLink() {}` -- it initialises NOTHING -- so a freshly
+	// `new`ed TextureData carries a garbage m_Link until r_LoadSystemTexture
+	// reaches its dl_AddHead. r_UnloadSystemTexture then calls dl_RemoveAt
+	// unconditionally, and CheapLTLink::Remove is `m_pPrev->m_pNext = m_pNext`
+	// with no NULL check (ltlink.h): on a zeroed heap page that writes through
+	// NULL+8 and gives SIGSEGV at 0x8 -- the reported fault, exactly.
+	//
+	// A TIED-OFF LINK REMOVES ITSELF HARMLESSLY (TieOff points both ends at the
+	// link itself), so this makes the unload safe on every path, including any
+	// that frees a texture that was never added to g_SysCache.m_List. Same bug
+	// and same remedy as the sprite crash in §41, which used Init2 for the same
+	// reason: `dl_Remove` on a link that was never inserted.
+	pRet->m_Link.Init2(pRet);
+
 	LT_MEM_TRACK_ALLOC(pRet->m_pDataBuffer = new uint8[textureDataSize],LT_MEM_TYPE_TEXTURE);
 	if (!pRet->m_pDataBuffer) 
 	{

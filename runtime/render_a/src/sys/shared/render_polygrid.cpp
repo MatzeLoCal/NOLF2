@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_polygrid.cpp
+// MODULE  : render_polygrid.cpp
 //
 // PURPOSE : OT_POLYGRID = WATER. A polygrid is an animated height field: the
 //           game (CPolyGridFX, ClientShellShared/PolyGridFX.cpp) owns a
@@ -24,12 +24,15 @@
 #include "clientmgr.h"       // g_pClientMgr (object lists)
 #include "renderstruct.h"
 #include "iltclient.h"       // PG_NOBACKFACECULL / PG_FRESNEL
-#include "gl_texture.h"
-#include "gl_worlddata.h"    // GLWorld_ApplyObjectFog / GLWorld_RestoreSceneFog
-#include "gl_polygrid.h"
-#include <OpenGL/gl.h>
+#include "world_renderdata.h"    // RWorld_ApplyObjectFog / RWorld_RestoreSceneFog
+#include "render_polygrid.h"
+#include "model_renderdata.h"      // REmitState — polygrids share the model emit
+#include "mtl_device.h"    // MTLDev_IsMetalBackend
+#include "mtl_model.h"     // MTLModel_DrawTris
 #include <stdio.h>
 #include <vector>
+#include "sys/shared/render_texture.h"  // RTex_* — neutral texture queries
+#include "sys/shared/render_globals.h"  // g_pRenderStruct — the engine function table
 
 // nullrender.cpp's presented-frame counter — the number LT_DUMP_SWAP matches.
 // The census reports it so that "which LT_DUMP_SWAP frame is this spot?" stops
@@ -46,7 +49,7 @@ namespace
 //                    screenshot answers the only questions that matter -- is the
 //                    surface the right SHAPE, at the right HEIGHT, in the right
 //                    PLACE? A translucent dark sheet cannot answer those.
-int glpg_DebugMode()
+int rpg_DebugMode()
 {
 	static int s_nMode = -1;
 	if (s_nMode < 0)
@@ -61,7 +64,7 @@ int glpg_DebugMode()
 // LT_PG_NOENV=1 -- ignore m_pEnvMap and draw the old base-texture-only way.
 // This is the A/B for the whole env-map change, equivalent to the retail
 // console var `EnvMapPolyGrids 0` (rendererconsolevars.h:245, default 1).
-bool glpg_NoEnvMap()
+bool rpg_NoEnvMap()
 {
 	static int s_n = -1;
 	if (s_n < 0) s_n = getenv("LT_PG_NOENV") ? 1 : 0;
@@ -86,7 +89,7 @@ bool glpg_NoEnvMap()
 // The faithful reading is therefore the DEFAULT here. This switch gives the
 // other reading (stage 1 arg1 = CURRENT) for side-by-side comparison against a
 // Windows capture, since that is the only thing that can settle it.
-bool glpg_EnvBase()
+bool rpg_EnvBase()
 {
 	static int s_n = -1;
 	if (s_n < 0) s_n = getenv("LT_PG_ENVBASE") ? 1 : 0;
@@ -94,7 +97,7 @@ bool glpg_EnvBase()
 }
 
 // LT_PG_HEIGHTS=1 -- trace the height field's min/max on change (see the use).
-bool glpg_TraceHeights()
+bool rpg_TraceHeights()
 {
 	static int s_n = -1;
 	if (s_n < 0) s_n = getenv("LT_PG_HEIGHTS") ? 1 : 0;
@@ -102,7 +105,7 @@ bool glpg_TraceHeights()
 }
 
 // --------------------------------------------------------------------
-// The scene camera (GLPolyGrid_SetCamera).
+// The scene camera (RPolyGrid_SetCamera).
 // --------------------------------------------------------------------
 LTVector s_vCamRight(1, 0, 0), s_vCamUp(0, 1, 0), s_vCamForward(0, 0, 1);
 LTVector s_vCamPos(0, 0, 0);
@@ -118,12 +121,12 @@ LTVector s_vCamPos(0, 0, 0);
 // grazing angles. Substituting a flat alpha (which is what we did until now)
 // removes the single most recognisable cue the surface has.
 // --------------------------------------------------------------------
-class CGLFresnelTable
+class CRFresnelTable
 {
 public:
 	enum { TABLE_SIZE = 1024 };
 
-	CGLFresnelTable() : m_fVolumeIOR(-1.0f), m_fBaseReflection(-1.0f) {}
+	CRFresnelTable() : m_fVolumeIOR(-1.0f), m_fBaseReflection(-1.0f) {}
 
 	// Regenerate only when the authored parameters actually change. A polygrid
 	// keeps them for its lifetime, so in practice this runs once per grid.
@@ -183,7 +186,7 @@ private:
 	unsigned char m_aTable[TABLE_SIZE];
 };
 
-CGLFresnelTable s_FresnelTable;
+CRFresnelTable s_FresnelTable;
 
 	// Scratch vertex arrays, reused across grids and frames (a polygrid can be
 	// 64x64 = 4096 verts and is rebuilt every frame because the data animates).
@@ -203,7 +206,17 @@ CGLFresnelTable s_FresnelTable;
 	// do the scale as that tends to mess up normals"); the dimensions are
 	// already baked into the vertex spacing below.
 	// --------------------------------------------------------------------
-	void glpg_PushGridTransform(const LTPolyGrid *pGrid)
+	// The grid's model matrix, kept so the Metal path can pass it as a
+	// parameter instead of pushing it onto a matrix stack that does not exist.
+	float s_aGridMatrix[16];
+
+	// ⚠️ SPLIT IN TWO. The GL path pushes the matrix late (just before its
+	// glDrawElements); the Metal path needs the VALUE much earlier, because it
+	// passes it as a draw parameter rather than relying on a matrix stack.
+	// Building it inside the GL push meant Metal read an UNINITIALISED
+	// s_aGridMatrix and the water was transformed to nowhere — drawn, counted,
+	// and invisible.
+	void rpg_BuildGridTransform(const LTPolyGrid *pGrid)
 	{
 		const LTVector &vPos = pGrid->GetPos();
 		LTVector vR = pGrid->m_Rotation.Right();
@@ -212,21 +225,24 @@ CGLFresnelTable s_FresnelTable;
 
 		// Column-major GL matrix: basis vectors in the columns, translation in
 		// the last column. Same convention as the world-model draw.
-		float aM[16];
+		float *aM = s_aGridMatrix;
 		aM[0] = vR.x; aM[4] = vU.x; aM[8]  = vF.x; aM[12] = vPos.x;
 		aM[1] = vR.y; aM[5] = vU.y; aM[9]  = vF.y; aM[13] = vPos.y;
 		aM[2] = vR.z; aM[6] = vU.z; aM[10] = vF.z; aM[14] = vPos.z;
 		aM[3] = 0.0f; aM[7] = 0.0f; aM[11] = 0.0f; aM[15] = 1.0f;
 
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-		glMultMatrixf(aM);
+	}
+
+	// The transform is passed as REmitState::m_pModelMatrix; nothing to push.
+	void rpg_PushGridTransform(const LTPolyGrid *pGrid)
+	{
+		rpg_BuildGridTransform(pGrid);
 	}
 
 	// --------------------------------------------------------------------
 	// One grid. Returns false if it had nothing drawable.
 	// --------------------------------------------------------------------
-	bool glpg_DrawGrid(LTPolyGrid *pGrid, bool bLog)
+	bool rpg_DrawGrid(LTPolyGrid *pGrid, bool bLog)
 	{
 		// d3d_DrawPolyGrid's own guards, in the same order. Each one is logged:
 		// "not drawn" with no reason is a dead end for whoever picks this up.
@@ -279,22 +295,21 @@ CGLFresnelTable s_FresnelTable;
 		// --- Which fixed-function path? Exactly d3d_DrawPolyGrid's two tests:
 		// an env map is used iff m_pEnvMap is set (and `EnvMapPolyGrids`, which
 		// LT_PG_NOENV stands in for), and the Fresnel alpha iff PG_FRESNEL.
-		GLuint nEnvName = 0;
-		if (pGrid->m_pEnvMap && !glpg_NoEnvMap())
-			nEnvName = GLTex_GetName(pGrid->m_pEnvMap);
-		const bool bEnvMap  = (nEnvName != 0) && glpg_DebugMode() != 2;
+		// ⚠️ Neutral query (render_texture.h): asking the texture manager for a
+		// raw GL-era name returned garbage that is non-zero, which would enable
+		// the env path on a texture that never resolved (§88/§91).
+		unsigned nEnvName = 0;
+		if (pGrid->m_pEnvMap && !rpg_NoEnvMap() && RTex_IsValid(pGrid->m_pEnvMap))
+			nEnvName = 1u;   // diagnostics only
+		const bool bEnvMap  = (nEnvName != 0) && rpg_DebugMode() != 2;
 		// ★ CUBIC WATER REFLECTIONS. d3d_DrawPolyGrid asks the env map's RTexture
 		// IsCubeMap() (drawpolygrid.cpp:732) and passes it to
 		// d3d_SetEnvMapTextureStates, which then uses D3DTTFF_COUNT3 with the raw
 		// camera->world matrix instead of COUNT2 with the XZ projection.
-		// ⚠️ §38 ported only the NON-cubic branch, because at the time cube DTXs
-		// could not load at all (see §59) -- so the water has always taken the
-		// wrong branch. C01S01's river authors TexFX\Cubic\JP_BRIDGE1.DTX, which
-		// IS a cube map, and once §59 made cube maps real the old
-		// `glBindTexture(GL_TEXTURE_2D, ...)` here became an INVALID OPERATION:
-		// the unit kept whatever 2D texture happened to be bound and the river
-		// turned into a flat pale slab.
-		const bool bEnvCube = bEnvMap && GLTex_IsCubeMap(pGrid->m_pEnvMap);
+		// ⇒ THE CUBE TEST NOW LIVES WITH THE DRAW, not here: MTLModel_DrawTris
+		// asks RTex_IsCubeMap on the emit state's env map (mtl_model.mm:580) and
+		// picks the 3-component reflection there. The local that used to carry
+		// the answer down to the GL emit went with the GL emit.
 		const bool bFresnel = bEnvMap && (pGrid->m_nPGFlags & PG_FRESNEL) != 0;
 
 		// --- Colour table: the authored 256-entry ramp modulated by the
@@ -366,7 +381,7 @@ CGLFresnelTable s_FresnelTable;
 
 		// Fresnel needs the camera in the grid's LOCAL space (the space the
 		// vertices are generated in) and the table for this grid's authored IOR.
-		// glpg_PushGridTransform builds local->world with R/U/F as the columns,
+		// rpg_PushGridTransform builds local->world with R/U/F as the columns,
 		// so world->local is the transpose: dot the delta against each axis.
 		//
 		// ⚠️ D3D's GeneratePolyGridFresnelAlpha (drawpolygrid.cpp:550) builds this
@@ -402,7 +417,7 @@ CGLFresnelTable s_FresnelTable;
 			// "sunk in the riverbed" is answered by comparing the grid's world-Y
 			// span against the world's own bounds — no screenshot needed.
 			LTVector vWC, vWH;
-			if (GLWorld_GetBounds(vWC, vWH))
+			if (RWorld_GetBounds(vWC, vWH))
 				fprintf(stderr, "[glpg]   grid worldY %.0f..%.0f (pos.y %.0f +/- dims.y %.0f) | "
 				                "world Y bounds %.0f..%.0f, XZ %.0f..%.0f / %.0f..%.0f\n",
 				        pGrid->GetPos().y - vDims.y, pGrid->GetPos().y + vDims.y,
@@ -421,12 +436,15 @@ CGLFresnelTable s_FresnelTable;
 		// writing any of it.
 		if (bLog)
 		{
+			// ⚠️ Neutral queries here too. This is only a diagnostic, but it
+			// reported `glname=3316370560 0x0` under Metal — a lying diagnostic
+			// is exactly what sends the next reader down the wrong path.
 			uint32 nEW = 0, nEH = 0;
-			GLuint nEnvName = 0;
+			unsigned nEnvName = 0;
 			if (pGrid->m_pEnvMap)
 			{
-				nEnvName = GLTex_GetName(pGrid->m_pEnvMap);
-				GLTex_GetDims(pGrid->m_pEnvMap, nEW, nEH);
+				nEnvName = RTex_IsValid(pGrid->m_pEnvMap) ? 1u : 0u;
+				RTex_GetDims(pGrid->m_pEnvMap, nEW, nEH);
 			}
 			fprintf(stderr, "[glpg]   envmap=%s glname=%u %ux%u texType=%d | "
 			                "PG_FRESNEL=%d PG_NORMALMAPSPRITE=%d PG_NOBACKFACECULL=%d | "
@@ -569,7 +587,7 @@ CGLFresnelTable s_FresnelTable;
 		// ⚠️ Reports on CHANGE plus a heartbeat, never once: a one-shot here
 		// would print the first frame's values and could not distinguish
 		// "static" from "animating" at all (§34/§36's rule).
-		if (glpg_TraceHeights())
+		if (rpg_TraceHeights())
 		{
 			// ⚠️ CHECKSUM, not min/max. min/max cannot tell a static surface from
 			// an animated one: a travelling wave keeps its extremes exactly
@@ -666,12 +684,18 @@ CGLFresnelTable s_FresnelTable;
 
 		// --- Texture: the grid animates its texture through a sprite, exactly
 		// like an OT_SPRITE (LTPolyGrid::m_pSprite / m_SpriteTracker).
-		GLuint nTexName = 0;
+		unsigned nTexName = 0;
+		SharedTexture *pBaseTex = 0;
 		if (pGrid->m_pSprite && pGrid->m_SpriteTracker.m_pCurFrame)
 		{
 			SharedTexture *pTex = pGrid->m_SpriteTracker.m_pCurFrame->m_pTex;
-			if (pTex)
-				nTexName = GLTex_GetName(pTex);
+			// ⚠️ Neutral query — GLTex_GetName returns garbage under Metal
+			// (render_texture.h, §88).
+			if (pTex && RTex_IsValid(pTex))
+			{
+				pBaseTex = pTex;
+				nTexName = 1u;   // diagnostics only
+			}
 		}
 
 		// ★ PG_NORMALMAPSPRITE: "the sprite surface of the polygrid is entirely a
@@ -682,252 +706,93 @@ CGLFresnelTable s_FresnelTable;
 		// cinematic grid sets this flag; C01S01's river does not.
 		const bool bNormalMapSprite = (pGrid->m_nPGFlags & PG_NORMALMAPSPRITE) != 0;
 		if (bNormalMapSprite)
+		{
 			nTexName = 0;
+			pBaseTex = 0;
+		}
 
 		// On the env-map path the base texture is not used at all (see
-		// glpg_EnvBase's note) unless the LT_PG_ENVBASE A/B asks for it.
-		const bool bBaseTex = nTexName != 0 && (!bEnvMap || glpg_EnvBase());
+		// rpg_EnvBase's note) unless the LT_PG_ENVBASE A/B asks for it.
+		const bool bBaseTex = nTexName != 0 && (!bEnvMap || rpg_EnvBase());
 
 		// --- State. Blend mode from the object's flags2, the same rule the
 		// sprite path uses (d3d_GetBlendStates, d3d_draw.h:128).
 		const bool bAdditive = (pGrid->m_Flags2 & FLAG2_ADDITIVE) != 0;
 		const bool bMultiply = (pGrid->m_Flags2 & FLAG2_MULTIPLY) != 0;
-		if (bAdditive)
-			glBlendFunc(GL_ONE, GL_ONE);
-		else if (bMultiply)
-			glBlendFunc(GL_ZERO, GL_SRC_COLOR);
-		else
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glEnable(GL_BLEND);
+		RWorld_ApplyObjectFog(pGrid->m_Flags, pGrid->m_Flags2);
 
-		GLWorld_ApplyObjectFog(pGrid->m_Flags, pGrid->m_Flags2);
-
-		if (glpg_DebugMode() == 2)
+		// ★ THE METAL BRANCH. Everything above -- the height field, the mask,
+		// the per-vertex colour/alpha and the Fresnel term -- is shared CPU work
+		// and is already in s_vPos / s_vUV / s_vColor. Only the emit differs.
+		//
+		// ⚠️ THE ENV-MAP (REFLECTION) LAYER IS NOT CONVERTED. It needs the same
+		// camera-space reflection-vector machinery as the WORLD's env map (§59),
+		// so both land together; until then a reflective grid draws its base and
+		// lighting and simply has no reflection. ⚠️ And note rpg_EnvBase(): on
+		// the env path the base texture is normally suppressed, so a reflective
+		// grid would otherwise be untextured -- force the base texture on for it.
+		if (MTLDev_IsMetalBackend())
 		{
-			// LT_PG_WIRE: strip every shading variable.
-			nTexName = 0;
-			glDisable(GL_BLEND);
-			glDisable(GL_FOG);
-			glDisable(GL_TEXTURE_2D);
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-			for (uint32 i = 0; i < nOut; ++i)
+			REmitState cGrid;
+			// The reflection is ported now, so the authored suppression of the
+			// base texture on the env path stands (rpg_EnvBase's note) instead
+			// of being overridden to avoid an untextured sheet.
+			cGrid.m_pTexture      = bBaseTex ? pBaseTex : 0;
+			cGrid.m_pEnvMap       = bEnvMap  ? pGrid->m_pEnvMap : 0;
+			rpg_BuildGridTransform(pGrid);   // ⚠️ before it is read, not after
+			cGrid.m_pModelMatrix  = s_aGridMatrix;
+			cGrid.m_bZWrite       = !pGrid->IsTranslucent();
+			cGrid.m_bBlend        = true;
+			cGrid.m_nSrcBlend     = bAdditive ? kRBlend_One : (bMultiply ? kRBlend_Zero : kRBlend_SrcAlpha);
+			cGrid.m_nDstBlend     = bAdditive ? kRBlend_One
+			                                  : (bMultiply ? kRBlend_SrcColor
+			                                               : kRBlend_InvSrcAlpha);
+
+			static std::vector<MTLModelVert> s_aGridVerts;
+			s_aGridVerts.clear();
+			s_aGridVerts.reserve(pGrid->m_nIndices);
+			for (uint32 i = 0; i < pGrid->m_nIndices; ++i)
 			{
-				s_vColor[i * 4 + 0] = 255;
-				s_vColor[i * 4 + 1] = 0;
-				s_vColor[i * 4 + 2] = 255;
-				s_vColor[i * 4 + 3] = 255;
+				const uint32 n = pGrid->m_Indices[i];
+				if (n >= nOut)
+					continue;              // the mask-desync guard above reports it
+				MTLModelVert cV = { s_vPos[n * 3 + 0], s_vPos[n * 3 + 1], s_vPos[n * 3 + 2],
+				                    s_vUV[n * 2 + 0],  s_vUV[n * 2 + 1],
+				                    s_vColor[n * 4 + 0], s_vColor[n * 4 + 1],
+				                    s_vColor[n * 4 + 2], s_vColor[n * 4 + 3],
+				                    0.0f, 0.0f, 0.0f };
+				if (bEnvMap && (size_t)(n * 3 + 2) < s_vNormal.size())
+				{
+					cV.nx = s_vNormal[n * 3 + 0];
+					cV.ny = s_vNormal[n * 3 + 1];
+					cV.nz = s_vNormal[n * 3 + 2];
+				}
+				s_aGridVerts.push_back(cV);
 			}
+			MTLModel_DrawTris(s_aGridVerts.empty() ? 0 : &s_aGridVerts[0],
+			                  (uint32)s_aGridVerts.size(), &cGrid);
+
+			if (bLog)
+				fprintf(stderr, "[glpg] grid %ux%u @(%.0f %.0f %.0f) %u verts %u tris "
+				                "basetex=%d envmap=%d blend=%s [metal]\n",
+				        pGrid->m_Width, pGrid->m_Height,
+				        pGrid->GetPos().x, pGrid->GetPos().y, pGrid->GetPos().z,
+				        nOut, (uint32)(s_aGridVerts.size() / 3),
+				        (int)(cGrid.m_pTexture != 0), (int)bEnvMap,
+				        bAdditive ? "additive" : (bMultiply ? "multiply" : "alpha"));
+			return true;
 		}
 
-		// The reflection lives on whichever unit is free: unit 0 on its own, or
-		// unit 1 when LT_PG_ENVBASE also wants the base texture underneath.
-		const GLenum eEnvUnit = (bEnvMap && bBaseTex) ? GL_TEXTURE1 : GL_TEXTURE0;
-
-		if (bBaseTex)
-		{
-			glActiveTexture(GL_TEXTURE0);
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, nTexName);
-			// texture x diffuse. On the plain path this is stage 0's authored
-			// MODULATE (drawpolygrid.cpp:322); under LT_PG_ENVBASE it stands in
-			// for MODULATE2X's first half, and unit 1 finishes the job.
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			// The surface pans; the UVs run well outside 0..1.
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		}
-		else if (eEnvUnit != GL_TEXTURE0)
-		{
-			glActiveTexture(GL_TEXTURE0);
-			glDisable(GL_TEXTURE_2D);
-		}
-
-		if (bEnvMap)
-		{
-			// ================= THE REFLECTION =================
-			// d3d_SetEnvMapTextureStates (drawpolygrid.cpp:340) generates
-			// D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR and then transforms it by
-			// mCamToWorld * mTex1Trans. GL's equivalent of the first half is
-			// GL_REFLECTION_MAP texgen, which emits the EYE-space reflection
-			// vector into (s,t,r) — so all three coords must be generated, even
-			// for a 2D texture, because the texture matrix mixes them.
-			glActiveTexture(eEnvUnit);
-			if (bEnvCube)
-			{
-				glDisable(GL_TEXTURE_2D);
-				glEnable(GL_TEXTURE_CUBE_MAP);
-				glBindTexture(GL_TEXTURE_CUBE_MAP, nEnvName);
-			}
-			else
-			{
-				glEnable(GL_TEXTURE_2D);
-				glBindTexture(GL_TEXTURE_2D, nEnvName);
-				// A reflection lookup must not wrap: the coords leave 0..1 wherever
-				// the reflection points away from the mapped hemisphere.
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			}
-
-			glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-			glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-			glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-			glEnable(GL_TEXTURE_GEN_S);
-			glEnable(GL_TEXTURE_GEN_T);
-			glEnable(GL_TEXTURE_GEN_R);
-
-			// The texture matrix: eye-space reflection -> world space -> the XZ
-			// projection D3D's mTex1Trans performs (u = 0.5*Rw.x + 0.5,
-			// v = 0.5*Rw.z + 0.5).
-			//
-			// mCamToWorld's rows are the camera's world-space axes, so
-			// Rw = Reye.x*right + Reye.y*up + Reye.z*forward. ⚠️ GL eye space is
-			// RIGHT-handed and our view matrix negates the forward row
-			// (nullrender.cpp:402), so GL's +Z eye axis is -forward: the third
-			// column here must be NEGATED or the reflection is mirrored
-			// front-to-back and slides the wrong way as the player turns.
-			const LTVector &vR2 = s_vCamRight;
-			const LTVector &vU2 = s_vCamUp;
-			const LTVector &vF2 = s_vCamForward;
-			float aTex[16];
-			memset(aTex, 0, sizeof(aTex));
-			if (bEnvCube)
-			{
-				// D3DTTFF_COUNT3: mTex1Trans is SKIPPED entirely and the raw
-				// camera->world rotation is the whole transform, feeding all three
-				// coordinates to the cube lookup. Same shape as the world-surface
-				// cubic branch in gl_worlddata.cpp (§59).
-				aTex[0] = vR2.x; aTex[4] = vU2.x; aTex[8]  = -vF2.x;
-				aTex[1] = vR2.y; aTex[5] = vU2.y; aTex[9]  = -vF2.y;
-				aTex[2] = vR2.z; aTex[6] = vU2.z; aTex[10] = -vF2.z;
-				aTex[15] = 1.0f;
-			}
-			else
-			{
-			// row 0 -> s' = 0.5*Rw.x + 0.5
-			aTex[0]  = 0.5f * vR2.x;  aTex[4]  = 0.5f * vU2.x;  aTex[8]  = -0.5f * vF2.x;  aTex[12] = 0.5f;
-			// row 1 -> t' = 0.5*Rw.z + 0.5
-			aTex[1]  = 0.5f * vR2.z;  aTex[5]  = 0.5f * vU2.z;  aTex[9]  = -0.5f * vF2.z;  aTex[13] = 0.5f;
-			aTex[15] = 1.0f;
-			}
-
-			glMatrixMode(GL_TEXTURE);
-			glPushMatrix();
-			glLoadMatrixf(aTex);
-			glMatrixMode(GL_MODELVIEW);
-
-			// stage-1 COLOROP = MODULATE(DIFFUSE, TEXTURE); ALPHAOP is
-			// MODULATE(TFACTOR, DIFFUSE), which we pre-folded into the vertex
-			// alpha — so alpha here is REPLACE(PRIMARY_COLOR). It must NOT come
-			// from the env map (GL_MODULATE would multiply the reflection's own
-			// alpha in and, for an opaque env map, that happens to be harmless,
-			// but for one with an alpha channel it would silently dim the water).
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB,
-			          (eEnvUnit == GL_TEXTURE0) ? GL_PRIMARY_COLOR : GL_PREVIOUS);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-			// Stage 1's authored op is a PLAIN modulate, so no scale on the
-			// faithful path. The 2x belongs to stage 0's MODULATE2X, which only
-			// exists in the LT_PG_ENVBASE reading — and since the scale is
-			// applied at the end of the last unit either way, 2*(base*diffuse)
-			// *env is the same number, so it can live here.
-			glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, bBaseTex ? 2.0f : 1.0f);
-
-			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PRIMARY_COLOR);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-		}
-		else if (!bBaseTex)
-		{
-			glDisable(GL_TEXTURE_2D);
-		}
-
-		glpg_PushGridTransform(pGrid);
-
-		glEnableClientState(GL_VERTEX_ARRAY);
-		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, 0, &s_vPos[0]);
-		glColorPointer(4, GL_UNSIGNED_BYTE, 0, &s_vColor[0]);
-		if (bBaseTex)
-		{
-			glClientActiveTexture(GL_TEXTURE0);
-			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-			glTexCoordPointer(2, GL_FLOAT, 0, &s_vUV[0]);
-		}
-		if (bEnvMap)
-		{
-			// texgen supplies the coords, but the NORMAL is the input it derives
-			// them from — without this array every reflection coord is identical.
-			glEnableClientState(GL_NORMAL_ARRAY);
-			glNormalPointer(GL_FLOAT, 0, &s_vNormal[0]);
-		}
-
-		glDrawElements(GL_TRIANGLES, (GLsizei)pGrid->m_nIndices,
-		               GL_UNSIGNED_SHORT, pGrid->m_Indices);
-
-		glDisableClientState(GL_NORMAL_ARRAY);
-		if (bBaseTex)
-		{
-			glClientActiveTexture(GL_TEXTURE0);
-			glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-		}
-		glDisableClientState(GL_COLOR_ARRAY);
-		glDisableClientState(GL_VERTEX_ARRAY);
-
-		glPopMatrix();
-
-		if (bEnvMap)
-		{
-			// Undo everything the env-map path touched, on its own unit, and
-			// leave unit 0 selected — d3d_UnsetEnvMapTextureStates' job. A
-			// leaked texture matrix or texgen enable would corrupt every later
-			// pass in the frame (the sprites and the player-view weapon).
-			glActiveTexture(eEnvUnit);
-			glDisable(GL_TEXTURE_GEN_S);
-			glDisable(GL_TEXTURE_GEN_T);
-			glDisable(GL_TEXTURE_GEN_R);
-			glMatrixMode(GL_TEXTURE);
-			glPopMatrix();
-			glMatrixMode(GL_MODELVIEW);
-			glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f);
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			if (bEnvCube)
-				glDisable(GL_TEXTURE_CUBE_MAP);
-			glDisable(GL_TEXTURE_2D);
-			if (eEnvUnit != GL_TEXTURE0)
-			{
-				glActiveTexture(GL_TEXTURE0);
-				glDisable(GL_TEXTURE_2D);
-			}
-		}
-
-		if (glpg_DebugMode() == 2)
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-		if (bLog)
-			fprintf(stderr, "[glpg] grid %ux%u @(%.0f %.0f %.0f) dims=(%.0f %.0f %.0f) "
-			                "%u verts%s %u tris basetex=%u envtex=%u alpha=%s %s\n",
-			        pGrid->m_Width, pGrid->m_Height,
-			        pGrid->GetPos().x, pGrid->GetPos().y, pGrid->GetPos().z,
-			        vDims.x, vDims.y, vDims.z,
-			        nOut, pGrid->m_pValidMask ? " (masked)" : "",
-			        pGrid->m_nIndices / 3, bBaseTex ? nTexName : 0,
-			        bEnvMap ? (unsigned)nEnvName : 0,
-			        bFresnel ? "fresnel" : (bEnvMap ? "envmap-flat" : "opaque-255"),
-			        bAdditive ? "additive" : (bMultiply ? "multiply" : "alpha"));
-
-		return true;
 	}
+
 }
 
-void GLPolyGrid_ArmCensus(void)
+void RPolyGrid_ArmCensus(void)
 {
 	s_bCensus[0] = s_bCensus[1] = false;
 }
 
-void GLPolyGrid_SetCamera(const LTVector &vRight, const LTVector &vUp,
+void RPolyGrid_SetCamera(const LTVector &vRight, const LTVector &vUp,
                           const LTVector &vForward, const LTVector &vPos)
 {
 	s_vCamRight   = vRight;
@@ -937,9 +802,9 @@ void GLPolyGrid_SetCamera(const LTVector &vRight, const LTVector &vUp,
 }
 
 
-void GLPolyGrid_Draw(bool bTranslucent)
+void RPolyGrid_Draw(bool bTranslucent)
 {
-	if (!g_pClientMgr || glpg_DebugMode() == 1)
+	if (!g_pClientMgr || rpg_DebugMode() == 1)
 		return;
 
 	LTLink *pHead = &g_pClientMgr->m_ObjectMgr.m_ObjectLists[OT_POLYGRID].m_Head;
@@ -949,15 +814,10 @@ void GLPolyGrid_Draw(bool bTranslucent)
 	// One-shot inventory per pass, like the [glm] model census.
 	bool bLog = !s_bCensus[bTranslucent ? 1 : 0];
 
-	// Save the states we touch so the rest of the frame is unaffected.
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(bTranslucent ? GL_FALSE : GL_TRUE);
-	// The models and sprite passes both draw unculled; polygrids follow, which
-	// also sidesteps the winding question our LH->RH view flip introduces.
-	// (D3D culls CCW unless PG_NOBACKFACECULL -- water is a single sheet, so
-	// the practical difference is only seen from underneath.)
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_ALPHA_TEST);
+	// Depth/cull/alpha are per-draw parameters carried by REmitState -- there
+	// is no ambient state to save or restore. (D3D culls CCW unless
+	// PG_NOBACKFACECULL; water is a single sheet, so it only shows from
+	// underneath, and the passes around this one all draw unculled.)
 
 	uint32 nDrawn = 0, nTotal = 0, nInvisible = 0, nGroupOff = 0, nOtherPass = 0;
 	for (LTLink *pCur = pHead->m_pNext; pCur != pHead; pCur = pCur->m_pNext)
@@ -967,11 +827,11 @@ void GLPolyGrid_Draw(bool bTranslucent)
 			continue;
 		++nTotal;
 		if (!(pGrid->m_Flags & FLAG_VISIBLE)) { ++nInvisible; continue; }
-		if (g_pGLStruct && g_pGLStruct->IsObjectGroupEnabled &&
-		    !g_pGLStruct->IsObjectGroupEnabled(pGrid->m_nRenderGroup)) { ++nGroupOff; continue; }
+		if (g_pRenderStruct && g_pRenderStruct->IsObjectGroupEnabled &&
+		    !g_pRenderStruct->IsObjectGroupEnabled(pGrid->m_nRenderGroup)) { ++nGroupOff; continue; }
 		if (pGrid->IsTranslucent() != bTranslucent) { ++nOtherPass; continue; }
 
-		if (glpg_DrawGrid(pGrid, bLog))
+		if (rpg_DrawGrid(pGrid, bLog))
 			++nDrawn;
 	}
 
@@ -984,9 +844,5 @@ void GLPolyGrid_Draw(bool bTranslucent)
 		        nTotal, nDrawn, nInvisible, nGroupOff, nOtherPass);
 	}
 
-	GLWorld_RestoreSceneFog();
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
-	glDisable(GL_TEXTURE_2D);
-	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	RWorld_RestoreSceneFog();
 }

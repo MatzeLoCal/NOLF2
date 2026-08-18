@@ -2496,6 +2496,26 @@ const char* const AINodeChangeWeapons::GetWeaponString(CAIHuman* pAIHuman) const
 		return NULL;
 	}
 
-	return (GetWeaponTransition(pAIHuman)->m_szChangeToWeapon.c_str());
+	// ⚠️ GetWeaponTransition() RETURNS NULL AS A NORMAL ANSWER, not just on
+	// error: it yields NULL whenever no weapon set applies -- most often because
+	// the AI already holds the target weapon ("there is no reason to do the
+	// change"), but also when it lacks the required weapon or a weapon name does
+	// not resolve. Dereferencing it unconditionally crashed the game in single
+	// player: CAIGoalAttack::HandleStateHolster -> GetWeaponChangeDescription ->
+	// here, EXC_BAD_ACCESS reading 0x17 -- which is libc++'s short-string size
+	// byte at offset 23 of the std::string at offset 0 of a NULL ChangeWeaponSet.
+	//
+	// NULL is exactly what this call chain already expects: GetWeaponChangeDescription
+	// returns NULL when there is no node, this function returns NULL for a NULL
+	// pAIHuman above, and HandleStateHolster tests the result before using it.
+	// So the AI simply draws without a holster string, which is the same thing
+	// that happens when the node is absent.
+	const ChangeWeaponSet* const pTransition = GetWeaponTransition(pAIHuman);
+	if (!pTransition)
+	{
+		return NULL;
+	}
+
+	return (pTransition->m_szChangeToWeapon.c_str());
 }
 

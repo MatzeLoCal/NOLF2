@@ -132,6 +132,10 @@ static void input_BuildTables(void)
 
 typedef struct { unsigned int m_nVK; unsigned int m_nRepeat; } LTMacKeyEvent;
 
+// Implemented in consolecommands.cpp: pick the next free "<SSFile><n>.bmp" and
+// hand it to RenderStruct::MakeScreenShot.
+extern void c_TakeScreenShot(void);
+
 static LTMacKeyEvent g_aKeyDowns[MAX_QUEUED_KEYS];
 static unsigned int  g_nKeyDowns = 0;
 static unsigned int  g_aKeyUps[MAX_QUEUED_KEYS];
@@ -202,6 +206,15 @@ bool LTMacInput_HandleEvent(void *pNSEvent)
 			if (getenv("LT_TRACE_INPUT"))
 				fprintf(stderr, "[in] EVENT keyUp   mac=%u -> DIK %u / VK %u\n",
 				        nMac, nDIK, g_aMacToVK[nMac]);
+
+			// ★ F8 = SCREENSHOT, on key UP, exactly where Win32 does it
+			// (client.cpp's HookedWindowProc, WM_KEYUP + VK_F8). That file is
+			// not part of this build -- macos_client.cpp replaces it -- so
+			// without this the key reached nothing. The event still continues
+			// to the game's key queue below, as it does on Windows.
+			if (g_aMacToVK[nMac] == 0x77 /* VK_F8 */)
+				c_TakeScreenShot();
+
 			input_PushKeyUp(g_aMacToVK[nMac]);
 			return true;
 		}
@@ -386,4 +399,73 @@ void LTMacInput_ClearAll(void)
 	memset(g_aMouseDown, 0, sizeof(g_aMouseDown));
 	g_nKeyDowns = g_nKeyUps = 0;
 	g_fMouseDX = g_fMouseDY = 0.0f;
+}
+
+// ======================================================================= //
+// KEY ENUMERATION AND NAMING (for the Controls menu / rebinding)
+//
+// kKeyMap above is the authority on WHICH keys exist -- these walk it, so a
+// key added there becomes bindable with no other edit. The display names live
+// in their own table keyed by DIK rather than as a fourth column, so the
+// 100-entry map above did not have to be rewritten to add them.
+// ⚠️ A DIK with no entry here is still bindable; it just shows as "Key <n>".
+// ======================================================================= //
+
+typedef struct { unsigned char m_nDIK; const char *m_pName; } LTMacDIKName;
+
+static const LTMacDIKName kDIKNames[] =
+{
+	{0x1E,"A"},{0x30,"B"},{0x2E,"C"},{0x20,"D"},{0x12,"E"},{0x21,"F"},
+	{0x22,"G"},{0x23,"H"},{0x17,"I"},{0x24,"J"},{0x25,"K"},{0x26,"L"},
+	{0x32,"M"},{0x31,"N"},{0x18,"O"},{0x19,"P"},{0x10,"Q"},{0x13,"R"},
+	{0x1F,"S"},{0x14,"T"},{0x16,"U"},{0x2F,"V"},{0x11,"W"},{0x2D,"X"},
+	{0x15,"Y"},{0x2C,"Z"},
+	{0x0B,"0"},{0x02,"1"},{0x03,"2"},{0x04,"3"},{0x05,"4"},
+	{0x06,"5"},{0x07,"6"},{0x08,"7"},{0x09,"8"},{0x0A,"9"},
+	{0x1C,"Enter"},{0x0F,"Tab"},{0x39,"Space"},{0x0E,"Backspace"},{0x01,"Escape"},
+	{0xD3,"Delete"},{0xC7,"Home"},{0xCF,"End"},{0xC9,"Page Up"},{0xD1,"Page Down"},
+	{0xCB,"Left Arrow"},{0xC8,"Up Arrow"},{0xCD,"Right Arrow"},{0xD0,"Down Arrow"},
+	{0x0C,"-"},{0x0D,"="},{0x1A,"["},{0x1B,"]"},{0x2B,"\\"},
+	{0x27,";"},{0x28,"'"},{0x29,"`"},{0x33,","},{0x34,"."},{0x35,"/"},
+	{0x2A,"Left Shift"},{0x36,"Right Shift"},
+	{0x1D,"Left Control"},{0x9D,"Right Control"},
+	{0x38,"Left Option"},{0xB8,"Right Option"},
+	{0x3B,"F1"},{0x3C,"F2"},{0x3D,"F3"},{0x3E,"F4"},{0x3F,"F5"},{0x40,"F6"},
+	{0x41,"F7"},{0x42,"F8"},{0x43,"F9"},{0x44,"F10"},{0x57,"F11"},{0x58,"F12"},
+	{0x52,"Keypad 0"},{0x4F,"Keypad 1"},{0x50,"Keypad 2"},{0x51,"Keypad 3"},
+	{0x4B,"Keypad 4"},{0x4C,"Keypad 5"},{0x4D,"Keypad 6"},{0x47,"Keypad 7"},
+	{0x48,"Keypad 8"},{0x49,"Keypad 9"},
+	{0x9C,"Keypad Enter"},{0x4A,"Keypad -"},{0x4E,"Keypad +"},
+	{0x37,"Keypad *"},{0xB5,"Keypad /"},{0x53,"Keypad ."},
+};
+
+unsigned int LTMacInput_NumKeys(void)
+{
+	return (unsigned int)(sizeof(kKeyMap) / sizeof(kKeyMap[0]));
+}
+
+unsigned int LTMacInput_KeyDIKAt(unsigned int i)
+{
+	return (i < LTMacInput_NumKeys()) ? kKeyMap[i].m_nDIK : 0;
+}
+
+const char *LTMacInput_DIKName(unsigned int nDIK)
+{
+	for (unsigned i = 0; i < sizeof(kDIKNames)/sizeof(kDIKNames[0]); ++i)
+		if (kDIKNames[i].m_nDIK == nDIK)
+			return kDIKNames[i].m_pName;
+
+	// Unnamed but bindable. Static buffer: the caller copies into its own
+	// struct immediately (DeviceObject::m_ObjectName), so one is enough.
+	static char s_sFallback[24];
+	snprintf(s_sFallback, sizeof(s_sFallback), "Key %u", nDIK);
+	return s_sFallback;
+}
+
+unsigned int LTMacInput_FirstDIKDown(void)
+{
+	for (unsigned i = 1; i < DIK_STATE_SIZE; ++i)
+		if (g_aDIKDown[i])
+			return i;
+	return 0;
 }

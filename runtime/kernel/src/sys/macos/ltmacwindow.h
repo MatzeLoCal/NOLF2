@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------- //
 // macos_window.mm C ABI — the engine's render/display hookup talks to the
-// Cocoa+OpenGL window only through these functions (no Objective-C leaks out).
+// Cocoa+Metal window only through these functions (no Objective-C leaks out).
 // ----------------------------------------------------------------------- //
 #ifndef __LTMACWINDOW_H__
 #define __LTMACWINDOW_H__
@@ -9,14 +9,14 @@
 extern "C" {
 #endif
 
-// Per-frame draw callback the GL view invokes (the engine's render entry).
-typedef void (*LTMacWin_DrawFn)(void* user);
-
 bool  LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen);
-void  LTMacWin_SetDrawCallback(LTMacWin_DrawFn fn, void* user);
 void  LTMacWin_PumpEvents(void);      // non-blocking Cocoa event pump
-void  LTMacWin_SwapBuffers(void);
-void  LTMacWin_MakeCurrent(void);
+
+// ★ METAL: the layer the renderer draws into. Returns an opaque CAMetalLayer*.
+// The window owns the layer; the renderer owns the device, queue and every
+// frame object (see render_a/src/sys/metal/mtl_device.h). Keeping the split
+// here means the window layer needs no Metal knowledge beyond hosting it.
+void* LTMacWin_GetMetalLayer(void);
 bool  LTMacWin_ShouldClose(void);
 // Ask the main loop to exit, exactly as the red close button does. This is the
 // macOS stand-in for Win32's PostQuitMessage(0): the game's menu "Quit" reaches

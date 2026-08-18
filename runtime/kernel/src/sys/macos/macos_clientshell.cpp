@@ -25,7 +25,7 @@
 #include "iltclient.h"
 #include "ltobjectcreate.h"   // full ObjectCreateStruct (headers only forward-declare it)
 #include "icommandlineargs.h"
-#include "sys/gl/gl_worlddata.h"   // world bounds for the bring-up orbit camera
+#include "sys/shared/world_renderdata.h"   // world bounds for the bring-up orbit camera
 #include "ltmacwindow.h"           // LTMacWin_GetSize (actual drawable size)
 
 #include <stdio.h>
@@ -72,7 +72,7 @@ public:
     // renderer draws via RenderScene). Returns false if not possible yet.
     bool RenderWorldFrame()
     {
-        if (!m_bInWorld || !g_pLTClient || !GLWorld_IsLoaded())
+        if (!m_bInWorld || !g_pLTClient || !RWorld_IsLoaded())
             return false;
 
         if (!m_hCamera)
@@ -121,7 +121,7 @@ public:
         // at the world centre. LT_CAM_TARGET="x y z" [+ LT_CAM_DIST=<units>]
         // orbits a fixed point instead (bring-up: aim at a known object).
         LTVector vCenter, vHalfDims;
-        GLWorld_GetBounds(vCenter, vHalfDims);
+        RWorld_GetBounds(vCenter, vHalfDims);
         float fRadius = LTMAX(vHalfDims.x, vHalfDims.z) * 0.30f + 64.0f;
         float fHeight = vHalfDims.y * 0.10f;
 

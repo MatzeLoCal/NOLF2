@@ -60,7 +60,8 @@ protected:
 	uint16			m_nDbgWidth;
 	uint32			m_DbgColor;
 
-	float			m_fScale;
+	float			m_fScale;	// YRatio -- drives the label's y and size
+	float			m_fScaleX;	// XRatio -- drives the label's x only
 	float			m_x;
 	float			m_y;
 	float			m_dbgx;

@@ -1711,15 +1711,34 @@ int CSoundMgr::CompareSoundInstances(const void *pElem1, const void *pElem2)
         if (!pSoundInstance1->GetSoundBuffer() || !pSoundInstance2->GetSoundBuffer())
             return 0;
     
-        // Get the amount of time the sound has been alive.  If there is a pre-delay, then it has low priority
+        // Amount of time the sound has been alive. Negative = still in its
+        // pre-delay, which sorts LAST.
+        //
+        // ⚠️⚠️ THIS IS A STRICT-WEAK-ORDERING FIX, AND IT IS WHY NPC DIALOGUE
+        // VANISHED AT -O2. The original was:
+        //     nTimePlaying1 = ...; if (nTimePlaying1 < 0) return 1;
+        //     nTimePlaying2 = ...; if (nTimePlaying2 < 0) return -1;
+        // When BOTH sounds are in pre-delay, compare(a,b) tests a first and
+        // returns 1, and compare(b,a) tests b first and ALSO returns 1. Two
+        // elements that each compare "greater than" the other is not a strict
+        // weak ordering, and handing that to qsort() is UNDEFINED BEHAVIOUR —
+        // the C standard gives no bound on what qsort may do, including writing
+        // outside the array it was given.
+        //
+        // At -O0 it happened to be survivable. At -O2 it scrambled
+        // m_SoundInstanceList, so instances lost track of their channels: the
+        // steady state became `earshot=7 with-channel=0` with BOTH sample pools
+        // completely free, and one ambient loop re-acquired a voice 2602 times
+        // in 45 seconds while no dialogue ever got a stream at all.
+        // ⇒ The bug was always here; -O2 only stopped hiding it.
         nTimePlaying1 = pSoundInstance1->GetDuration() - pSoundInstance1->GetTimer();
-        if (nTimePlaying1 < 0)
-            return 1;
-
-        // Get the amount of time the sound has been alive.  If there is a pre-delay, then it has low priority
         nTimePlaying2 = pSoundInstance2->GetDuration() - pSoundInstance2->GetTimer();
-        if (nTimePlaying2 < 0)
-            return -1;
+
+        // Exactly one in pre-delay: that one sorts last. Both in pre-delay:
+        // fall through and order them by the same newest-first rule as the
+        // rest, which IS antisymmetric.
+        if ((nTimePlaying1 < 0) != (nTimePlaying2 < 0))
+            return (nTimePlaying1 < 0) ? 1 : -1;
 
         // Neither sound is playing.  Give priority to newest sound.
         if (nTimePlaying1 < nTimePlaying2)

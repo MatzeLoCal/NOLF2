@@ -1,8 +1,8 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_worlddata.cpp
+// MODULE  : world_renderdata.cpp
 //
-// PURPOSE : GL bring-up world renderer. The stream walk below mirrors
+// PURPOSE : BSP world render data -- see world_renderdata.h. The stream walk below mirrors
 //           CD3D_RenderBlock::Load / CD3D_RenderWorld::Load byte for byte
 //           (see d3d_renderblock.cpp) — the world file is a shared format, so
 //           any deviation desyncs everything after it. Retail vertices are
@@ -18,15 +18,16 @@
 #include "renderstruct.h"       // engine services (GetSharedTexture)
 #include "lightmapdefs.h"       // LIGHTMAP_MAX_TOTAL_PIXELS
 #include "lightmap_compress.h"  // DecompressLMData (RLE 24-bit)
-#include "gl_worlddata.h"
-#include "gl_polygrid.h"   // GLPolyGrid_ArmCensus (per-world census)
-#include "gl_model.h"
-#include "gl_texture.h"
-#include "ltmacwindow.h"        // LTMacWin_MakeCurrent (runtime lightmap re-upload)
+#include "world_renderdata.h"
+#include "mtl_device.h"   // MTLDev_IsMetalBackend -- the backend branch
+#include "mtl_world.h"    // the Metal world draw + lightmap backend
+#include "render_polygrid.h"   // RPolyGrid_ArmCensus (per-world census)
+#include "model_renderdata.h"
 #include "setupobject.h"        // LoadSprite (.spr-textured world sections)
 #include "de_sprite.h"          // Sprite/SpriteAnim frame data
+#include "sys/shared/render_texture.h"  // RTex_* — neutral texture queries
+#include "sys/shared/render_globals.h"  // g_pRenderStruct — the engine function table
 
-#include <OpenGL/gl.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>       // fabsf (env-map scale)
@@ -48,85 +49,12 @@ enum
 	kPCShader_Lightmap_Dual    = 9
 };
 
-struct GLWVertex
-{
-	LTVector m_vPos;
-	float    m_fU0, m_fV0;
-	float    m_fU1, m_fV1;
-	uint32   m_nColor;      // D3D ARGB
-	LTVector m_vNormal;
-};
+// ⚠️ RWVertex / RWSection / RWPendingLM / RWSubLM / RWLightGroup /
+// RWBlock / RWorld NOW LIVE IN world_renderdata.h — the Metal renderer walks the
+// same parsed data rather than duplicating this loader. See the header.
 
-struct GLWSection
-{
-	uint8  m_nShaderCode;
-	uint32 m_nTriCount;
-	uint32 m_nStartIndex;   // first index (== triangle start * 3)
-	SharedTexture *m_pTexture;   // base texture (slot 0); NULL = untextured
-	GLuint m_nLMTexture;    // static lightmap (0 = none); UV1, clamped
-	std::string m_sTexName; // slot-0 name, kept for the LT_TRACE_NOTEX census
-};
-
-// A decompressed 24-bit lightmap kept on the CPU: used both as the parse-time
-// scratch and as each section's retained BASE (pre-light-group) lightmap so
-// switchable light groups can be recomposed at runtime.
-struct GLWPendingLM
-{
-	uint32 m_nWidth, m_nHeight;
-	std::vector<uint8> m_aData;   // empty = section has no lightmap
-
-	GLWPendingLM() : m_nWidth(0), m_nHeight(0) {}
-};
-
-// One light group's RLE contribution to one section's lightmap.
-struct GLWSubLM
-{
-	uint32 m_nSection;
-	uint32 m_nLeft, m_nTop, m_nWidth, m_nHeight;
-	std::vector<uint8> m_aData;   // RLE intensity stream (0xFF = run escape)
-};
-
-// A named light group in a block: current color + its sub-lightmaps.
-// m_nID is the 31-polynomial hash of the group name — identical to
-// SRBLightGroup's operator>> so the engine's SetLightGroupColor IDs match.
-struct GLWLightGroup
-{
-	uint32   m_nID;
-	LTVector m_vColor;    // CURRENT color; starts at the authored default
-	std::vector<GLWSubLM> m_aSubLMs;
-	// RLE per-vertex intensity stream over the WHOLE block's vertex array
-	// (CD3D_RenderBlock format: byte != 0 -> intensity for this vertex;
-	// byte == 0 -> next byte is a skip count). This is how a light group
-	// reaches VERTEX-LIT (Gouraud) surfaces, i.e. how a light switch can
-	// affect the majority of the world that carries no lightmap.
-	std::vector<uint8> m_aVertexIntensities;
-};
-
-struct GLWBlock
-{
-	LTVector m_vCenter, m_vHalfDims;
-	std::vector<GLWSection> m_aSections;
-	std::vector<GLWVertex>  m_aVertices;
-	std::vector<uint32>     m_aIndices;
-	// Retained for runtime light-group recomposition (switchable lights).
-	std::vector<GLWPendingLM>  m_aBaseLMs;      // per section; may be empty
-	std::vector<GLWLightGroup> m_aLightGroups;
-	// Composed per-vertex color = baked m_nColor + sum over light groups of
-	// (group color x RLE intensity), clamped -- CD3D_RenderBlock::
-	// UpdateLightingData's exact math. RGB triplets, ready for glColor3ub.
-	std::vector<uint8>         m_aComposedColor;
-};
-
-struct GLWorld
-{
-	std::vector<GLWBlock> m_aBlocks;
-	char m_sName[64 + 1];   // world-model name (MAX_WORLDNAME_LEN); "" = main world
-
-	GLWorld() { m_sName[0] = 0; }
-};
-
-static GLWorld           *g_pMainWorld = 0;
-static std::vector<GLWorld*> g_aWorldModels;   // parsed, not drawn yet (doors etc.)
+static RWorld           *g_pMainWorld = 0;
+static std::vector<RWorld*> g_aWorldModels;   // parsed, not drawn yet (doors etc.)
 static uint32             g_nTotalVerts = 0, g_nTotalTris = 0;
 
 
@@ -138,7 +66,7 @@ static uint32             g_nTotalVerts = 0, g_nTotalTris = 0;
 // byte-for-byte CD3D_RenderBlock::UpdateLightingData. Recomputed whenever a
 // group's color changes; the RLE stream spans the block's ENTIRE vertex array.
 // ---------------------------------------------------------------------------
-static void glw_ComposeVertexColors(GLWBlock &cBlock)
+static void rw_ComposeVertexColors(RWBlock &cBlock)
 {
 	const size_t nVerts = cBlock.m_aVertices.size();
 	cBlock.m_aComposedColor.resize(nVerts * 3);
@@ -154,7 +82,7 @@ static void glw_ComposeVertexColors(GLWBlock &cBlock)
 
 	for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 	{
-		const GLWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+		const RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
 		if (cGroup.m_aVertexIntensities.empty())
 			continue;
 
@@ -204,22 +132,24 @@ static void glw_ComposeVertexColors(GLWBlock &cBlock)
 // same Siberia spot: bright overcast there, near-night here). GL equivalent:
 // GL_COMBINE with GL_RGB_SCALE 2 on the relevant stage.
 // ---------------------------------------------------------------------------
-static bool glw_SaturateOn()
+bool RWorld_SaturateOn()
 {
 	static int s_nSaturate = -1;
 	if (s_nSaturate < 0)
 	{
 		s_nSaturate = 1;   // retail config default
-		if (g_pGLStruct && g_pGLStruct->GetParameter && g_pGLStruct->GetParameterValueFloat)
+		if (g_pRenderStruct && g_pRenderStruct->GetParameter && g_pRenderStruct->GetParameterValueFloat)
 		{
-			HLTPARAM hParam = g_pGLStruct->GetParameter((char*)"Saturate");
+			HLTPARAM hParam = g_pRenderStruct->GetParameter((char*)"Saturate");
 			if (hParam)
-				s_nSaturate = (g_pGLStruct->GetParameterValueFloat(hParam) != 0.0f) ? 1 : 0;
+				s_nSaturate = (g_pRenderStruct->GetParameterValueFloat(hParam) != 0.0f) ? 1 : 0;
 		}
 		fprintf(stderr, "[glw] Saturate (2x world lighting): %s\n", s_nSaturate ? "ON" : "OFF");
 	}
 	return s_nSaturate != 0;
 }
+
+static inline bool rw_SaturateOn() { return RWorld_SaturateOn(); }
 
 // ---------------------------------------------------------------------------
 // ★★ WORLD-SURFACE ENVIRONMENT MAPPING (§40c)
@@ -249,43 +179,25 @@ namespace
 	// camera->world rotation.
 	LTVector s_vEnvRight(1, 0, 0), s_vEnvUp(0, 1, 0), s_vEnvForward(0, 0, 1);
 
-	float glw_GetConVar(const char *pName, float fDefault);   // defined with the fog block
+	float rw_GetConVar(const char *pName, float fDefault);   // defined with the fog block
 
-	bool glw_EnvMapDisabled()
+	bool rw_EnvMapDisabled()
 	{
 		static int s_n = -1;
 		if (s_n < 0) { const char *p = getenv("LT_NO_ENVMAP"); s_n = (p && p[0] && p[0] != '0') ? 1 : 0; }
 		return s_n != 0;
 	}
 
-	bool glw_DetailDisabled()
+	bool rw_DetailDisabled()
 	{
 		static int s_n = -1;
 		if (s_n < 0) { const char *p = getenv("LT_NO_DETAIL"); s_n = (p && p[0] && p[0] != '0') ? 1 : 0; }
 		return s_n != 0;
 	}
 
-	// GL_ATI_texture_env_combine3 gives GL_MODULATE_ADD_ATI (arg0*arg2 + arg1),
-	// which is the only fixed-function way to reproduce EnvMapAlpha's
-	// D3DTOP_MODULATEALPHA_ADDCOLOR (base.rgb + base.a * env.rgb) in one pass.
-	// Verified present on Apple's GL 2.1 (M2, "2.1 Metal - 90.5"); if it ever is
-	// not, EnvMapAlpha falls back to a plain modulate rather than drawing wrong.
-	bool glw_HaveCombine3()
-	{
-		static int s_n = -1;
-		if (s_n < 0)
-		{
-			const char *pExt = (const char*)glGetString(GL_EXTENSIONS);
-			s_n = (pExt && strstr(pExt, "GL_ATI_texture_env_combine3")) ? 1 : 0;
-			if (!s_n)
-				fprintf(stderr, "[glenv] GL_ATI_texture_env_combine3 missing — "
-				                "EnvMapAlpha will modulate instead of add\n");
-		}
-		return s_n != 0;
-	}
 }
 
-void GLWorld_SetCamera(const LTVector &vRight, const LTVector &vUp,
+void RWorld_SetCamera(const LTVector &vRight, const LTVector &vUp,
                        const LTVector &vForward)
 {
 	s_vEnvRight   = vRight;
@@ -301,19 +213,19 @@ namespace
 	// slot -- so they can share a texture unit and a code path. Only the
 	// coordinate source differs: a reflection is generated (texgen), a detail
 	// layer is the base UV run through a scale/rotate.
-	enum EGLWSecondKind { kSecond_None = 0, kSecond_EnvMap, kSecond_Detail };
-	enum EGLWEnvMode    { kEnv_None = 0, kEnv_Modulate, kEnv_AddSigned, kEnv_AlphaAdd };
+	enum ERWSecondKind { kSecond_None = 0, kSecond_EnvMap, kSecond_Detail };
+	enum ERWEnvMode    { kEnv_None = 0, kEnv_Modulate, kEnv_AddSigned, kEnv_AlphaAdd };
 
-	struct GLWEnvSetup
+	struct RWEnvSetup
 	{
 		SharedTexture  *m_pTex;      // the linked reflection / detail texture
-		GLuint          m_nName;     // its GL name (0 = unusable -> no layer)
+		unsigned        m_nName;     // nonzero = resolved (0 = unusable -> no layer)
 		bool            m_bCube;     // DTX_CUBEMAP: 3-coord transform, cube target
-		EGLWSecondKind  m_eKind;
-		EGLWEnvMode     m_eMode;
+		ERWSecondKind  m_eKind;
+		ERWEnvMode     m_eMode;
 		float           m_fScale, m_fCos, m_fSin;   // detail placement
 
-		GLWEnvSetup()
+		RWEnvSetup()
 			: m_pTex(0), m_nName(0), m_bCube(false), m_eKind(kSecond_None),
 			  m_eMode(kEnv_None), m_fScale(1.0f), m_fCos(1.0f), m_fSin(0.0f) {}
 		bool Active() const { return m_eKind != kSecond_None && m_nName != 0; }
@@ -341,9 +253,9 @@ namespace
 	// most COMMON of these types -- 125 of C01S01's 127 authored linked textures,
 	// i.e. essentially every stone, wood, stucco and fabric surface in Japan.
 	// Its stage layout is identical to the env map's; only the coordinates differ.
-	GLWEnvSetup glw_ResolveEnvMap(const GLWSection &cSection, bool bAuthoredLightmap)
+	RWEnvSetup rw_ResolveEnvMap(const RWSection &cSection, bool bAuthoredLightmap)
 	{
-		GLWEnvSetup cOut;
+		RWEnvSetup cOut;
 		if (!cSection.m_pTexture)
 			return cOut;
 
@@ -354,12 +266,12 @@ namespace
 			case eSharedTexType_DOT3EnvBumpMap:
 			case eSharedTexType_EnvMapAlpha:
 			{
-				if (glw_EnvMapDisabled())
+				if (rw_EnvMapDisabled())
 					return cOut;
 				// "EnvMapEnable" -- retail's autoexec.cfg ships it as 1.
 				static int s_nEnvEnable = -1;
 				if (s_nEnvEnable < 0)
-					s_nEnvEnable = (glw_GetConVar("EnvMapEnable", 1.0f) != 0.0f) ? 1 : 0;
+					s_nEnvEnable = (rw_GetConVar("EnvMapEnable", 1.0f) != 0.0f) ? 1 : 0;
 				if (!s_nEnvEnable)
 					return cOut;
 
@@ -367,7 +279,17 @@ namespace
 				{
 					if (bAuthoredLightmap)
 						return cOut;             // see the ⚠️ above
-					cOut.m_eMode = glw_HaveCombine3() ? kEnv_AlphaAdd : kEnv_Modulate;
+					// ★ ALWAYS AlphaAdd. This used to ask GL for
+					// GL_ATI_texture_env_combine3 -- a query that needs a GL
+					// CONTEXT. On the Metal path there is none, so glGetString
+					// returned NULL, the extension read as "missing", and every
+					// EnvMapAlpha surface silently fell back to Modulate while the
+					// GL reference (which had the extension -- verified on Apple's
+					// GL 2.1 / M2) used AlphaAdd. Textbook lesson-5 bug: a GL-only
+					// call reached from shared code. The fixed-function extension
+					// was only ever a way to EMULATE D3DTOP_MODULATEALPHA_ADDCOLOR;
+					// the Metal shader implements it directly and has no such limit.
+					cOut.m_eMode = kEnv_AlphaAdd;
 				}
 				else
 				{
@@ -376,7 +298,7 @@ namespace
 					// -- retail's config does not override it, so the shipping look is
 					// ADDSIGNED (base + env - 0.5), not a multiply. Assuming MODULATE
 					// here would have made every reflection far too dark.
-					cOut.m_eMode = (glw_GetConVar("EnvMapAdd", 1.0f) != 0.0f)
+					cOut.m_eMode = (rw_GetConVar("EnvMapAdd", 1.0f) != 0.0f)
 					             ? kEnv_AddSigned : kEnv_Modulate;
 				}
 				cOut.m_eKind = kSecond_EnvMap;
@@ -385,13 +307,13 @@ namespace
 
 			case eSharedTexType_Detail:
 			{
-				if (glw_DetailDisabled())
+				if (rw_DetailDisabled())
 					return cOut;
 				// "DetailTextures" (retail config: 1). AllocShader falls back to
 				// eShader_Gouraud_Texture when it is off, i.e. base texture only.
 				static int s_nDetailEnable = -1;
 				if (s_nDetailEnable < 0)
-					s_nDetailEnable = (glw_GetConVar("DetailTextures", 1.0f) != 0.0f) ? 1 : 0;
+					s_nDetailEnable = (rw_GetConVar("DetailTextures", 1.0f) != 0.0f) ? 1 : 0;
 				if (!s_nDetailEnable)
 					return cOut;
 
@@ -400,7 +322,7 @@ namespace
 				// detail texture is authored around mid-grey so that
 				// `base + detail - 0.5` perturbs the surface without tinting it;
 				// MODULATE would darken every one of these surfaces instead.
-				cOut.m_eMode = (glw_GetConVar("DetailTextureAdd", 1.0f) != 0.0f)
+				cOut.m_eMode = (rw_GetConVar("DetailTextureAdd", 1.0f) != 0.0f)
 				             ? kEnv_AddSigned : kEnv_Modulate;
 				cOut.m_eKind = kSecond_Detail;
 
@@ -408,9 +330,15 @@ namespace
 				// "DetailTextureScale" -- which retail's autoexec.cfg overrides to
 				// 1.0, NOT the renderer default of 0.2. Reading the renderer
 				// default here would tile the detail five times too coarsely.
+				// ⚠️ NEUTRAL QUERY. GLTex_GetDetailParams reads the GL entry off
+				// SharedTexture::m_pRenderData, which under Metal holds an
+				// MTLTexEntry -- so the authored scale and rotation came back as
+				// GARBAGE and every detail layer was placed wrongly. Third time
+				// this family has bitten (§88, §89); the neutral accessors exist
+				// precisely so shared code cannot reach the GL ones.
 				float fTexScale = 1.0f, fCos = 1.0f, fSin = 0.0f;
-				GLTex_GetDetailParams(cSection.m_pTexture, fTexScale, fCos, fSin);
-				cOut.m_fScale = fTexScale * glw_GetConVar("DetailTextureScale", 1.0f);
+				RTex_GetDetailParams(cSection.m_pTexture, fTexScale, fCos, fSin);
+				cOut.m_fScale = fTexScale * rw_GetConVar("DetailTextureScale", 1.0f);
 				cOut.m_fCos   = fCos;
 				cOut.m_fSin   = fSin;
 				break;
@@ -434,8 +362,11 @@ namespace
 			cOut.m_eKind = kSecond_None;
 			return cOut;
 		}
-		cOut.m_nName = GLTex_GetName(cOut.m_pTex);
-		cOut.m_bCube = cOut.IsEnv() && GLTex_IsCubeMap(cOut.m_pTex);
+		// Neutral queries again. m_nName is now purely "did this texture
+		// resolve?" — it carried the GL texture name when there was a GL draw
+		// to hand it to, and the `if (!cOut.m_nName)` below is what it is for.
+		cOut.m_nName = RTex_IsValid(cOut.m_pTex) ? 1u : 0u;
+		cOut.m_bCube = cOut.IsEnv() && RTex_IsCubeMap(cOut.m_pTex);
 		if (!cOut.m_nName)
 			cOut.m_eKind = kSecond_None;
 		return cOut;
@@ -450,200 +381,6 @@ namespace
 	// view matrix negates the forward row to bridge them (nullrender.cpp:402).
 	// Without the negation the reflection is mirrored front-to-back and slides
 	// the wrong way as the player turns. Same trap as the water in §38.
-	void glw_BeginEnvUnit(GLenum eUnit, const GLWEnvSetup &cEnv, bool bLastUnitSaturate)
-	{
-		glActiveTexture(eUnit);
-		if (cEnv.m_bCube)
-		{
-			glDisable(GL_TEXTURE_2D);
-			glEnable(GL_TEXTURE_CUBE_MAP);
-			glBindTexture(GL_TEXTURE_CUBE_MAP, cEnv.m_nName);
-		}
-		else
-		{
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, cEnv.m_nName);
-			// A reflection lookup must never wrap: the coordinates leave 0..1
-			// wherever the reflection points away from the mapped hemisphere.
-			// A DETAIL layer is the exact opposite -- its whole purpose is to tile
-			// many times across the surface, so it must REPEAT.
-			const GLint eWrap = cEnv.IsEnv() ? GL_CLAMP_TO_EDGE : GL_REPEAT;
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, eWrap);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, eWrap);
-		}
-
-		float aTex[16];
-		memset(aTex, 0, sizeof(aTex));
-
-		if (!cEnv.IsEnv())
-		{
-			// ── DETAIL ──────────────────────────────────────────────────────
-			// The coordinates are the BASE UVs put through the authored
-			// scale+rotation; CRenderShader_*_Detail::TranslateVertices bakes
-			// this per vertex, but it is a plain 2x2 so a texture matrix does it
-			// for free and leaves the vertex loop alone:
-			//     u1 = u0*S*cos + v0*S*(-sin)
-			//     v1 = u0*S*sin + v0*S*cos
-			// The caller feeds UV0 to this unit via glMultiTexCoord2f.
-			const float S = cEnv.m_fScale;
-			aTex[0] =  S * cEnv.m_fCos;  aTex[4] = S * -cEnv.m_fSin;
-			aTex[1] =  S * cEnv.m_fSin;  aTex[5] = S *  cEnv.m_fCos;
-			aTex[10] = 1.0f;
-			aTex[15] = 1.0f;
-			glMatrixMode(GL_TEXTURE);
-			glPushMatrix();
-			glLoadMatrixf(aTex);
-			glMatrixMode(GL_MODELVIEW);
-		}
-		else
-		{
-
-		glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-		glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-		glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-		glEnable(GL_TEXTURE_GEN_S);
-		glEnable(GL_TEXTURE_GEN_T);
-		glEnable(GL_TEXTURE_GEN_R);
-
-		const LTVector &vR = s_vEnvRight, &vU = s_vEnvUp, &vF = s_vEnvForward;
-		if (cEnv.m_bCube)
-		{
-			// D3DTTFF_COUNT3 with mScale = m_mWorldEnvMap: the raw camera->world
-			// rotation, all three coordinates, no scale or bias.
-			aTex[0] = vR.x; aTex[4] = vU.x; aTex[8]  = -vF.x;
-			aTex[1] = vR.y; aTex[5] = vU.y; aTex[9]  = -vF.y;
-			aTex[2] = vR.z; aTex[6] = vU.z; aTex[10] = -vF.z;
-			aTex[15] = 1.0f;
-		}
-		else
-		{
-			// D3DTTFF_COUNT2 with mScale = [fScale 0 0 .5; 0 fScale 0 .5; ...]
-			// * m_mWorldEnvMap, i.e. u = fScale*Rworld.x + 0.5,
-			// v = fScale*Rworld.y + 0.5. ⚠️ x and Y, not x and z -- the polygrid's
-			// own transform (§38) projects XZ, because drawpolygrid.cpp builds a
-			// different matrix. Do not copy that one here.
-			float fScale = glw_GetConVar("EnvScale", 1.0f);
-			fScale = (fabsf(fScale) > 0.001f) ? (-0.5f / fScale) : fScale;
-			aTex[0] = fScale * vR.x; aTex[4] = fScale * vU.x; aTex[8] = -fScale * vF.x; aTex[12] = 0.5f;
-			aTex[1] = fScale * vR.y; aTex[5] = fScale * vU.y; aTex[9] = -fScale * vF.y; aTex[13] = 0.5f;
-			aTex[15] = 1.0f;
-		}
-		glMatrixMode(GL_TEXTURE);
-		glPushMatrix();
-		glLoadMatrixf(aTex);
-		glMatrixMode(GL_MODELVIEW);
-
-		}   // env-map coordinate setup
-
-		// The combiner: D3D stage 1's COLOROP against CURRENT (the base texture)
-		// and TEXTURE (the reflection or detail layer). ALPHA is passed through
-		// untouched (D3D: ALPHAOP = SELECTARG2(CURRENT)) -- the second layer's own
-		// alpha must never reach the fragment, or a detail texture or an env map
-		// with an alpha channel would silently dim or discard the surface.
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-		switch (cEnv.m_eMode)
-		{
-			case kEnv_AlphaAdd:
-				// D3DTOP_MODULATEALPHA_ADDCOLOR = arg1.rgb + arg1.a * arg2.rgb.
-				// GL_MODULATE_ADD_ATI = arg0*arg2 + arg1.
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE_ADD_ATI);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PREVIOUS);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_PREVIOUS);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
-				break;
-			case kEnv_AddSigned:
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_ADD_SIGNED);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-				break;
-			default:
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-				break;
-		}
-		glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, bLastUnitSaturate ? 2.0f : 1.0f);
-		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-		glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-		glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-
-		// ⚠️ ALWAYS LEAVE UNIT 0 SELECTED. glTexEnv/glTexParameter act on the
-		// ACTIVE unit, and the stage-0 combiner is configured after this call --
-		// leaving another unit active silently redirected the base-texture setup
-		// onto this one, which then sampled at the default (0,0) texcoord and
-		// painted flat white and black patches over half the room.
-		glActiveTexture(GL_TEXTURE0);
-	}
-
-	// d3d_UnsetEnvMapTransform's job. A leaked texture matrix or texgen enable
-	// corrupts every later pass in the frame -- the models, the sprites and the
-	// player-view weapon all run through units 0/1 afterwards.
-	void glw_EndEnvUnit(GLenum eUnit, const GLWEnvSetup &cEnv)
-	{
-		glActiveTexture(eUnit);
-		if (cEnv.IsEnv())
-		{
-			glDisable(GL_TEXTURE_GEN_S);
-			glDisable(GL_TEXTURE_GEN_T);
-			glDisable(GL_TEXTURE_GEN_R);
-		}
-		glMatrixMode(GL_TEXTURE);
-		glPopMatrix();
-		glMatrixMode(GL_MODELVIEW);
-		glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f);
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-		if (cEnv.m_bCube)
-			glDisable(GL_TEXTURE_CUBE_MAP);
-		glDisable(GL_TEXTURE_2D);
-		glActiveTexture(GL_TEXTURE0);
-	}
-
-	// The final stage: D3D's stage 2, MODULATE(CURRENT, DIFFUSE) -- MODULATE2X
-	// under Saturate. It exists as its own unit because the EnvMapAlpha ADD and
-	// the ADDSIGNED op are NOT commutative with the diffuse modulate: retail
-	// computes (base ⊕ env) * diffuse, and folding diffuse into unit 0 instead
-	// would give base*diffuse ⊕ env, which is a different picture.
-	//
-	// A fixed-function unit is bypassed entirely when it has no enabled texture,
-	// so the base texture is bound here again purely to keep the unit live; the
-	// combiner never references GL_TEXTURE.
-	void glw_BeginDiffuseUnit(GLenum eUnit, GLuint nAnyTexName, bool bSaturate)
-	{
-		glActiveTexture(eUnit);
-		glEnable(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, nAnyTexName);
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-		glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-		glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-		glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-		glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-		glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, bSaturate ? 2.0f : 1.0f);
-		// The object alpha rides the vertex colour (translucent world models),
-		// and the alpha test reads the base texture's -- so both must survive.
-		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-		glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-		glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-		glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-		glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
-		glActiveTexture(GL_TEXTURE0);   // see the warning in glw_BeginEnvUnit
-	}
-
-	void glw_EndDiffuseUnit(GLenum eUnit)
-	{
-		glActiveTexture(eUnit);
-		glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f);
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-		glDisable(GL_TEXTURE_2D);
-		glActiveTexture(GL_TEXTURE0);
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -665,7 +402,7 @@ namespace
 	// This is how the "vars do not exist at all" root (see gl_convar.cpp) was
 	// found: FogEnable resolved (autoexec.cfg sets it) while FogR/G/B/NearZ/FarZ
 	// all reported MISSING.
-	bool glw_TraceFog()
+	bool rw_TraceFog()
 	{
 		static int s_nTrace = -1;
 		if (s_nTrace < 0)
@@ -673,34 +410,38 @@ namespace
 		return s_nTrace != 0;
 	}
 
-	float glw_GetConVar(const char *pName, float fDefault)
+	float rw_GetConVar(const char *pName, float fDefault)
 	{
-		if (!g_pGLStruct || !g_pGLStruct->GetParameter || !g_pGLStruct->GetParameterValueFloat)
+		if (!g_pRenderStruct || !g_pRenderStruct->GetParameter || !g_pRenderStruct->GetParameterValueFloat)
 			return fDefault;
-		HLTPARAM hParam = g_pGLStruct->GetParameter((char*)pName);
+		HLTPARAM hParam = g_pRenderStruct->GetParameter((char*)pName);
 		if (!hParam)
 		{
-			if (glw_TraceFog())
+			if (rw_TraceFog())
 				fprintf(stderr, "[glw] convar '%s' MISSING, using %.1f\n", pName, fDefault);
 			return fDefault;
 		}
-		float fVal = g_pGLStruct->GetParameterValueFloat(hParam);
-		if (glw_TraceFog())
+		float fVal = g_pRenderStruct->GetParameterValueFloat(hParam);
+		if (rw_TraceFog())
 			fprintf(stderr, "[glw] convar '%s' = %.3f\n", pName, fVal);
 		return fVal;
 	}
 
 	bool  s_bFogOn = false;
 	float s_fFogR = 1.0f, s_fFogG = 1.0f, s_fFogB = 1.0f;
+	// The live RANGE too. The per-object fog override (§31) has to re-state the
+	// whole fog to the Metal backend, which is handed near/far explicitly rather
+	// than inheriting them from GL state the way glFogf left them standing.
+	float s_fFogNear = 0.0f, s_fFogFar = 2000.0f;
 }
 
-void GLWorld_ApplyFog(bool bSky)
+void RWorld_ApplyFog(bool bSky)
 {
 	// Engine default is FogEnable 0; the level turns it on.
-	s_bFogOn = (glw_GetConVar("FogEnable", 0.0f) != 0.0f);
+	s_bFogOn = (rw_GetConVar("FogEnable", 0.0f) != 0.0f);
 
-	float fNear = glw_GetConVar(bSky ? "SkyFogNearZ" : "FogNearZ", 0.0f);
-	float fFar  = glw_GetConVar(bSky ? "SkyFogFarZ"  : "FogFarZ",  2000.0f);
+	float fNear = rw_GetConVar(bSky ? "SkyFogNearZ" : "FogNearZ", 0.0f);
+	float fFar  = rw_GetConVar(bSky ? "SkyFogFarZ"  : "FogFarZ",  2000.0f);
 
 	// d3d_ReadExtraConsoleVariables kills fog when the range is degenerate
 	// ("This handles a TNT bug if the near and far Z are the same") -- and
@@ -708,24 +449,36 @@ void GLWorld_ApplyFog(bool bSky)
 	if (fFar <= fNear)
 		s_bFogOn = false;
 
+	// ★ LT_NO_FOG=1 -- bisection only: "is this difference the fog term?".
+	// ⚠️ IT MUST BE RESOLVED HERE, ABOVE THE BACKEND BRANCH. It used to be
+	// applied inside MTLWorld_SetFog, so it turned fog off under Metal and left
+	// the GL reference build fogging -- every measurement taken with it was a
+	// fogged frame against an unfogged one. An isolation switch that only one
+	// backend obeys is worse than no switch at all: it produces numbers.
+	static int s_nNoFog = -1;
+	if (s_nNoFog < 0)
+	{
+		const char *pNoFog = getenv("LT_NO_FOG");
+		s_nNoFog = (pNoFog && pNoFog[0] && pNoFog[0] != '0') ? 1 : 0;
+	}
+	if (s_nNoFog)
+		s_bFogOn = false;
+
 	if (!s_bFogOn)
 	{
-		glDisable(GL_FOG);
+		MTLWorld_SetFog(false, 0, 0, 0, 0, 1);
 		return;
 	}
 
-	s_fFogR = glw_GetConVar("FogR", 255.0f) / 255.0f;
-	s_fFogG = glw_GetConVar("FogG", 255.0f) / 255.0f;
-	s_fFogB = glw_GetConVar("FogB", 255.0f) / 255.0f;
+	s_fFogR = rw_GetConVar("FogR", 255.0f) / 255.0f;
+	s_fFogG = rw_GetConVar("FogG", 255.0f) / 255.0f;
+	s_fFogB = rw_GetConVar("FogB", 255.0f) / 255.0f;
+	s_fFogNear = fNear;
+	s_fFogFar  = fFar;
 
-	const GLfloat aColor[4] = { s_fFogR, s_fFogG, s_fFogB, 1.0f };
-	glFogi(GL_FOG_MODE, GL_LINEAR);
-	glFogfv(GL_FOG_COLOR, aColor);
-	glFogf(GL_FOG_START, fNear);
-	glFogf(GL_FOG_END, fFar);
-	// D3D's D3DRS_FOGTABLEMODE is per-pixel; GL_FOG_HINT is the closest ask.
-	glHint(GL_FOG_HINT, GL_NICEST);
-	glEnable(GL_FOG);
+	// The same GL_LINEAR range fog the fixed-function path asked for, evaluated
+	// per fragment in the world shader (§103 -- per VERTEX was the fog bug).
+	MTLWorld_SetFog(true, s_fFogR, s_fFogG, s_fFogB, fNear, fFar);
 
 	// ★ Report every CHANGE, not just the first call: these vars arrive late
 	// (WorldProperties' InitialUpdate) and change again per volume brush, so a
@@ -745,55 +498,50 @@ void GLWorld_ApplyFog(bool bSky)
 	}
 }
 
-void GLWorld_DisableFog()
+void RWorld_DisableFog()
 {
-	glDisable(GL_FOG);
+	s_bFogOn = false;
+	MTLWorld_SetFog(false, 0, 0, 0, 0, 1);
 }
 
-bool GLWorld_GetFogColor(float &fR, float &fG, float &fB)
+bool RWorld_GetFogColor(float &fR, float &fG, float &fB)
 {
 	fR = s_fFogR; fG = s_fFogG; fB = s_fFogB;
 	return s_bFogOn;
 }
 
-void GLWorld_ApplyObjectFog(uint32 nFlags, uint32 nFlags2)
+void RWorld_ApplyObjectFog(uint32 nFlags, uint32 nFlags2)
 {
 	if (!s_bFogOn || (nFlags & FLAG_FOGDISABLE))
 	{
-		glDisable(GL_FOG);
+		MTLWorld_SetFog(false, 0, 0, 0, s_fFogNear, s_fFogFar);
 		return;
 	}
 
-	GLfloat aColor[4] = { s_fFogR, s_fFogG, s_fFogB, 1.0f };
+	float fR = s_fFogR, fG = s_fFogG, fB = s_fFogB;
 	if (nFlags2 & FLAG2_ADDITIVE)
-	{
-		aColor[0] = aColor[1] = aColor[2] = 0.0f;
-	}
+		fR = fG = fB = 0.0f;
 	else if (nFlags2 & FLAG2_MULTIPLY)
-	{
-		aColor[0] = aColor[1] = aColor[2] = 1.0f;
-	}
-	glFogfv(GL_FOG_COLOR, aColor);
-	glEnable(GL_FOG);
+		fR = fG = fB = 1.0f;
+
+	MTLWorld_SetFog(true, fR, fG, fB, s_fFogNear, s_fFogFar);
 }
 
-void GLWorld_RestoreSceneFog()
+void RWorld_RestoreSceneFog()
 {
 	if (!s_bFogOn)
 	{
-		glDisable(GL_FOG);
+		MTLWorld_SetFog(false, 0, 0, 0, s_fFogNear, s_fFogFar);
 		return;
 	}
-	const GLfloat aColor[4] = { s_fFogR, s_fFogG, s_fFogB, 1.0f };
-	glFogfv(GL_FOG_COLOR, aColor);
-	glEnable(GL_FOG);
+	MTLWorld_SetFog(true, s_fFogR, s_fFogG, s_fFogB, s_fFogNear, s_fFogFar);
 }
 
 // ---------------------------------------------------------------------------
 // Stream helpers (parse-and-discard for the parts the GL path doesn't keep).
 // ---------------------------------------------------------------------------
 
-static void glw_SkipBytes(ILTStream *pStream, uint32 nBytes)
+static void rw_SkipBytes(ILTStream *pStream, uint32 nBytes)
 {
 	// ILTStream has no generic skip; seek relative to the current position.
 	uint32 nPos = 0;
@@ -802,14 +550,14 @@ static void glw_SkipBytes(ILTStream *pStream, uint32 nBytes)
 }
 
 // SRBGeometryPoly: u8 vertCount, vertCount * LTVector, plane (normal + dist).
-static void glw_SkipGeometryPoly(ILTStream *pStream)
+static void rw_SkipGeometryPoly(ILTStream *pStream)
 {
 	uint8 nVertCount;
 	*pStream >> nVertCount;
-	glw_SkipBytes(pStream, (uint32)nVertCount * sizeof(LTVector) + sizeof(LTVector) + sizeof(float));
+	rw_SkipBytes(pStream, (uint32)nVertCount * sizeof(LTVector) + sizeof(LTVector) + sizeof(float));
 }
 
-// (Light groups are parsed and composed in glw_LoadBlock — see the loader.)
+// (Light groups are parsed and composed in rw_LoadBlock — see the loader.)
 
 // ---------------------------------------------------------------------------
 // Lightmap upload. The stream carries the RLE-compressed 24-bit RGB map; the
@@ -817,7 +565,7 @@ static void glw_SkipGeometryPoly(ILTStream *pStream)
 // the file is relative to the padded size — replicate that exactly.
 // ---------------------------------------------------------------------------
 
-static uint32 glw_NextPow2(uint32 n)
+static uint32 rw_NextPow2(uint32 n)
 {
 	uint32 nPow2 = 1;
 	while (nPow2 < n)
@@ -825,39 +573,35 @@ static uint32 glw_NextPow2(uint32 n)
 	return nPow2;
 }
 
-static GLuint glw_CreateLightmapFromRGB(const uint8 *pData, uint32 nWidth, uint32 nHeight)
+// --- the backend seam (declared in world_renderdata.h) ------------------------
+// The loader owns WHEN a lightmap exists; the backend owns WHAT it is. Metal
+// pads to pow2 exactly as the GL path does, because UV1 in the file is already
+// relative to the padded size (D3D never rescaled it).
+uintptr_t RWorldLM_Create(const uint8 *pBGR, uint32 nWidth, uint32 nHeight)
 {
-	if (!pData || !nWidth || !nHeight)
-		return 0;
+	return MTLWorld_CreateLightmap(pBGR, nWidth, nHeight, rw_NextPow2(nWidth),
+	                               rw_NextPow2(nHeight));
+}
 
-	uint32 nRealWidth  = glw_NextPow2(nWidth);
-	uint32 nRealHeight = glw_NextPow2(nHeight);
+void RWorldLM_Update(uintptr_t hTex, const uint8 *pBGR, uint32 nWidth, uint32 nHeight)
+{
+	if (!hTex || !pBGR)
+		return;
+	MTLWorld_UpdateLightmap(hTex, pBGR, nWidth, nHeight);
+}
 
-	GLuint nName = 0;
-	glGenTextures(1, &nName);
-	if (!nName)
-		return 0;
-	glBindTexture(GL_TEXTURE_2D, nName);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	// Allocate the padded pow2 surface (contents undefined, like D3D), then
-	// fill the used region. 24-bit rows are the D3D byte order (B,G,R).
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, nRealWidth, nRealHeight, 0,
-	             GL_BGR, GL_UNSIGNED_BYTE, 0);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, nWidth, nHeight,
-	                GL_BGR, GL_UNSIGNED_BYTE, pData);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	return nName;
+void RWorldLM_Destroy(uintptr_t hTex)
+{
+	if (!hTex)
+		return;
+	MTLWorld_DestroyLightmap(hTex);
 }
 
 // Add one light group's RLE sub-lightmap rectangle into a decompressed
 // lightmap: per texel, add color * intensity, clamped per channel. Byte-for-
 // byte port of the loop in CD3D_RenderBlock's light-group update (0xFF in the
 // intensity stream escapes a run: 0xFF, count, value).
-static void glw_AddSubLM(GLWPendingLM &cLM, const LTVector &vColor,
+static void rw_AddSubLM(RWPendingLM &cLM, const LTVector &vColor,
                          uint32 nLeft, uint32 nTop, uint32 nWidth, uint32 nHeight,
                          const uint8 *pData, uint32 nDataSize)
 {
@@ -936,7 +680,7 @@ static void glw_AddSubLM(GLWPendingLM &cLM, const LTVector &vColor,
 
 static int g_nDebugBlocks = 0;   // TEMP: verbose dump of the first blocks
 
-static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
+static bool rw_LoadBlock(ILTStream *pStream, RWBlock &cBlock)
 {
 	*pStream >> cBlock.m_vCenter;
 	*pStream >> cBlock.m_vHalfDims;
@@ -956,7 +700,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 	// be composed in now AND recomposed at runtime (switchable lights).
 	cBlock.m_aBaseLMs.clear();
 	cBlock.m_aBaseLMs.resize(nSectionCount);
-	std::vector<GLWPendingLM> &aPendingLMs = cBlock.m_aBaseLMs;
+	std::vector<RWPendingLM> &aPendingLMs = cBlock.m_aBaseLMs;
 	uint32 nIndexOffset = 0;
 	for (uint32 nSection = 0; nSection < nSectionCount; ++nSection)
 	{
@@ -964,7 +708,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 		for (uint32 nTex = 0; nTex < 2; ++nTex)          // CRBSection::kNumTextures == 2
 			pStream->ReadString(sTexName[nTex], sizeof(sTexName[nTex]));
 
-		GLWSection cSection;
+		RWSection cSection;
 		*pStream >> cSection.m_nShaderCode;
 		*pStream >> cSection.m_nTriCount;
 		cSection.m_nStartIndex = nIndexOffset;
@@ -996,9 +740,9 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 			else
 				fprintf(stderr, "[glw] sprite texture not resolved: %s\n", pTex0);
 		}
-		else if (pTex0[0] && g_pGLStruct && g_pGLStruct->GetSharedTexture)
+		else if (pTex0[0] && g_pRenderStruct && g_pRenderStruct->GetSharedTexture)
 		{
-			cSection.m_pTexture = g_pGLStruct->GetSharedTexture(pTex0);
+			cSection.m_pTexture = g_pRenderStruct->GetSharedTexture(pTex0);
 			if (cSection.m_pTexture)
 				cSection.m_pTexture->SetRefCount(cSection.m_pTexture->GetRefCount() + 1);
 			else
@@ -1032,14 +776,14 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 		// this block's light groups are composed in (below).
 		uint32 nLMWidth, nLMHeight, nLMSize;
 		*pStream >> nLMWidth >> nLMHeight >> nLMSize;
-		cSection.m_nLMTexture = 0;
+		cSection.m_hLMTexture = 0;
 		if (nLMSize && nLMWidth && nLMHeight &&
 		    nLMWidth * nLMHeight <= (uint32)LIGHTMAP_MAX_TOTAL_PIXELS)
 		{
 			std::vector<uint8> aCompressed(nLMSize);
 			pStream->Read(&aCompressed[0], nLMSize);
 
-			GLWPendingLM &cLM = aPendingLMs[nSection];
+			RWPendingLM &cLM = aPendingLMs[nSection];
 			std::vector<uint8> aDecompressed(LIGHTMAP_MAX_TOTAL_PIXELS * 3);
 			if (DecompressLMData(&aCompressed[0], nLMSize, &aDecompressed[0]))
 			{
@@ -1053,7 +797,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 				        nLMWidth, nLMHeight, nLMSize);
 		}
 		else if (nLMSize)
-			glw_SkipBytes(pStream, nLMSize);
+			rw_SkipBytes(pStream, nLMSize);
 
 		if (bDebug)
 			fprintf(stderr, "[glw]     sec %u: shader=%u tris=%u lm=%ux%u/%u\n",
@@ -1071,7 +815,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 	cBlock.m_aVertices.resize(nVertexCount);
 	for (uint32 nVert = 0; nVert < nVertexCount; ++nVert)
 	{
-		GLWVertex &cVert = cBlock.m_aVertices[nVert];
+		RWVertex &cVert = cBlock.m_aVertices[nVert];
 		*pStream >> cVert.m_vPos;
 		*pStream >> cVert.m_fU0 >> cVert.m_fV0;
 		*pStream >> cVert.m_fU1 >> cVert.m_fV1;
@@ -1107,15 +851,15 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 	uint32 nSkyPortalCount;
 	*pStream >> nSkyPortalCount;
 	for (; nSkyPortalCount; --nSkyPortalCount)
-		glw_SkipGeometryPoly(pStream);
+		rw_SkipGeometryPoly(pStream);
 
 	// Occluders (a geometry poly + uint32 id)
 	uint32 nOccluderCount;
 	*pStream >> nOccluderCount;
 	for (; nOccluderCount; --nOccluderCount)
 	{
-		glw_SkipGeometryPoly(pStream);
-		glw_SkipBytes(pStream, sizeof(uint32));
+		rw_SkipGeometryPoly(pStream);
+		rw_SkipBytes(pStream, sizeof(uint32));
 	}
 
 	// Light groups: RETAIN each group (name-hash id, authored color, RLE
@@ -1128,7 +872,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 	cBlock.m_aLightGroups.reserve(nLightGroupCount);
 	for (; nLightGroupCount; --nLightGroupCount)
 	{
-		GLWLightGroup cGroup;
+		RWLightGroup cGroup;
 
 		// Name → 31-polynomial hash, byte-for-byte the SRBLightGroup id.
 		uint16 nNameLen;
@@ -1157,7 +901,7 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 			*pStream >> nSubLMCount;
 			for (; nSubLMCount; --nSubLMCount)
 			{
-				GLWSubLM cSub;
+				RWSubLM cSub;
 				cSub.m_nSection = nSectionLM;
 				*pStream >> cSub.m_nLeft >> cSub.m_nTop
 				         >> cSub.m_nWidth >> cSub.m_nHeight;
@@ -1177,43 +921,43 @@ static bool glw_LoadBlock(ILTStream *pStream, GLWBlock &cBlock)
 
 	// Composed VERTEX lighting: baked color + the groups' authored default
 	// colors. Without this, night levels rendered as if lit (see the removed
-	// fixed key light in glw_DrawWorld).
-	glw_ComposeVertexColors(cBlock);
+	// fixed key light in rw_DrawWorld).
+	rw_ComposeVertexColors(cBlock);
 
 	// Compose (base + light groups at their current colors) and upload.
 	for (uint32 nSection = 0; nSection < nSectionCount && nSection < cBlock.m_aSections.size(); ++nSection)
 	{
-		const GLWPendingLM &cBase = aPendingLMs[nSection];
+		const RWPendingLM &cBase = aPendingLMs[nSection];
 		if (cBase.m_aData.empty())
 			continue;
 
-		GLWPendingLM cComposed = cBase;   // scratch copy; base stays pristine
+		RWPendingLM cComposed = cBase;   // scratch copy; base stays pristine
 		for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 		{
-			const GLWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+			const RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
 			for (size_t nSub = 0; nSub < cGroup.m_aSubLMs.size(); ++nSub)
 			{
-				const GLWSubLM &cSub = cGroup.m_aSubLMs[nSub];
+				const RWSubLM &cSub = cGroup.m_aSubLMs[nSub];
 				if (cSub.m_nSection == nSection)
-					glw_AddSubLM(cComposed, cGroup.m_vColor,
+					rw_AddSubLM(cComposed, cGroup.m_vColor,
 					             cSub.m_nLeft, cSub.m_nTop,
 					             cSub.m_nWidth, cSub.m_nHeight,
 					             &cSub.m_aData[0], (uint32)cSub.m_aData.size());
 			}
 		}
-		cBlock.m_aSections[nSection].m_nLMTexture =
-			glw_CreateLightmapFromRGB(&cComposed.m_aData[0], cComposed.m_nWidth, cComposed.m_nHeight);
+		cBlock.m_aSections[nSection].m_hLMTexture =
+			RWorldLM_Create(&cComposed.m_aData[0], cComposed.m_nWidth, cComposed.m_nHeight);
 	}
 
 	// Children: u8 flags + k_NumChildren(2) * u32 index (tree unused in GL yet)
 	uint8 nChildFlags;
 	*pStream >> nChildFlags;
-	glw_SkipBytes(pStream, 2 * sizeof(uint32));
+	rw_SkipBytes(pStream, 2 * sizeof(uint32));
 
 	return true;
 }
 
-static bool glw_LoadWorld(ILTStream *pStream, GLWorld &cWorld)
+static bool rw_LoadWorld(ILTStream *pStream, RWorld &cWorld)
 {
 	uint32 nBlockCount;
 	*pStream >> nBlockCount;
@@ -1221,7 +965,7 @@ static bool glw_LoadWorld(ILTStream *pStream, GLWorld &cWorld)
 	cWorld.m_aBlocks.resize(nBlockCount);
 	for (uint32 nBlock = 0; nBlock < nBlockCount; ++nBlock)
 	{
-		if (!glw_LoadBlock(pStream, cWorld.m_aBlocks[nBlock]))
+		if (!rw_LoadBlock(pStream, cWorld.m_aBlocks[nBlock]))
 			return false;
 	}
 
@@ -1235,9 +979,9 @@ static bool glw_LoadWorld(ILTStream *pStream, GLWorld &cWorld)
 		char sWMName[64 + 1];
 		pStream->ReadString(sWMName, sizeof(sWMName));
 
-		GLWorld *pWM = new GLWorld;
+		RWorld *pWM = new RWorld;
 		LTStrCpy(pWM->m_sName, sWMName, sizeof(pWM->m_sName));
-		if (!glw_LoadWorld(pStream, *pWM))
+		if (!rw_LoadWorld(pStream, *pWM))
 		{
 			delete pWM;
 			return false;
@@ -1252,25 +996,41 @@ static bool glw_LoadWorld(ILTStream *pStream, GLWorld &cWorld)
 // Public API
 // ---------------------------------------------------------------------------
 
-bool GLWorld_Load(ILTStream *pStream)
+bool RWorld_Load(ILTStream *pStream)
 {
-	GLModel_ArmCensus();     // report the object census for THIS world
-	GLPolyGrid_ArmCensus();  // ...and the polygrid inventory
-	GLWorld_Free();
+	RModel_ArmCensus();     // report the object census for THIS world
+	RPolyGrid_ArmCensus();  // ...and the polygrid inventory
+	RWorld_Free();
 
-	g_pMainWorld = new GLWorld;
+	g_pMainWorld = new RWorld;
 	g_nTotalVerts = g_nTotalTris = 0;
 
-	if (!glw_LoadWorld(pStream, *g_pMainWorld))
+	if (!rw_LoadWorld(pStream, *g_pMainWorld))
 	{
 		fprintf(stderr, "[glw] world render-data load FAILED\n");
-		GLWorld_Free();
+		RWorld_Free();
 		return false;
 	}
 
 	fprintf(stderr, "[glw] world render data loaded: %u blocks, %u verts, %u tris, %u worldmodels\n",
 	        (uint32)g_pMainWorld->m_aBlocks.size(), g_nTotalVerts, g_nTotalTris,
 	        (uint32)g_aWorldModels.size());
+
+	// How many sections ended the load carrying a lightmap handle. Separates
+	// "the lightmaps were never created" from "the draw is not seeing them" --
+	// the two look identical on screen (a flat, unlit world).
+	{
+		uint32 nWithLM = 0, nSections = 0;
+		for (size_t nB = 0; nB < g_pMainWorld->m_aBlocks.size(); ++nB)
+			for (size_t nS = 0; nS < g_pMainWorld->m_aBlocks[nB].m_aSections.size(); ++nS)
+			{
+				++nSections;
+				if (g_pMainWorld->m_aBlocks[nB].m_aSections[nS].m_hLMTexture)
+					++nWithLM;
+			}
+		fprintf(stderr, "[glw] main world: %u sections, %u carry a lightmap handle\n",
+		        nSections, nWithLM);
+	}
 
 	// Section census by shader code, main world + world models. Shader 0/6/7
 	// (None/SkyPortal/Occluder) are deliberately skipped at draw time; anything
@@ -1284,7 +1044,7 @@ bool GLWorld_Load(ILTStream *pStream)
 		uint32 aTris[16] = { 0 }, aSecs[16] = { 0 };
 		for (size_t w = 0; w < 1 + g_aWorldModels.size(); ++w)
 		{
-			const GLWorld *pW = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
+			const RWorld *pW = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
 			if (!pW) continue;
 			for (size_t b = 0; b < pW->m_aBlocks.size(); ++b)
 				for (size_t n = 0; n < pW->m_aBlocks[b].m_aSections.size(); ++n)
@@ -1302,12 +1062,12 @@ bool GLWorld_Load(ILTStream *pStream)
 			{
 				for (size_t w = 0; w < 1 + g_aWorldModels.size(); ++w)
 				{
-					const GLWorld *pW3 = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
+					const RWorld *pW3 = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
 					if (!pW3) continue;
 					for (size_t b = 0; b < pW3->m_aBlocks.size(); ++b)
 						for (size_t n = 0; n < pW3->m_aBlocks[b].m_aSections.size(); ++n)
 						{
-							const GLWSection &cS = pW3->m_aBlocks[b].m_aSections[n];
+							const RWSection &cS = pW3->m_aBlocks[b].m_aSections[n];
 							if (!strcasestr(cS.m_sTexName.c_str(), pFilter)) continue;
 							fprintf(stderr, "[worldtex] %s%s tris=%u shader=%u block@(%.0f %.0f %.0f)\n",
 							        (w == 0) ? "" : "[WM] ", cS.m_sTexName.c_str(),
@@ -1320,7 +1080,7 @@ bool GLWorld_Load(ILTStream *pStream)
 			std::vector<std::string> aNames;
 			for (size_t w = 0; w < 1 + g_aWorldModels.size(); ++w)
 			{
-				const GLWorld *pW2 = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
+				const RWorld *pW2 = (w == 0) ? g_pMainWorld : g_aWorldModels[w - 1];
 				if (!pW2) continue;
 				for (size_t b = 0; b < pW2->m_aBlocks.size(); ++b)
 					for (size_t n = 0; n < pW2->m_aBlocks[b].m_aSections.size(); ++n)
@@ -1356,29 +1116,34 @@ bool GLWorld_Load(ILTStream *pStream)
 		uint32 nGroups = 0;
 		for (size_t nWorld = 0; nWorld < g_aWorldModels.size() + 1; ++nWorld)
 		{
-			GLWorld *pWorld = (nWorld == 0) ? g_pMainWorld : g_aWorldModels[nWorld - 1];
+			RWorld *pWorld = (nWorld == 0) ? g_pMainWorld : g_aWorldModels[nWorld - 1];
 			for (size_t nBlock = 0; pWorld && nBlock < pWorld->m_aBlocks.size(); ++nBlock)
 			{
-				GLWBlock &cBlock = pWorld->m_aBlocks[nBlock];
+				RWBlock &cBlock = pWorld->m_aBlocks[nBlock];
 				for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 				{
-					GLWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+					RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
 					++nGroups;
 					if (bInventory)
-						fprintf(stderr, "[glw] lightgroup id=0x%08x color=(%.2f %.2f %.2f) sublms=%u %s\n",
+						fprintf(stderr, "[glw] lightgroup id=0x%08x color=(%.2f %.2f %.2f) sublms=%u "
+						                "vtxRLE=%u %s\n",
 						        cGroup.m_nID, cGroup.m_vColor.x, cGroup.m_vColor.y, cGroup.m_vColor.z,
 						        (uint32)cGroup.m_aSubLMs.size(),
+						        (uint32)cGroup.m_aVertexIntensities.size(),
 						        pWorld->m_sName[0] ? pWorld->m_sName : "(main)");
+					// ⚠️ A group with NO sublms but a vertex RLE stream is the
+					// Gouraud-only case — precisely the one the Metal colour
+					// upload used to miss, so it must NOT be filtered out here.
 					if (bForceOn && cGroup.m_vColor.x < 0.02f &&
 					    cGroup.m_vColor.y < 0.02f && cGroup.m_vColor.z < 0.02f &&
-					    !cGroup.m_aSubLMs.empty())
+					    (!cGroup.m_aSubLMs.empty() || !cGroup.m_aVertexIntensities.empty()))
 						aForceIDs.push_back(cGroup.m_nID);
 				}
 			}
 		}
 		fprintf(stderr, "[glw] %u light groups total\n", nGroups);
 		for (size_t n = 0; n < aForceIDs.size(); ++n)
-			GLWorld_SetLightGroupColor(aForceIDs[n], LTVector(1.0f, 1.0f, 1.0f));
+			RWorld_SetLightGroupColor(aForceIDs[n], LTVector(1.0f, 1.0f, 1.0f));
 		if (bForceOn)
 			fprintf(stderr, "[glw] TEST: forced %u black-authored light groups WHITE\n",
 			        (uint32)aForceIDs.size());
@@ -1388,33 +1153,30 @@ bool GLWorld_Load(ILTStream *pStream)
 
 // Recompose one section's lightmap (base + every group's current color) and
 // re-upload it into the existing GL texture.
-static void glw_RecomposeSectionLM(GLWBlock &cBlock, uint32 nSection)
+static void rw_RecomposeSectionLM(RWBlock &cBlock, uint32 nSection)
 {
 	if (nSection >= cBlock.m_aSections.size() || nSection >= cBlock.m_aBaseLMs.size())
 		return;
-	const GLWPendingLM &cBase = cBlock.m_aBaseLMs[nSection];
-	GLuint nTexture = cBlock.m_aSections[nSection].m_nLMTexture;
-	if (cBase.m_aData.empty() || !nTexture)
+	const RWPendingLM &cBase = cBlock.m_aBaseLMs[nSection];
+	uintptr_t hTexture = cBlock.m_aSections[nSection].m_hLMTexture;
+	if (cBase.m_aData.empty() || !hTexture)
 		return;
 
-	GLWPendingLM cComposed = cBase;
+	RWPendingLM cComposed = cBase;
 	for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 	{
-		const GLWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+		const RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
 		for (size_t nSub = 0; nSub < cGroup.m_aSubLMs.size(); ++nSub)
 		{
-			const GLWSubLM &cSub = cGroup.m_aSubLMs[nSub];
+			const RWSubLM &cSub = cGroup.m_aSubLMs[nSub];
 			if (cSub.m_nSection == nSection)
-				glw_AddSubLM(cComposed, cGroup.m_vColor,
+				rw_AddSubLM(cComposed, cGroup.m_vColor,
 				             cSub.m_nLeft, cSub.m_nTop, cSub.m_nWidth, cSub.m_nHeight,
 				             &cSub.m_aData[0], (uint32)cSub.m_aData.size());
 		}
 	}
 
-	glBindTexture(GL_TEXTURE_2D, nTexture);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cComposed.m_nWidth, cComposed.m_nHeight,
-	                GL_BGR, GL_UNSIGNED_BYTE, &cComposed.m_aData[0]);
+	RWorldLM_Update(hTexture, &cComposed.m_aData[0], cComposed.m_nWidth, cComposed.m_nHeight);
 }
 
 // ---------------------------------------------------------------------------
@@ -1427,7 +1189,7 @@ static void glw_RecomposeSectionLM(GLWBlock &cBlock, uint32 nSection)
 // real lights, so this is how the pass is exercised without the game shell.
 // ---------------------------------------------------------------------------
 
-struct GLWDynLight
+struct RWDynLight
 {
 	LTVector m_vPos;
 	float    m_fRadius;
@@ -1435,12 +1197,12 @@ struct GLWDynLight
 };
 
 // The LT_TEST_LIGHTS injection set, parsed once. ★ Shared with the MODEL
-// lighting pass (§71) through GLWorld_GetTestDynLights: both passes must see
+// lighting pass (§71) through RWorld_GetTestDynLights: both passes must see
 // the same lights or an A/B of world-vs-model lighting compares two scenes.
-uint32 GLWorld_GetTestDynLights(const GLWTestDynLight **ppOut)
+uint32 RWorld_GetTestDynLights(const RWTestDynLight **ppOut)
 {
 	static bool s_bParsed = false;
-	static std::vector<GLWTestDynLight> s_aTestLights;
+	static std::vector<RWTestDynLight> s_aTestLights;
 
 	if (!s_bParsed)
 	{
@@ -1453,7 +1215,7 @@ uint32 GLWorld_GetTestDynLights(const GLWTestDynLight **ppOut)
 			sBuf[sizeof(sBuf) - 1] = 0;
 			for (char *pTok = strtok(sBuf, ";"); pTok; pTok = strtok(NULL, ";"))
 			{
-				GLWTestDynLight cLight;
+				RWTestDynLight cLight;
 				if (sscanf(pTok, "%f %f %f %f %f %f %f",
 				           &cLight.m_vPos.x, &cLight.m_vPos.y, &cLight.m_vPos.z,
 				           &cLight.m_fRadius, &cLight.m_vColor255.x,
@@ -1470,7 +1232,7 @@ uint32 GLWorld_GetTestDynLights(const GLWTestDynLight **ppOut)
 	return (uint32)s_aTestLights.size();
 }
 
-static void glw_CollectDynamicLights(std::vector<GLWDynLight> &aLights)
+static void rw_CollectDynamicLights(std::vector<RWDynLight> &aLights)
 {
 	if (g_pClientMgr)
 	{
@@ -1482,7 +1244,7 @@ static void glw_CollectDynamicLights(std::vector<GLWDynLight> &aLights)
 				continue;
 			if (pLight->m_LightRadius <= 1.0f)
 				continue;
-			GLWDynLight cLight;
+			RWDynLight cLight;
 			cLight.m_vPos    = pLight->m_Pos;
 			cLight.m_fRadius = pLight->m_LightRadius;
 			cLight.m_vColor.Init(pLight->m_ColorR * (1.0f / 255.0f),
@@ -1492,11 +1254,11 @@ static void glw_CollectDynamicLights(std::vector<GLWDynLight> &aLights)
 		}
 	}
 
-	const GLWTestDynLight *pTest = 0;
-	const uint32 nTest = GLWorld_GetTestDynLights(&pTest);
+	const RWTestDynLight *pTest = 0;
+	const uint32 nTest = RWorld_GetTestDynLights(&pTest);
 	for (uint32 n = 0; n < nTest; ++n)
 	{
-		GLWDynLight cLight;
+		RWDynLight cLight;
 		cLight.m_vPos    = pTest[n].m_vPos;
 		cLight.m_fRadius = pTest[n].m_fRadius;
 		cLight.m_vColor  = pTest[n].m_vColor255 * (1.0f / 255.0f);
@@ -1504,17 +1266,16 @@ static void glw_CollectDynamicLights(std::vector<GLWDynLight> &aLights)
 	}
 }
 
-static void glw_LightWorldBlocks(const GLWorld &cWorldData, const GLWDynLight &cLight);
-static const GLWorld *glw_FindWorldModel(const char *pName);
-static bool glw_IsSkyObject(const LTObject *pObject);
+static const RWorld *rw_FindWorldModel(const char *pName);
+static bool rw_IsSkyObject(const LTObject *pObject);
 
-void GLWorld_DrawDynamicLights()
+void RWorld_DrawDynamicLights()
 {
 	if (!g_pMainWorld)
 		return;
 
-	std::vector<GLWDynLight> aLights;
-	glw_CollectDynamicLights(aLights);
+	std::vector<RWDynLight> aLights;
+	rw_CollectDynamicLights(aLights);
 
 	// LT_TRACE_LIGHTFX=1 -- how many dynamic lights this pass actually gets,
 	// once a second. The one-shot OT_LIGHT census at world load only sees
@@ -1535,23 +1296,24 @@ void GLWorld_DrawDynamicLights()
 		return;
 
 	// Additive over the already-lit world; depth-test (no write) keeps the
-	// light on visible surfaces only.
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LEQUAL);
-	glDepthMask(GL_FALSE);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_ONE, GL_ONE);
-	glDisable(GL_ALPHA_TEST);
-	glDisable(GL_CULL_FACE);
-	glActiveTexture(GL_TEXTURE1);
-	glDisable(GL_TEXTURE_2D);
-	glActiveTexture(GL_TEXTURE0);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	// light on visible surfaces only. Under Metal all of this is per-draw state
+	// carried by RWDrawParams (blend AddOne, depth LEQUAL, no write, no cull).
 
 	for (size_t nLight = 0; nLight < aLights.size(); ++nLight)
 	{
-		const GLWDynLight &cLight = aLights[nLight];
-		glw_LightWorldBlocks(*g_pMainWorld, cLight);
+		const RWDynLight &cLight = aLights[nLight];
+		{
+			RWDynLightDesc cDesc;
+			cDesc.m_vPos    = cLight.m_vPos;
+			cDesc.m_fRadius = cLight.m_fRadius;
+			cDesc.m_vColor  = cLight.m_vColor;
+			RWDrawParams cP;
+			cP.m_pDynLight   = &cDesc;
+			cP.m_eBlend      = kRWBlend_AddOne;
+			cP.m_bDepthEqual = true;
+			cP.m_bDepthWrite = false;
+			MTLWorld_DrawWorld(g_pMainWorld, &cP);
+		}
 
 		// World models: light their object-space geometry too. The instance's
 		// back-transform moves the light into model space; the model's own
@@ -1562,14 +1324,14 @@ void GLWorld_DrawDynamicLights()
 			for (LTLink *pCur = pWMHead->m_pNext; pCur != pWMHead; pCur = pCur->m_pNext)
 			{
 				WorldModelInstance *pInstance = (WorldModelInstance*)pCur->m_pData;
-				if (!pInstance || !(pInstance->m_Flags & FLAG_VISIBLE) || glw_IsSkyObject(pInstance))
+				if (!pInstance || !(pInstance->m_Flags & FLAG_VISIBLE) || rw_IsSkyObject(pInstance))
 					continue;
 				const WorldBsp *pBsp = pInstance->GetOriginalBsp();
-				const GLWorld *pWorld = pBsp ? glw_FindWorldModel(pBsp->m_WorldName) : 0;
+				const RWorld *pWorld = pBsp ? rw_FindWorldModel(pBsp->m_WorldName) : 0;
 				if (!pWorld)
 					continue;
 
-				GLWDynLight cObjLight = cLight;
+				RWDynLight cObjLight = cLight;
 				pInstance->m_BackTransform.Apply(cLight.m_vPos, cObjLight.m_vPos);
 
 				const LTMatrix &m = pInstance->m_Transform;
@@ -1577,147 +1339,55 @@ void GLWorld_DrawDynamicLights()
 				for (int nRow = 0; nRow < 4; ++nRow)
 					for (int nCol = 0; nCol < 4; ++nCol)
 						aGL[nCol * 4 + nRow] = m.m[nRow][nCol];
-				glMatrixMode(GL_MODELVIEW);
-				glPushMatrix();
-				glMultMatrixf(aGL);
-				glw_LightWorldBlocks(*pWorld, cObjLight);
-				glPopMatrix();
+
+				{
+					RWDynLightDesc cDesc;
+					cDesc.m_vPos    = cObjLight.m_vPos;   // already back-transformed
+					cDesc.m_fRadius = cObjLight.m_fRadius;
+					cDesc.m_vColor  = cObjLight.m_vColor;
+					RWDrawParams cP;
+					cP.m_pDynLight    = &cDesc;
+					cP.m_pModelMatrix = aGL;
+					cP.m_eBlend       = kRWBlend_AddOne;
+					cP.m_bDepthEqual  = true;
+					cP.m_bDepthWrite  = false;
+					MTLWorld_DrawWorld(pWorld, &cP);
+				}
 			}
 		}
 	}
 
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
-	glDepthFunc(GL_LESS);
-	glDisable(GL_TEXTURE_2D);
-	// ⚠️ Alpha test is now set PER SECTION inside glw_LightWorldBlocks (the
-	// foliage-glow fix), so leave it off for whatever draws next.
-	glDisable(GL_ALPHA_TEST);
 }
 
 // Light one parsed render world's blocks with one light (light already in the
-// world's own space; caller owns GL state + any instance transform).
-static void glw_LightWorldBlocks(const GLWorld &cWorldData, const GLWDynLight &cLight)
-{
-	{
-		const float fRadiusSq = cLight.m_fRadius * cLight.m_fRadius;
-
-		for (size_t nBlock = 0; nBlock < cWorldData.m_aBlocks.size(); ++nBlock)
-		{
-			const GLWBlock &cBlock = cWorldData.m_aBlocks[nBlock];
-
-			// Sphere-vs-AABB reject.
-			LTVector vMin = cBlock.m_vCenter - cBlock.m_vHalfDims;
-			LTVector vMax = cBlock.m_vCenter + cBlock.m_vHalfDims;
-			LTVector vClamped(
-				LTCLAMP(cLight.m_vPos.x, vMin.x, vMax.x),
-				LTCLAMP(cLight.m_vPos.y, vMin.y, vMax.y),
-				LTCLAMP(cLight.m_vPos.z, vMin.z, vMax.z));
-			if ((vClamped - cLight.m_vPos).MagSqr() > fRadiusSq)
-				continue;
-
-			for (size_t nSection = 0; nSection < cBlock.m_aSections.size(); ++nSection)
-			{
-				const GLWSection &cSection = cBlock.m_aSections[nSection];
-				if (cSection.m_nShaderCode == kPCShader_None ||
-				    cSection.m_nShaderCode == kPCShader_SkyPortal ||
-				    cSection.m_nShaderCode == kPCShader_Occluder)
-					continue;
-
-				GLuint nTexName = cSection.m_pTexture ? GLTex_GetName(cSection.m_pTexture) : 0;
-				if (nTexName)
-				{
-					glEnable(GL_TEXTURE_2D);
-					glBindTexture(GL_TEXTURE_2D, nTexName);
-				}
-				else
-					glDisable(GL_TEXTURE_2D);
-
-				// ★★★ THE ADDITIVE PASS MUST HONOUR THE SAME ALPHA CUTOUT AS THE
-				// BASE PASS — otherwise it lights the WHOLE QUAD.
-				//
-				// Tree and foliage surfaces are alpha-tested cards: a rectangle
-				// whose texture is mostly transparent, with the leaf shape cut
-				// out by the authored AlphaRef. This pass used to run with
-				// GL_ALPHA_TEST disabled, so every one of those rectangles was
-				// lit additively in full — firing an AK74 in C03S01 lit up the
-				// woods as a field of glowing white rectangles, card-shaped and
-				// card-sized, appearing only while the muzzle flash existed.
-				//
-				// ⚠️ Use the AUTHORED reference (DTX "AlphaRef <n>"), the same
-				// value and the same GL_GEQUAL func as the base pass — 0 means
-				// ALPHAREF_NONE, i.e. do not alpha-test this surface. Do not
-				// substitute a hard-coded 0.5 (§13: content-based guessing is
-				// gone), and do not gate it on LT_NO_ALPHATEST — that switch
-				// exists to isolate the base pass, and honouring it here would
-				// reintroduce the glow whenever it is set.
-				const unsigned int nLightAlphaRef = cSection.m_pTexture
-				                                  ? GLTex_GetAlphaRef(cSection.m_pTexture)
-				                                  : 0;
-				if (nTexName && nLightAlphaRef != 0)
-				{
-					glAlphaFunc(GL_GEQUAL, (float)nLightAlphaRef / 255.0f);
-					glEnable(GL_ALPHA_TEST);
-				}
-				else
-					glDisable(GL_ALPHA_TEST);
-
-				glBegin(GL_TRIANGLES);
-				const uint32 *pIndices = &cBlock.m_aIndices[cSection.m_nStartIndex];
-				for (uint32 nIndex = 0; nIndex < cSection.m_nTriCount * 3; ++nIndex)
-				{
-					const GLWVertex &cVert = cBlock.m_aVertices[pIndices[nIndex]];
-					LTVector vToLight = cLight.m_vPos - cVert.m_vPos;
-					float fDist = vToLight.Mag();
-					float fAtten = 1.0f - fDist / cLight.m_fRadius;
-					if (fAtten > 0.0f && fDist > 0.1f)
-					{
-						// Lambert falloff (floor under a lamp gets the pool,
-						// walls fall off with angle).
-						float fNDotL = cVert.m_vNormal.Dot(vToLight / fDist);
-						if (fNDotL < 0.0f) fNDotL = 0.0f;
-						fAtten *= fNDotL;
-					}
-					else
-						fAtten = 0.0f;
-					glColor3f(cLight.m_vColor.x * fAtten,
-					          cLight.m_vColor.y * fAtten,
-					          cLight.m_vColor.z * fAtten);
-					glTexCoord2f(cVert.m_fU0, cVert.m_fV0);
-					glVertex3f(cVert.m_vPos.x, cVert.m_vPos.y, cVert.m_vPos.z);
-				}
-				glEnd();
-			}
-		}
-	}
-}
-
-bool GLWorld_SetLightGroupColor(uint32 nID, const LTVector &vColor)
+// world's own space; caller owns any instance transform).
+bool RWorld_SetLightGroupColor(uint32 nID, const LTVector &vColor)
 {
 	if (!g_pMainWorld)
 		return false;
 
-	LTMacWin_MakeCurrent();
+	bool bRecomposed = false;
 
 	// Main world + every world model (D3D walks both the same way).
 	for (size_t nWorld = 0; nWorld < g_aWorldModels.size() + 1; ++nWorld)
 	{
-		GLWorld *pWorld = (nWorld == 0) ? g_pMainWorld : g_aWorldModels[nWorld - 1];
+		RWorld *pWorld = (nWorld == 0) ? g_pMainWorld : g_aWorldModels[nWorld - 1];
 		if (!pWorld)
 			continue;
 		for (size_t nBlock = 0; nBlock < pWorld->m_aBlocks.size(); ++nBlock)
 		{
-			GLWBlock &cBlock = pWorld->m_aBlocks[nBlock];
+			RWBlock &cBlock = pWorld->m_aBlocks[nBlock];
 			for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 			{
-				GLWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+				RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
 				if (cGroup.m_nID != nID)
 					continue;
 				cGroup.m_vColor = vColor;
 
 				// Recompose the block's VERTEX lighting (Gouraud surfaces) --
 				// this is what makes a light switch visibly change the world.
-				glw_ComposeVertexColors(cBlock);
+				rw_ComposeVertexColors(cBlock);
+				bRecomposed = true;
 
 				// Recompose each section this group touches (once each).
 				for (size_t nSub = 0; nSub < cGroup.m_aSubLMs.size(); ++nSub)
@@ -1728,7 +1398,7 @@ bool GLWorld_SetLightGroupColor(uint32 nID, const LTVector &vColor)
 						if (cGroup.m_aSubLMs[nPrev].m_nSection == nSection)
 							{ bAlreadyDone = true; break; }
 					if (!bAlreadyDone)
-						glw_RecomposeSectionLM(cBlock, nSection);
+						rw_RecomposeSectionLM(cBlock, nSection);
 				}
 				// A name appears at most once per block; keep scanning other
 				// blocks/worlds — the same group can span several.
@@ -1736,59 +1406,156 @@ bool GLWorld_SetLightGroupColor(uint32 nID, const LTVector &vColor)
 			}
 		}
 	}
+
+	// ⚠️ GL needs no notification -- rw_ComposeVertexColors writes the array
+	// the draw hands to glColor3f every frame. Metal keeps the colours in a
+	// per-block buffer, so the recompose has to be published. Doing it HERE and
+	// not from RWorldLM_Update is the whole point: a light group that touches
+	// only Gouraud surfaces has no lightmapped section, so the lightmap path
+	// never runs for it and its colours were never re-uploaded.
+	if (bRecomposed && MTLDev_IsMetalBackend())
+		MTLWorld_InvalidateVertexColors();
+
 	return true;
 }
 
-static void glw_ReleaseTextures(GLWorld *pWorld)
+// ⚠️ TEST HOOK for the light-group path, driven from nr_RenderScene by
+// LT_TEST_LIGHTGROUPS_AT=<scene frame>. It exists because NOTHING else can
+// exercise the Metal vertex-colour upload headlessly:
+//   * the load-time LT_TEST_LIGHTGROUPS_ON runs before a single GPU buffer
+//     exists, so the very first fill already carries the new colours;
+//   * the null shell drops the server's LightGroup messages, so the real switch
+//     never fires here.
+// It deliberately targets GROUPS WITH NO SUB-LIGHTMAPS — the pure-Gouraud class
+// that has no lightmap upload to piggyback on, which is exactly the class the
+// Metal colour buffers used to miss — and switches them OFF rather than on. Off
+// is the loud direction: no retail world sampled here ships a black-authored
+// group, so forcing them white barely moves a pixel (max 5/255 on c08s03), while
+// removing their contribution is the in-game "someone hit the light switch".
+uint32 RWorld_TestSwitchGouraudLightGroupsOff(void)
+{
+	std::vector<uint32> aIDs;
+	for (size_t nWorld = 0; nWorld < g_aWorldModels.size() + 1; ++nWorld)
+	{
+		RWorld *pWorld = (nWorld == 0) ? g_pMainWorld : g_aWorldModels[nWorld - 1];
+		for (size_t nBlock = 0; pWorld && nBlock < pWorld->m_aBlocks.size(); ++nBlock)
+		{
+			RWBlock &cBlock = pWorld->m_aBlocks[nBlock];
+			for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
+			{
+				const RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
+				if (cGroup.m_aSubLMs.empty() && !cGroup.m_aVertexIntensities.empty())
+					aIDs.push_back(cGroup.m_nID);
+			}
+		}
+	}
+	for (size_t n = 0; n < aIDs.size(); ++n)
+		RWorld_SetLightGroupColor(aIDs[n], LTVector(0.0f, 0.0f, 0.0f));
+	return (uint32)aIDs.size();
+}
+
+static void rw_ReleaseTextures(RWorld *pWorld)
 {
 	if (!pWorld)
 		return;
 	for (size_t nBlock = 0; nBlock < pWorld->m_aBlocks.size(); ++nBlock)
 	{
-		std::vector<GLWSection> &aSections = pWorld->m_aBlocks[nBlock].m_aSections;
+		std::vector<RWSection> &aSections = pWorld->m_aBlocks[nBlock].m_aSections;
 		for (size_t nSection = 0; nSection < aSections.size(); ++nSection)
 		{
 			SharedTexture *pTexture = aSections[nSection].m_pTexture;
 			if (pTexture && pTexture->GetRefCount() > 0)
 				pTexture->SetRefCount(pTexture->GetRefCount() - 1);
 
-			if (aSections[nSection].m_nLMTexture)
+			if (aSections[nSection].m_hLMTexture)
 			{
-				glDeleteTextures(1, &aSections[nSection].m_nLMTexture);
-				aSections[nSection].m_nLMTexture = 0;
+				RWorldLM_Destroy(aSections[nSection].m_hLMTexture);
+				aSections[nSection].m_hLMTexture = 0;
 			}
 		}
 	}
 }
 
-void GLWorld_Free()
+void RWorld_Free()
 {
-	glw_ReleaseTextures(g_pMainWorld);
+	// ⚠️ BEFORE the worlds are deleted: the per-block GPU handles live on the
+	// blocks, and the lightmap handles are released through rw_ReleaseTextures
+	// just below.
+	rw_ReleaseTextures(g_pMainWorld);
 	delete g_pMainWorld;
 	g_pMainWorld = 0;
 	for (size_t i = 0; i < g_aWorldModels.size(); ++i)
 	{
-		glw_ReleaseTextures(g_aWorldModels[i]);
+		rw_ReleaseTextures(g_aWorldModels[i]);
 		delete g_aWorldModels[i];
 	}
 	g_aWorldModels.clear();
 	g_nTotalVerts = g_nTotalTris = 0;
+	if (MTLDev_IsMetalBackend())
+		MTLWorld_Free();
 }
 
-bool GLWorld_IsLoaded()
+// The backend-neutral view of rw_ResolveEnvMap: same gates, same console
+// variables, no GL texture name (which would be garbage under Metal, §88).
+bool RWorld_ResolveSecondLayer(const RWSection &cSection, bool bAuthoredLightmap,
+                                RWSecondLayer *pOut)
+{
+	if (!pOut)
+		return false;
+	*pOut = RWSecondLayer();
+
+	RWEnvSetup cEnv = rw_ResolveEnvMap(cSection, bAuthoredLightmap);
+	if (cEnv.m_eKind == kSecond_None || !cEnv.m_pTex || !RTex_IsValid(cEnv.m_pTex))
+		return false;
+
+	pOut->m_pTex  = cEnv.m_pTex;
+	pOut->m_eKind = cEnv.IsEnv() ? kRWSecond_EnvMap : kRWSecond_Detail;
+	pOut->m_eMode = (cEnv.m_eMode == kEnv_AddSigned) ? kRWSecondMode_AddSigned
+	              : (cEnv.m_eMode == kEnv_AlphaAdd)  ? kRWSecondMode_AlphaAdd
+	                                                 : kRWSecondMode_Modulate;
+	pOut->m_bCube  = cEnv.m_bCube;
+	pOut->m_fScale = cEnv.m_fScale;
+	pOut->m_fCos   = cEnv.m_fCos;
+	pOut->m_fSin   = cEnv.m_fSin;
+	{
+		float fScale = rw_GetConVar("EnvScale", 1.0f);
+		pOut->m_fEnvScale = (fabsf(fScale) > 0.001f) ? (-0.5f / fScale) : fScale;
+	}
+	return true;
+}
+
+bool RWorld_GetEnvMatrix(float *pOut16)
+{
+	if (!pOut16)
+		return false;
+	const LTVector &vR = s_vEnvRight, &vU = s_vEnvUp, &vF = s_vEnvForward;
+	memset(pOut16, 0, sizeof(float) * 16);
+	pOut16[0] = vR.x; pOut16[4] = vU.x; pOut16[8]  = -vF.x;
+	pOut16[1] = vR.y; pOut16[5] = vU.y; pOut16[9]  = -vF.y;
+	pOut16[2] = vR.z; pOut16[6] = vU.z; pOut16[10] = -vF.z;
+	pOut16[15] = 1.0f;
+	return true;
+}
+
+const RWorld *RWorld_GetMainWorld()
+{
+	return g_pMainWorld;
+}
+
+bool RWorld_IsLoaded()
 {
 	return g_pMainWorld != 0 && !g_pMainWorld->m_aBlocks.empty();
 }
 
-bool GLWorld_GetBounds(LTVector &vCenter, LTVector &vHalfDims)
+bool RWorld_GetBounds(LTVector &vCenter, LTVector &vHalfDims)
 {
-	if (!GLWorld_IsLoaded())
+	if (!RWorld_IsLoaded())
 		return false;
 
 	LTVector vMin(FLT_MAX, FLT_MAX, FLT_MAX), vMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 	for (size_t i = 0; i < g_pMainWorld->m_aBlocks.size(); ++i)
 	{
-		const GLWBlock &cBlock = g_pMainWorld->m_aBlocks[i];
+		const RWBlock &cBlock = g_pMainWorld->m_aBlocks[i];
 		LTVector vBMin = cBlock.m_vCenter - cBlock.m_vHalfDims;
 		LTVector vBMax = cBlock.m_vCenter + cBlock.m_vHalfDims;
 		VEC_MIN(vMin, vMin, vBMin);
@@ -1799,7 +1566,7 @@ bool GLWorld_GetBounds(LTVector &vCenter, LTVector &vHalfDims)
 	return true;
 }
 
-void GLWorld_GetStats(uint32 &nBlocks, uint32 &nVerts, uint32 &nTris, uint32 &nWorldModels)
+void RWorld_GetStats(uint32 &nBlocks, uint32 &nVerts, uint32 &nTris, uint32 &nWorldModels)
 {
 	nBlocks      = g_pMainWorld ? (uint32)g_pMainWorld->m_aBlocks.size() : 0;
 	nVerts       = g_nTotalVerts;
@@ -1807,68 +1574,7 @@ void GLWorld_GetStats(uint32 &nBlocks, uint32 &nVerts, uint32 &nTris, uint32 &nW
 	nWorldModels = (uint32)g_aWorldModels.size();
 }
 
-// Common GL state for world/world-model drawing (paired with glw_EndDraw).
-static void glw_BeginDraw()
-{
-	glEnable(GL_DEPTH_TEST);
-
-	// ★★★ BACKFACE CULLING — AND THE WINDING IS A SINGLE GLOBAL FLIP, NOT
-	// "INCONSISTENT". D3D's main world draw sets D3DRS_CULLMODE = D3DCULL_CCW
-	// (d3d_renderworld.cpp:668): it DOES cull world backfaces. We drew
-	// two-sided for the whole bring-up, and §15a concluded the D3D-era winding
-	// "does not survive our transform chain". That conclusion was wrong — it
-	// was reached by trying GL_BACK only. Our view matrix negates the forward
-	// row to go LH->RH (nullrender.cpp), and a negated row is a REFLECTION:
-	// it flips triangle winding globally and uniformly. So D3D's front faces
-	// arrive here wound CW, and GL's default GL_CCW front face calls them
-	// back-facing. Declaring GL_CW as front makes GL_BACK cull exactly the set
-	// D3D culls.
-	//
-	// ⚠️ WHY IT MATTERS BEYOND "extra triangles": a DOUBLE-SIDED surface has two
-	// COINCIDENT faces. Drawing both rasterizes them at the same depth, and
-	// which one wins is decided per-pixel by depth-test ties — that is the
-	// view-angle-dependent banding on C08S03's noren curtain, and it is the
-	// "texture flickering" of §42(b)/§45/§48. Exactly coplanar surfaces
-	// z-fight no matter how good the depth buffer is, which is why §45's
-	// near/far precision arithmetic correctly found nothing to fix.
-	//
-	// Verified: with this on, the curtain is clean AND the room is complete.
-	// (GL_BACK culling — the §15a experiment — removes the floor and walls,
-	// which is what "inconsistent winding" looked like.)
-	// LT_WORLD_NOCULL=1 restores the old two-sided draw for A/B.
-	static int s_nNoCull = -1;
-	if (s_nNoCull < 0) s_nNoCull = getenv("LT_WORLD_NOCULL") ? 1 : 0;
-	if (s_nNoCull)
-	{
-		glDisable(GL_CULL_FACE);
-	}
-	else
-	{
-		glFrontFace(GL_CW);          // our LH->RH view matrix flips winding
-		glCullFace(GL_BACK);
-		glEnable(GL_CULL_FACE);
-	}
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	// Cut out masked texels (fences, grates, foliage). Real translucency
-	// (glass) becomes a cutout too — acceptable until blended passes exist.
-	glAlphaFunc(GL_GREATER, 0.5f);
-}
-
-static void glw_EndDraw()
-{
-	glActiveTexture(GL_TEXTURE1);
-	glDisable(GL_TEXTURE_2D);
-	glActiveTexture(GL_TEXTURE0);
-	glDisable(GL_TEXTURE_2D);
-	glDisable(GL_ALPHA_TEST);
-	// ⚠️ Hand back the GL defaults. Every other pass (models, sprites,
-	// polygrids) was written when the world left culling OFF, and model
-	// winding really IS inconsistent — so leaking GL_CULL_FACE/GL_CW out of
-	// here would drop model triangles.
-	glDisable(GL_CULL_FACE);
-	glFrontFace(GL_CCW);
-}
-
+// Common GL state for world/world-model drawing (paired with rw_EndDraw).
 // Draw one parsed render world (main world or a world model, in its own space).
 // bAllowAlphaTest=false: draw textured sections without the cutout test (sky
 // textures often carry zero alpha for blend layering — the test would discard
@@ -1876,397 +1582,50 @@ static void glw_EndDraw()
 // nObjectAlpha: the OWNING OBJECT's alpha (LTObject::m_ColorA), multiplied into
 // every emitted vertex colour. 255 for the main world and opaque world models.
 // ⚠️ The colour emit below used glColor3ub, which forces alpha to 1.0 and threw
-// this away — the same trap §35 found in glm_EmitMesh. Without it, a world model
+// this away — the same trap §35 found in rm_EmitMesh. Without it, a world model
 // with m_ColorA < 255 (all the window/door GLASS) blends at full opacity, i.e.
 // looks solid.
-static void glw_DrawWorld(const GLWorld &cWorld, bool bAllowAlphaTest = true,
-                          uint8 nObjectAlpha = 255)
+static uint32 g_nRWDrawnSections = 0, g_nRWDrawnTris = 0;   // per-call census
+
+// ★ LT_DEBUG_FOGFACTOR: make the framebuffer BE the fog factor.
+// GL has no shader to print it from, so the surface is forced WHITE and
+// UNTEXTURED; run with black fog (+FogR 0 +FogG 0 +FogB 0) and the fixed
+// function computes mix(black, white, f) == f for every pixel. The Metal side
+// emits in.fog directly (mtl_world.mm), and the two images diff.
+static bool rw_FogFactorDebug(void)
 {
-	for (size_t nBlock = 0; nBlock < cWorld.m_aBlocks.size(); ++nBlock)
-	{
-		const GLWBlock &cBlock = cWorld.m_aBlocks[nBlock];
-		for (size_t nSection = 0; nSection < cBlock.m_aSections.size(); ++nSection)
-		{
-			const GLWSection &cSection = cBlock.m_aSections[nSection];
-
-			// Invisible / helper geometry
-			if (cSection.m_nShaderCode == kPCShader_None ||
-			    cSection.m_nShaderCode == kPCShader_SkyPortal ||
-			    cSection.m_nShaderCode == kPCShader_Occluder)
-				continue;
-
-			GLuint nTexName = cSection.m_pTexture ? GLTex_GetName(cSection.m_pTexture) : 0;
-
-			// LT_TRACE_NOTEX=1: one-shot census of every section that ends up
-			// WITHOUT a base texture. Such a section falls into the bLMOnly path
-			// below and draws its bare LIGHTMAP -- which reads as a black hole in
-			// any shadowed area, so "missing texture" and "missing light" look
-			// identical in a screenshot. This says which it actually is, and
-			// where. LT_DEBUG_NOTEX=1 additionally tints them magenta on screen.
-			if (nTexName == 0 && getenv("LT_TRACE_NOTEX"))
-			{
-				static std::vector<std::string> s_aReported;
-				bool bSeen = false;
-				for (size_t i = 0; i < s_aReported.size(); ++i)
-					if (s_aReported[i] == cSection.m_sTexName) { bSeen = true; break; }
-				if (!bSeen)
-				{
-					s_aReported.push_back(cSection.m_sTexName);
-					fprintf(stderr, "[notex] '%s' shader=%u tris=%u block@(%.0f %.0f %.0f) lm=%s\n",
-					        cSection.m_sTexName.c_str(), (unsigned)cSection.m_nShaderCode,
-					        (unsigned)cSection.m_nTriCount,
-					        cBlock.m_vCenter.x, cBlock.m_vCenter.y, cBlock.m_vCenter.z,
-					        cSection.m_nLMTexture ? "yes" : "no");
-				}
-			}
-			GLuint nLMName  = cSection.m_nLMTexture;
-
-			// LT_TRACE_ENVMAP=1 — the AUTHORED texture-type census. r_LoadSystemTexture
-			// parses each DTX command string into SharedTexture::m_eTexType and, for the
-			// env-map family, links the reflection texture under eLinkedTex_EnvMap. This
-			// reports every distinct base texture that is NOT plain Single, with the
-			// shader code it is drawn under -- i.e. exactly the authored signal §40(c)
-			// established is the real one, after the alpha-class / textureEffect /
-			// SURF_TRANSPARENT dead ends.
-			if (getenv("LT_TRACE_ENVMAP") && cSection.m_pTexture &&
-			    cSection.m_pTexture->m_eTexType != eSharedTexType_Single)
-			{
-				static std::set<std::string> s_seen;
-				const SharedTexture *pLinked =
-					cSection.m_pTexture->GetLinkedTexture(eLinkedTex_EnvMap);
-				char szKey[700];
-				uint32 nEW = 0, nEH = 0;
-				if (pLinked) GLTex_GetDims((SharedTexture*)pLinked, nEW, nEH);
-				snprintf(szKey, sizeof(szKey), "type=%d shader=%u lm=%s tex='%s' env='%s' %ux%u cube=%d "
-				                               "tris=%u block@(%.0f %.0f %.0f)",
-				         (int)cSection.m_pTexture->m_eTexType,
-				         (unsigned)cSection.m_nShaderCode, nLMName ? "yes" : "no",
-				         cSection.m_sTexName.c_str(),
-				         pLinked ? GLTex_GetTexName((SharedTexture*)pLinked) : "<none>",
-				         nEW, nEH,
-				         pLinked ? (int)GLTex_IsCubeMap((SharedTexture*)pLinked) : -1,
-				         (unsigned)cSection.m_nTriCount,
-				         cBlock.m_vCenter.x, cBlock.m_vCenter.y, cBlock.m_vCenter.z);
-				if (s_seen.insert(szKey).second)
-					fprintf(stderr, "[envmap] %s\n", szKey);
-			}
-
-			// Pure-lightmap sections (no base texture): the lightmap IS the
-			// surface color — put it on unit 0 with its own UV set.
-			// A section whose texture never resolved falls into the bLMOnly path
-			// below and draws its bare LIGHTMAP, which reads as a flat glowing
-			// panel -- the white/cyan patches on the village buildings. Those are
-			// the LightAnim_BASE (light-animation) surfaces; until that system is
-			// understood, drawing nothing is much closer to retail than drawing a
-			// glowing panel. LT_DRAW_NOTEX=1 restores the old behaviour for
-			// diagnosis (LT_TRACE_NOTEX=1 lists them).
-			static int s_nDrawNoTex = -1;
-			if (s_nDrawNoTex < 0) s_nDrawNoTex = getenv("LT_DRAW_NOTEX") ? 1 : 0;
-			// ⚠️ Refinement of the §14 skip: it must only apply to LIGHTMAPPED
-			// sections (whose fallback would be the glowing bare-lightmap
-			// panels). A GOURAUD section with a failed texture is drawn by
-			// retail D3D as solid VERTEX COLOR -- and the Siberia sky dome
-			// depends on it: its authored texture (Tex/Siberia/SkySib01.dtx)
-			// does not exist in the retail install AT ALL, so retail always
-			// drew that dome as vertex-colored storm grey. Skipping it gave a
-			// pure black Siberian sky. (Found via the §3 rez harness: the six
-			// GAME2.REZ string hits are world-data references, not the file.)
-			if (nTexName == 0 && nLMName != 0 && !s_nDrawNoTex)
-				continue;
-
-			bool bLMOnly = (nTexName == 0 && nLMName != 0);
-
-			glActiveTexture(GL_TEXTURE0);
-			if (nTexName || bLMOnly)
-			{
-				glEnable(GL_TEXTURE_2D);
-				glBindTexture(GL_TEXTURE_2D, bLMOnly ? nLMName : nTexName);
-			}
-			else
-				glDisable(GL_TEXTURE_2D);
-
-			// Alpha test only for real textures (cutout masks); lightmaps have
-			// no alpha.
-			// How this surface uses its alpha. An unconditional 0.5 cutout on
-			// every textured surface discards EVERY texel of a uniformly
-			// semi-transparent texture -- shoji paper screens, lamp-post glass
-			// and railings all vanished that way, looking exactly like missing
-			// geometry. Only genuine 0/255 masks (fences, foliage) get the test;
-			// smoothly translucent surfaces are blended instead.
-			// LT_NO_ALPHATEST=1 disables the test entirely (bisecting aid).
-			static int s_nNoAlphaTest = -1;
-			if (s_nNoAlphaTest < 0) { const char *p = getenv("LT_NO_ALPHATEST"); s_nNoAlphaTest = (p && p[0] && p[0] != '0') ? 1 : 0; }
-
-			// The AUTHORED alpha-test reference (DTX "AlphaRef <n>"), exactly as
-			// the D3D renderer does it: 0 == ALPHAREF_NONE == do not alpha-test
-			// this surface. Content-based guessing is gone -- see §13.
-			unsigned int nAlphaRef = cSection.m_pTexture
-			                       ? GLTex_GetAlphaRef(cSection.m_pTexture)
-			                       : 0;
-			bool bBlend = false;
-
-			if (nTexName && bAllowAlphaTest && !s_nNoAlphaTest && nAlphaRef != 0)
-			{
-				// Use the AUTHORED reference, not a hardcoded 0.5. D3D sets
-				// D3DRS_ALPHAREF to this value with a GREATEREQUAL func.
-				glAlphaFunc(GL_GEQUAL, (float)nAlphaRef / 255.0f);
-				glEnable(GL_ALPHA_TEST);
-			}
-			else
-			{
-				glDisable(GL_ALPHA_TEST);
-
-				// ★★ SMOOTHLY TRANSLUCENT SURFACES MUST BE BLENDED — THIS IS
-				// WHAT MAKES WINDOW AND DOOR GLASS SEE-THROUGH.
-				//
-				// ⚠️ `bBlend` existed here with its teardown already written,
-				// but NOTHING EVER SET IT: it was declared false and never
-				// assigned, so the comment above promising "smoothly translucent
-				// surfaces are blended instead" was simply not implemented. A
-				// glass section therefore got NO alpha test (correct — its
-				// authored AlphaRef is 0) and NO blend either, i.e. it drew
-				// fully OPAQUE. Dead flag, silent wrong result.
-				//
-				// ⚠️⚠️ GATED OFF BY DEFAULT — `LT_WORLDBLEND=1` TO TRY IT.
-				//
-				// The obvious implementation is "blend when the texture's alpha
-				// CLASS is TRANSLUCENT", and that is WRONG for the same reason
-				// §13/§14 already established: the class is a CONTENT HEURISTIC,
-				// and the authored AlphaRef is the real signal. The trace line in
-				// gl_texture.cpp even says so — "class is diagnostic only;
-				// AlphaRef decides".
-				//
-				// Measured over one C01/C01S01 run with LT_TRACE_ALPHACLASS=1:
-				//     550 TRANSLUCENT / 175 MASKED / 178 OPAQUE
-				// i.e. the classifier calls MOST of the game translucent,
-				// including CHARS/SKINS/CATECASUALHEAD.DTX and
-				// Guns/Skins_PV/Katana.dtx. Turning that into blending would
-				// smear a large fraction of the world.
-				//
-				// The AUTHORED signal is SURF_TRANSPARENT (de_world.h:62,
-				// "(1<<3) // Translucent"), but it lives in the BSP SURFACE data,
-				// not in the render data this file parses (§4: a section carries
-				// texture names, a shader code and a texture-effect string — no
-				// surface flags). Each triangle does carry a `polyIndex` into the
-				// world's polygon list, so the real fix is to resolve
-				// polyIndex -> surface flags and split sections on
-				// SURF_TRANSPARENT. That is the next step, not this.
-				static int s_nWorldBlend = -1;
-				if (s_nWorldBlend < 0)
-					s_nWorldBlend = getenv("LT_WORLDBLEND") ? 1 : 0;
-
-				if (nTexName && s_nWorldBlend && cSection.m_pTexture &&
-				    GLTex_GetAlphaClass(cSection.m_pTexture) == GLTEX_ALPHA_TRANSLUCENT)
-				{
-					// d3d_SetTranslucentObjectStates (d3d_draw.cpp:113-124):
-					// blend SRC_ALPHA/INV_SRC_ALPHA with DEPTH WRITES OFF, so a
-					// pane never occludes what is behind it.
-					bBlend = true;
-					glEnable(GL_BLEND);
-					glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-					glDepthMask(GL_FALSE);
-				}
-			}
-
-			bool bMultitex = (nTexName != 0 && nLMName != 0);
-			bool bSaturate = glw_SaturateOn();
-
-			// ★★ ENVIRONMENT MAPPING. Resolved from the AUTHORED texture type;
-			// eligibility for the EnvMapAlpha variant follows the section's
-			// authored SHADER CODE (4 = Lightmap_Texture), not whether a lightmap
-			// happened to resolve -- that is the discriminator AllocShader uses.
-			GLWEnvSetup cEnv;
-			if (nTexName && !bLMOnly)
-				cEnv = glw_ResolveEnvMap(cSection,
-				                         cSection.m_nShaderCode == kPCShader_Lightmap_Texture ||
-				                         cSection.m_nShaderCode == kPCShader_Lightmap ||
-				                         cSection.m_nShaderCode == kPCShader_Lightmap_Dual);
-			const bool bEnv = cEnv.Active();
-			// Units in D3D's stage order: 0 base, 1 reflection, 2 lightmap,
-			// 3 diffuse. Without a reflection the layout is the original 0/1.
-			const GLenum eUnitLM      = bEnv ? GL_TEXTURE2 : GL_TEXTURE1;
-			const GLenum eUnitEnv     = GL_TEXTURE1;
-			const GLenum eUnitDiffuse = bMultitex ? GL_TEXTURE3 : GL_TEXTURE2;
-
-			// ⚠️ ORDER MATTERS. The lightmap block below must run FIRST: without a
-			// lightmap eUnitLM and eUnitDiffuse are the SAME unit (2), and its
-			// `else glDisable(GL_TEXTURE_2D)` branch would switch the diffuse unit
-			// straight back off -- a Gouraud reflected surface would then lose its
-			// lighting entirely and render fullbright.
-			glActiveTexture(eUnitLM);
-			if (bMultitex)
-			{
-				glEnable(GL_TEXTURE_2D);
-				glBindTexture(GL_TEXTURE_2D, nLMName);
-				if (bSaturate)
-				{
-					// texture x lightmap x 2 -- the D3D Saturate lightmap
-					// blend (SRCBLEND=DESTCOLOR, DESTBLEND=SRCCOLOR).
-					glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-					glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-					glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-					glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
-					glTexEnvi(GL_TEXTURE_ENV, GL_RGB_SCALE, 2);
-					glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-					glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-				}
-				else
-					glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			}
-			else if (!bEnv)
-				glDisable(GL_TEXTURE_2D);
-			glActiveTexture(GL_TEXTURE0);
-
-			if (bEnv)
-			{
-				// The reflection sits between base and lighting, and its op may be
-				// an ADD -- so the 2x can no longer live on unit 0 or on the
-				// reflection itself for a Gouraud surface. It moves to the diffuse
-				// unit, which is where D3D's MODULATE2X actually is (stage 2). For a
-				// lightmapped surface the 2x stays on the lightmap unit, exactly as
-				// on the non-reflective path.
-				glw_BeginEnvUnit(eUnitEnv, cEnv, false);
-				glw_BeginDiffuseUnit(eUnitDiffuse, nTexName, bSaturate && !bMultitex);
-			}
-
-			bool bLit = (nLMName != 0);   // real (baked) lighting present
-
-			// Stage 0: Gouraud sections get texture x vertexcolor x 2 under
-			// Saturate (D3DTOP_MODULATE2X, d3d_rendershader_gouraud.cpp:195).
-			// Lightmapped sections keep 1x here -- their 2x lives on stage 1;
-			// doubling both would render at 4x.
-			//
-			// ⚠️ With a reflection in the chain unit 0 must emit the BARE base
-			// texture (D3DTSS_COLOROP = SELECTARG1(TEXTURE), gouraud.cpp:1067):
-			// the diffuse modulate has moved downstream past the env op, which
-			// for EnvMapAlpha and ADDSIGNED is not commutative with it.
-			if (bEnv)
-			{
-				glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_RGB_SCALE, 1);
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-			}
-			else if (bSaturate && !bLit && nTexName)
-			{
-				glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-				glTexEnvi(GL_TEXTURE_ENV, GL_RGB_SCALE, 2);
-				glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-			}
-			else
-			{
-				glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-				glTexEnvi(GL_TEXTURE_ENV, GL_RGB_SCALE, 1);
-			}
-
-			const uint32 *pIndices = &cBlock.m_aIndices[cSection.m_nStartIndex];
-			glBegin(GL_TRIANGLES);
-			for (uint32 nIdx = 0; nIdx < cSection.m_nTriCount * 3; ++nIdx)
-			{
-				const uint32 nVertIdx = pIndices[nIdx];
-				const GLWVertex &cVert = cBlock.m_aVertices[nVertIdx];
-
-				// ★ AUTHORED vertex lighting, not a heuristic. The old code
-				// here shaded non-lightmapped sections with a fixed key light
-				// floored at 140/255 -- so every Gouraud surface (most of the
-				// world) rendered at >=55% brightness and "night looked like
-				// day". The baked answer was in m_nColor all along; the
-				// composed array adds the light groups' current colors on top,
-				// which is what lets a light switch change these surfaces
-				// (same ★ rule as AlphaRef/§14 and render styles).
-				if (bLit)
-				{
-					// Lightmapped: the lightmap carries the light; D3D's
-					// lightmap shader does not modulate vertex diffuse.
-					glColor4ub(255, 255, 255, nObjectAlpha);
-				}
-				else if (nVertIdx * 3 + 2 < cBlock.m_aComposedColor.size())
-				{
-					glColor4ub(cBlock.m_aComposedColor[nVertIdx * 3 + 0],
-					           cBlock.m_aComposedColor[nVertIdx * 3 + 1],
-					           cBlock.m_aComposedColor[nVertIdx * 3 + 2],
-					           nObjectAlpha);
-				}
-				else
-				{
-					glColor4ub(255, 255, 255, nObjectAlpha);
-				}
-
-				if (bLMOnly)
-					glTexCoord2f(cVert.m_fU1, cVert.m_fV1);
-				else if (nTexName)
-					glTexCoord2f(cVert.m_fU0, cVert.m_fV0);
-				if (bMultitex)
-					glMultiTexCoord2f(eUnitLM, cVert.m_fU1, cVert.m_fV1);
-				if (bEnv)
-				{
-					if (cEnv.IsEnv())
-					{
-						// ⚠️ GL_REFLECTION_MAP derives its coordinates from the
-						// NORMAL. Without this call every vertex reflects the same
-						// direction and the surface shows one flat colour -- which
-						// reads as "the env map did not load", not as a missing
-						// normal. The 44-byte world vertex carries it already (§4).
-						glNormal3f(cVert.m_vNormal.x, cVert.m_vNormal.y, cVert.m_vNormal.z);
-					}
-					else
-					{
-						// A DETAIL layer takes the BASE UVs; the unit's texture
-						// matrix applies the authored scale and rotation.
-						glMultiTexCoord2f(eUnitEnv, cVert.m_fU0, cVert.m_fV0);
-					}
-				}
-
-				glVertex3f(cVert.m_vPos.x, cVert.m_vPos.y, cVert.m_vPos.z);
-			}
-			glEnd();
-
-			if (bEnv)
-			{
-				glw_EndDiffuseUnit(eUnitDiffuse);
-				glw_EndEnvUnit(eUnitEnv, cEnv);
-				if (bMultitex)
-				{
-					// The lightmap moved to unit 2 for this section; put unit 2
-					// back the way the non-env path leaves unit 1, or the next
-					// section inherits a live texture on a unit it never touches.
-					glActiveTexture(eUnitLM);
-					glTexEnvi(GL_TEXTURE_ENV, GL_RGB_SCALE, 1);
-					glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-					glDisable(GL_TEXTURE_2D);
-					glActiveTexture(GL_TEXTURE0);
-				}
-			}
-
-			if (bBlend)
-			{
-				glDisable(GL_BLEND);
-				glDepthMask(GL_TRUE);
-			}
-		}
-	}
+	static int s_n = -1;
+	if (s_n < 0) s_n = getenv("LT_DEBUG_FOGFACTOR") ? 1 : 0;
+	return s_n != 0;
 }
 
-void GLWorld_Draw()
+static bool rw_TraceWorld(void)
 {
-	if (!GLWorld_IsLoaded())
+	static int s_n = -1;
+	if (s_n < 0) s_n = getenv("LT_TRACE_RWORLD") ? 1 : 0;
+	return s_n != 0;
+}
+
+static void rw_DrawWorld(const RWorld &cWorld, const RWDrawParams &cParams)
+{
+	// ★ THE BACKEND BRANCH USED TO BE HERE. Everything that reaches this point --
+	// the stream parse, the light groups, the world-model/sky/translucency walk
+	// that calls us -- is SHARED and stays; only the per-section draw was
+	// backend-specific, and the GL half of it (507 lines, 89 GL calls: the
+	// largest single block of GL in the renderer) is gone with the GL backend.
+	MTLWorld_DrawWorld(&cWorld, &cParams);
+}
+
+void RWorld_Draw()
+{
+	if (!RWorld_IsLoaded())
 		return;
 
-	glw_BeginDraw();
-	glw_DrawWorld(*g_pMainWorld);
-	glw_EndDraw();
+	RWDrawParams cParams;
+	rw_DrawWorld(*g_pMainWorld, cParams);
 }
 
-static const GLWorld *glw_FindWorldModel(const char *pName)
+static const RWorld *rw_FindWorldModel(const char *pName)
 {
 	if (!pName || !pName[0])
 		return 0;
@@ -2282,23 +1641,23 @@ static const GLWorld *glw_FindWorldModel(const char *pName)
 // Sky (the sky-object list is per frame, from SceneDesc::m_SkyObjects)
 // ---------------------------------------------------------------------------
 
-#define GLW_MAX_SKY_OBJECTS 64
-static LTObject *g_apSkyObjects[GLW_MAX_SKY_OBJECTS];
+#define RW_MAX_SKY_OBJECTS 64
+static LTObject *g_apSkyObjects[RW_MAX_SKY_OBJECTS];
 static int       g_nSkyObjects = 0;
 
-void GLWorld_SetSkyObjects(LTObject **ppSkyObjects, int nCount)
+void RWorld_SetSkyObjects(LTObject **ppSkyObjects, int nCount)
 {
 	g_nSkyObjects = 0;
 	if (!ppSkyObjects)
 		return;
-	for (int i = 0; i < nCount && g_nSkyObjects < GLW_MAX_SKY_OBJECTS; ++i)
+	for (int i = 0; i < nCount && g_nSkyObjects < RW_MAX_SKY_OBJECTS; ++i)
 	{
 		if (ppSkyObjects[i])
 			g_apSkyObjects[g_nSkyObjects++] = ppSkyObjects[i];
 	}
 }
 
-static bool glw_IsSkyObject(const LTObject *pObj)
+static bool rw_IsSkyObject(const LTObject *pObj)
 {
 	for (int i = 0; i < g_nSkyObjects; ++i)
 	{
@@ -2308,15 +1667,18 @@ static bool glw_IsSkyObject(const LTObject *pObj)
 	return false;
 }
 
-void GLWorld_DrawSkyWorldModels()
+void RWorld_DrawSkyWorldModels()
 {
-	if (!GLWorld_IsLoaded() || g_nSkyObjects <= 0)
+	if (!RWorld_IsLoaded() || g_nSkyObjects <= 0)
 		return;
 
-	glw_BeginDraw();
-	// The sky is a backdrop: no depth interaction with the world.
-	glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
+
+	// The sky is a backdrop: no depth interaction with the world. Both of those
+	// are RWDrawParams now, so the Metal path gets them too.
+	RWDrawParams cSkyParams;
+	cSkyParams.m_bAllowAlphaTest = false;   // sky layers often carry zero alpha
+	cSkyParams.m_bDepthTest      = false;
+	cSkyParams.m_bDepthWrite     = false;
 
 	static bool s_bLogged = false;
 	bool bLog = !s_bLogged;
@@ -2336,10 +1698,10 @@ void GLWorld_DrawSkyWorldModels()
 		// Sky world models draw UNTRANSFORMED (their geometry is authored in
 		// sky space; the caller's sky camera provides the view) — D3D parity.
 		const WorldBsp *pBsp = ((WorldModelInstance*)pObj)->GetOriginalBsp();
-		const GLWorld *pWorld = pBsp ? glw_FindWorldModel(pBsp->m_WorldName) : 0;
+		const RWorld *pWorld = pBsp ? rw_FindWorldModel(pBsp->m_WorldName) : 0;
 		if (bLog && pWorld && !pWorld->m_aBlocks.empty())
 		{
-			const GLWBlock &cBlock = pWorld->m_aBlocks[0];
+			const RWBlock &cBlock = pWorld->m_aBlocks[0];
 			fprintf(stderr, "[glw] sky WM '%s': %u blocks, block0 center (%.0f %.0f %.0f) half (%.0f %.0f %.0f)\n",
 			        pBsp->m_WorldName, (uint32)pWorld->m_aBlocks.size(),
 			        cBlock.m_vCenter.x, cBlock.m_vCenter.y, cBlock.m_vCenter.z,
@@ -2349,16 +1711,14 @@ void GLWorld_DrawSkyWorldModels()
 			fprintf(stderr, "[glw] sky WM '%s': NO render data\n",
 			        pBsp ? pBsp->m_WorldName : "<null>");
 		if (pWorld)
-			glw_DrawWorld(*pWorld, false);   // no cutout test on sky layers
+			rw_DrawWorld(*pWorld, cSkyParams);
 	}
 
-	glDepthMask(GL_TRUE);
-	glw_EndDraw();
 }
 
-void GLWorld_DrawWorldModels(bool bTranslucentPass)
+void RWorld_DrawWorldModels(bool bTranslucentPass)
 {
-	if (!GLWorld_IsLoaded() || !g_pClientMgr || g_aWorldModels.empty())
+	if (!RWorld_IsLoaded() || !g_pClientMgr || g_aWorldModels.empty())
 		return;
 
 	// One-shot inventory (bring-up diagnostics). Only the SOLID call logs — it
@@ -2392,7 +1752,6 @@ void GLWorld_DrawWorldModels(bool bTranslucentPass)
 		fprintf(stderr, "[glw] %u dynamic lights (OT_LIGHT) in world\n", nLights);
 	}
 
-	glw_BeginDraw();
 
 	LTLink *pHead = &g_pClientMgr->m_ObjectMgr.m_ObjectLists[OT_WORLDMODEL].m_Head;
 	// ⚠️ TWO PASSES, AND THEY ARE TWO SEPARATE CALLS WITH MODELS DRAWN BETWEEN
@@ -2405,7 +1764,7 @@ void GLWorld_DrawWorldModels(bool bTranslucentPass)
 	// — including FLAG2_FORCETRANSLUCENT — is a translucent world model, and
 	// C08S03's glass cage ('WallGlass01'..'04', 'TopGlassWM', 'FloorGlass01/02',
 	// all rgba a=255 flags2=0x40) is exactly that. Running the whole world-model
-	// walk before GLModel_DrawModels() let a pane blend over the already-drawn
+	// walk before RModel_DrawModels() let a pane blend over the already-drawn
 	// BSP room (so the room still showed through) while writing depth, which
 	// depth-rejected every CHARACTER behind it — symmetrically, from either side
 	// of the cage. That was the reported "characters do not render through the
@@ -2421,7 +1780,7 @@ void GLWorld_DrawWorldModels(bool bTranslucentPass)
 		if (!pInstance || !(pInstance->m_Flags & FLAG_VISIBLE))
 			continue;
 
-		if (glw_IsSkyObject(pInstance))
+		if (rw_IsSkyObject(pInstance))
 			continue;   // drawn by the sky pass
 
 		const WorldBsp *pBsp = pInstance->GetOriginalBsp();
@@ -2430,7 +1789,7 @@ void GLWorld_DrawWorldModels(bool bTranslucentPass)
 
 		// Only world models that carried render data exist in our list; the
 		// rest (physics/vis-only BSPs) legitimately miss.
-		const GLWorld *pWorld = glw_FindWorldModel(pBsp->m_WorldName);
+		const RWorld *pWorld = rw_FindWorldModel(pBsp->m_WorldName);
 		if (bLog)
 			fprintf(stderr, "[glw] worldmodel '%s' @(%.0f %.0f %.0f): %s  rgba=(%u %u %u %u) flags=0x%x flags2=0x%x\n",
 			        pBsp->m_WorldName, pInstance->m_Pos.x, pInstance->m_Pos.y,
@@ -2485,42 +1844,28 @@ void GLWorld_DrawWorldModels(bool bTranslucentPass)
 		if ((bAlphaBlended || bForcedParts) != bTranslucentPass)
 			continue;
 
+		RWDrawParams cParams;
+		cParams.m_pModelMatrix = aGL;
+		cParams.m_nObjectAlpha = pInstance->m_ColorA;
+
 		if (bForcedParts)
 		{
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glAlphaFunc(GL_GREATER, 0.0f);
-			glEnable(GL_ALPHA_TEST);
+			cParams.m_eBlend            = kRWBlend_Alpha;
+			cParams.m_bDiscardZeroAlpha = true;
+			// ⚠️ DEPTH WRITES STAY ON here -- with them off the far side of a
+			// car wheel draws through the near side and looks doubled (§15).
 		}
 		else if (bAlphaBlended)
 		{
 			// d3d_SetTranslucentObjectStates (d3d_draw.cpp:102) + the additive
 			// override in d3d_DrawTranslucentWorldModel (drawworldmodel.cpp:88).
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA,
-			            (pInstance->m_Flags2 & FLAG2_ADDITIVE) ? GL_ONE
-			                                                   : GL_ONE_MINUS_SRC_ALPHA);
-			glDepthMask(GL_FALSE);          // D3DRS_ZWRITEENABLE, FALSE
+			cParams.m_eBlend = (pInstance->m_Flags2 & FLAG2_ADDITIVE)
+			                 ? kRWBlend_Additive : kRWBlend_Alpha;
+			cParams.m_bDepthWrite = false;   // D3DRS_ZWRITEENABLE, FALSE
 		}
 
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-		glMultMatrixf(aGL);
-		glw_DrawWorld(*pWorld, true, pInstance->m_ColorA);
-		glPopMatrix();
-
-		if (bForcedParts)
-		{
-			glDisable(GL_BLEND);
-			glDisable(GL_ALPHA_TEST);
-		}
-		else if (bAlphaBlended)
-		{
-			glDisable(GL_BLEND);
-			glDepthMask(GL_TRUE);
-		}
+		rw_DrawWorld(*pWorld, cParams);
 	}
 	}
 
-	glw_EndDraw();
 }

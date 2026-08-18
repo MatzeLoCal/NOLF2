@@ -2,14 +2,13 @@
 //
 // MODULE  : macos_window.mm
 //
-// PURPOSE : macOS (Cocoa + OpenGL) platform window for the Jupiter EX engine.
+// PURPOSE : macOS (Cocoa + Metal) platform window for the Jupiter EX engine.
 //           This is the native replacement for the Win32 window/message-loop
 //           in kernel/src/sys/win/client.cpp.
 //
-//           OpenGL-first per the project plan: a legacy (2.1) GL context is
-//           created so the renderer can start fixed-function (matching the
-//           D3D9-era engine, and portable toward SGI later). The eventual
-//           GL->Metal port replaces only the context/surface creation here.
+//           The port was brought up on a legacy (2.1) fixed-function GL context
+//           to match the D3D9-era engine; that backend is DELETED (§108) and the
+//           window is now unconditionally backed by a CAMetalLayer.
 //
 //           Exposes a small C ABI (LTMacWin_*) that the render/display hookup
 //           calls; keeps all Objective-C confined to this file.
@@ -17,53 +16,57 @@
 // ----------------------------------------------------------------------- //
 
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/CAMetalLayer.h>
 #include "macos_input.h"
 #import <AppKit/AppKit.h>
-#include <OpenGL/gl.h>
 
 #include "ltmacwindow.h"   // the C ABI declared for the rest of the engine
 
 // --------------------------------------------------------------------------
-// The GL view: owns the NSOpenGLContext and forwards the engine's frame draw.
+// ★ THE METAL VIEW. A plain NSView backed by a CAMetalLayer.
+//
+// Deliberately NOT MTKView: MTKView owns the frame loop and wants to drive
+// drawing from its own display callback, whereas this engine drives frames
+// imperatively from its own main loop. A layer-backed NSView gives the layer
+// without the ceremony.
 // --------------------------------------------------------------------------
-@interface LTGLView : NSOpenGLView
-@property (nonatomic, assign) LTMacWin_DrawFn drawFn;
-@property (nonatomic, assign) void*           drawUser;
+@interface LTMetalView : NSView
 @end
 
-@implementation LTGLView
+@implementation LTMetalView
 
-- (void)prepareOpenGL {
-    [super prepareOpenGL];
-    GLint swap = 1;
-    [[self openGLContext] setValues:&swap forParameter:NSOpenGLContextParameterSwapInterval];
-}
-
-- (void)drawRect:(NSRect)dirty {
-    // The engine drives the GL context imperatively via the LTMacWin_* ABI
-    // (the renderer's nr_SwapBuffers presents each frame). If a push-model draw
-    // callback is set, honour it here; otherwise do NOTHING — a placeholder
-    // clear+flush in this Cocoa display-cycle callback would race with, and
-    // overwrite, the engine's just-presented frame (which is what put a grey
-    // window on screen over the renderer's green clear).
-    if (self.drawFn) {
-        [[self openGLContext] makeCurrentContext];
-        self.drawFn(self.drawUser);
-        [[self openGLContext] flushBuffer];
-    }
-}
-
-// FPS games want the view to take key input.
++ (Class)layerClass           { return [CAMetalLayer class]; }
+- (CALayer*)makeBackingLayer  { return [CAMetalLayer layer]; }
+- (BOOL)wantsUpdateLayer      { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
+
+// Keep the drawable size in PIXELS in step with the view, including across a
+// backing-scale change (moving between displays of different density).
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    CAMetalLayer* l = (CAMetalLayer*)self.layer;
+    CGFloat scale = self.window ? self.window.backingScaleFactor : 1.0;
+    l.contentsScale = scale;
+    l.drawableSize  = CGSizeMake(self.bounds.size.width  * scale,
+                                 self.bounds.size.height * scale);
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    CAMetalLayer* l = (CAMetalLayer*)self.layer;
+    CGFloat scale = self.window ? self.window.backingScaleFactor : 1.0;
+    l.drawableSize = CGSizeMake(newSize.width * scale, newSize.height * scale);
+}
+
 @end
 
 // --------------------------------------------------------------------------
 // Window state (single main window; the engine is single-window).
 // --------------------------------------------------------------------------
 namespace {
-    NSWindow*  g_pWindow = nil;
-    LTGLView*  g_pView   = nil;
-    bool       g_bShouldClose = false;
+    NSWindow*     g_pWindow    = nil;
+    LTMetalView*  g_pMetalView = nil;
+    bool          g_bShouldClose = false;
 }
 
 @interface LTWindowDelegate : NSObject <NSWindowDelegate>
@@ -119,39 +122,39 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
             [g_pWindow center];
         }
 
-        // Legacy (2.1) profile -> fixed-function available (renderer starts here).
-        NSOpenGLPixelFormatAttribute attrs[] = {
-            NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersionLegacy,
-            NSOpenGLPFADoubleBuffer,
-            NSOpenGLPFAAccelerated,
-            NSOpenGLPFAColorSize, 24,
-            NSOpenGLPFAAlphaSize, 8,
-            NSOpenGLPFADepthSize, 24,
-            NSOpenGLPFAStencilSize, 8,
-            0
-        };
-        NSOpenGLPixelFormat* pf = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
-        if (!pf) return false;
-
-        g_pView = [[LTGLView alloc] initWithFrame:frame pixelFormat:pf];
-        // Retina backing doubles the pixel count in each axis -- affordable in a
-        // window, expensive full screen (a 2x 1728pt display means a 3456x2234
-        // drawable). LT_HIDPI=1 forces it back on if wanted; everything
-        // downstream follows LTMacWin_GetSize, so either is consistent.
-        BOOL bHiDPI = fullscreen ? (getenv("LT_HIDPI") != NULL) : YES;
-        [g_pView setWantsBestResolutionOpenGLSurface:bHiDPI];
-        [g_pWindow setContentView:g_pView];
-        [g_pWindow makeFirstResponder:g_pView];
-
-        [g_pWindow makeKeyAndOrderFront:nil];
-        [NSApp activateIgnoringOtherApps:YES];
-
-        return true;
+        // ★★★ METAL IS THE ONLY BACKEND. The OpenGL renderer that this port was
+        // brought up on is DELETED (§108); LT_RENDER_GL is no longer read, and
+        // the archived reference frames in macbuild/gl_reference_frames/ are the
+        // only remaining GL artefact. A GL-vs-Metal A/B is a diff against those
+        // images, not a runtime switch.
+        {
+            g_pMetalView = [[LTMetalView alloc] initWithFrame:frame];
+            g_pMetalView.wantsLayer = YES;
+            CGFloat scale = fullscreen ? (getenv("LT_HIDPI") ? 2.0 : 1.0)
+                                       : [[NSScreen mainScreen] backingScaleFactor];
+            CAMetalLayer* l = (CAMetalLayer*)g_pMetalView.layer;
+            l.contentsScale = scale;
+            // LT_NO_VSYNC=1 -- uncap the frame rate. The renderer is idle most
+            // of every frame (§105: 2-5 ms GPU against a 16.7 ms vsync budget),
+            // so with the display sync off the frame time measures what the
+            // engine ACTUALLY costs instead of what the display allows.
+            // ⚠️ Off by default: presenting faster than the display refreshes
+            // only burns power and tears.
+            if (getenv("LT_NO_VSYNC")) {
+                l.displaySyncEnabled = NO;
+                fprintf(stderr, "[mac] LT_NO_VSYNC: display sync OFF -- frame rate uncapped\n");
+            }
+            l.drawableSize  = CGSizeMake(frame.size.width * scale,
+                                         frame.size.height * scale);
+            [g_pWindow setContentView:g_pMetalView];
+            [g_pWindow makeFirstResponder:g_pMetalView];
+            [g_pWindow makeKeyAndOrderFront:nil];
+            [NSApp activateIgnoringOtherApps:YES];
+            fprintf(stderr, "[mac] Metal view %.0fx%.0f (scale %.1f)\n",
+                    l.drawableSize.width, l.drawableSize.height, (double)scale);
+            return true;
+        }
     }
-}
-
-void LTMacWin_SetDrawCallback(LTMacWin_DrawFn fn, void* user) {
-    if (g_pView) { g_pView.drawFn = fn; g_pView.drawUser = user; }
 }
 
 // --------------------------------------------------------------------------
@@ -225,37 +228,19 @@ LTMacWndProc* LTMacWin_GetWndProcSlot(void) {
     return &g_pMacWndProc;
 }
 
-// Win32 packs the cursor position into LPARAM as two signed 16-bit halves.
-static inline long ltmac_MakeLParam(int x, int y) {
-    return (long)((unsigned long)(x & 0xFFFF) | ((unsigned long)(y & 0xFFFF) << 16));
-}
-
-// Cocoa view coords are y-up from the bottom-left; Win32/the game want y-down
-// from the top-left, in the same pixel space the engine renders in (the backing
-// store, not points -- see LTMacWin_GetSize).
-static void ltmac_PostMouseMessage(unsigned int uMsg, NSEvent* ev) {
-    if (!g_pMacWndProc || !g_pView) return;
-
-    NSPoint pt = [g_pView convertPoint:[ev locationInWindow] fromView:nil];
-    NSRect  bounds = [g_pView bounds];
-    NSRect  backing = [g_pView convertRectToBacking:bounds];
-    CGFloat sx = (NSWidth(bounds)  > 0.0) ? NSWidth(backing)  / NSWidth(bounds)  : 1.0;
-    CGFloat sy = (NSHeight(bounds) > 0.0) ? NSHeight(backing) / NSHeight(bounds) : 1.0;
-
-    int x = (int)(pt.x * sx);
-    int y = (int)((NSHeight(bounds) - pt.y) * sy);
-
-    unsigned long wParam = 0;
-    if ([NSEvent pressedMouseButtons] & 1) wParam |= 0x0001;   // MK_LBUTTON
-    if ([NSEvent pressedMouseButtons] & 2) wParam |= 0x0002;   // MK_RBUTTON
-
-    static bool s_bFirst = true;
-    if (s_bFirst && getenv("LT_TRACE_INPUT")) {
-        s_bFirst = false;
-        fprintf(stderr, "[in] first mouse message to game: msg=0x%x at (%d,%d)\n", uMsg, x, y);
-    }
-    g_pMacWndProc((void*)g_pWindow, uMsg, wParam, ltmac_MakeLParam(x, y));
-}
+// ⚠️ THE WM_MOUSEMOVE / WM_*BUTTON* PATH IS GONE, AND IT WAS ALREADY DEAD.
+// ltmac_PostMouseMessage converted Cocoa view coords to Win32 y-down pixels and
+// posted them to the game's hooked window proc. Its guard was `if
+// (!g_pMacWndProc || !g_pView) return;` and g_pView -- the NSOpenGLView -- has
+// been unconditionally nil for the whole Metal era, so it never posted a single
+// message. Its own comment claimed to be "the only path NOLF2 has for its own
+// cursor and for clicking menu items"; that comment was STALE. Mouse buttons
+// reach the game through the input device instead (macos_input.mm's
+// g_aMouseDown -> LTMacInput_IsMouseButtonDown), which is why menus, the
+// document popup and the light switch all work in play.
+// ⇒ Deleted rather than re-pointed at the Metal view: re-pointing it would
+// START delivering messages the engine has never received, which is a
+// behaviour change dressed up as a rename. ltmac_MakeLParam went with it.
 
 void LTMacWin_SetCursorVisible(bool bVisible) {
     g_bGameWantsCursor = bVisible;
@@ -448,29 +433,7 @@ void LTMacWin_PumpEvents(void) {
                                         untilDate:[NSDate distantPast]
                                            inMode:NSDefaultRunLoopMode
                                           dequeue:YES])) {
-            // Mouse position/clicks additionally go to the game's hooked window
-            // proc -- that is the only path NOLF2 has for its own cursor and for
-            // clicking menu items (see ltmacwindow.h / windowsx.h).
             switch ([ev type]) {
-                case NSEventTypeMouseMoved:
-                case NSEventTypeLeftMouseDragged:
-                case NSEventTypeRightMouseDragged:
-                    ltmac_PostMouseMessage(0x0200 /*WM_MOUSEMOVE*/, ev);
-                    break;
-                case NSEventTypeLeftMouseDown:
-                    ltmac_PostMouseMessage([ev clickCount] >= 2 ? 0x0203 /*DBLCLK*/
-                                                               : 0x0201 /*WM_LBUTTONDOWN*/, ev);
-                    break;
-                case NSEventTypeLeftMouseUp:
-                    ltmac_PostMouseMessage(0x0202 /*WM_LBUTTONUP*/, ev);
-                    break;
-                case NSEventTypeRightMouseDown:
-                    ltmac_PostMouseMessage([ev clickCount] >= 2 ? 0x0206 /*DBLCLK*/
-                                                               : 0x0204 /*WM_RBUTTONDOWN*/, ev);
-                    break;
-                case NSEventTypeRightMouseUp:
-                    ltmac_PostMouseMessage(0x0205 /*WM_RBUTTONUP*/, ev);
-                    break;
                 case NSEventTypeKeyDown:
                     // ★ WM_CHAR -- the ONLY path by which TYPED TEXT reaches the
                     // game. On Win32, TranslateMessage turns WM_KEYDOWN into
@@ -522,12 +485,9 @@ void LTMacWin_PumpEvents(void) {
     }
 }
 
-void LTMacWin_SwapBuffers(void) {
-    if (g_pView) [[g_pView openGLContext] flushBuffer];
-}
-
-void LTMacWin_MakeCurrent(void) {
-    if (g_pView) [[g_pView openGLContext] makeCurrentContext];
+void* LTMacWin_GetMetalLayer(void) {
+    if (g_pMetalView) return (__bridge void*)g_pMetalView.layer;
+    return NULL;
 }
 
 bool LTMacWin_ShouldClose(void) { return g_bShouldClose; }
@@ -535,23 +495,15 @@ bool LTMacWin_ShouldClose(void) { return g_bShouldClose; }
 void LTMacWin_RequestClose(void) { g_bShouldClose = true; }
 
 void LTMacWin_GetSize(int* w, int* h) {
-    if (g_pView) {
-        // Return the drawable size in BACKING pixels, not points. The view has
-        // setWantsBestResolutionOpenGLSurface:YES, so on a Retina (2x) display
-        // the GL framebuffer is 2x the point size. glViewport/glReadPixels work
-        // in pixels — returning points here would size them to a quarter of the
-        // buffer (the classic "renders in the lower-left quarter" bug).
-        // ...but ONLY when the view actually asked for a hi-res surface. With
-        // wantsBestResolutionOpenGLSurface:NO the GL drawable is the POINT size,
-        // while convertRectToBacking still reports 2x -- reporting that would
-        // set a viewport twice the real buffer. Honour the flag so this stays
-        // the single source of truth in both windowed and fullscreen modes.
-        NSRect bounds = [g_pView bounds];
-        NSRect b = [g_pView wantsBestResolutionOpenGLSurface]
-                 ? [g_pView convertRectToBacking:bounds]
-                 : bounds;
-        if (w) *w = (int)b.size.width;
-        if (h) *h = (int)b.size.height;
+    // ★ The CAMetalLayer's drawableSize IS the pixel buffer, kept in step with
+    // the view by viewDidChangeBackingProperties/setFrameSize above. BACKING
+    // PIXELS, never points -- the whole pipeline (viewport, camera rect, 2D
+    // screen ortho, frame dumps) is sized from this one call and must agree
+    // with the real buffer.
+    if (g_pMetalView) {
+        CAMetalLayer* l = (CAMetalLayer*)g_pMetalView.layer;
+        if (w) *w = (int)l.drawableSize.width;
+        if (h) *h = (int)l.drawableSize.height;
     }
 }
 
@@ -561,7 +513,7 @@ void LTMacWin_Destroy(void) {
     @autoreleasepool {
         ltmac_ApplyMouseCapture(false);   // never leave the pointer decoupled
         if (g_pWindow) { [g_pWindow close]; g_pWindow = nil; }
-        g_pView = nil;
+        g_pMetalView = nil;
     }
 }
 

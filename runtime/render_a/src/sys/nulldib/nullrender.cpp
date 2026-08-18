@@ -12,21 +12,28 @@
 #include <string.h>
 
 #ifdef LT_MACOS
-// macOS: this "null" renderer is the seed of the real GL renderer (Phase 2). It
-// draws into the Cocoa NSOpenGLContext via the LTMacWin_* C ABI instead of the
-// Win32 GDI/DIB path used elsewhere in this file.
-#include <OpenGL/gl.h>
+// macOS: this "null" renderer is the real renderer's front door. It drives the
+// Metal backend through the LTMacWin_* C ABI instead of the Win32 GDI/DIB path
+// used elsewhere in this file.
 #include <stdio.h>
 #include <math.h>
 #include <sys/time.h>   // gettimeofday (FPS counter)
 #include "ltmacwindow.h"
-#include "sys/gl/gl_worlddata.h"
-#include "sys/gl/gl_texture.h"
-#include "sys/gl/gl_model.h"
-#include "sys/gl/gl_drawprim.h"
-#include "sys/gl/gl_convar.h"   // renderer console vars (see gl_convar.cpp)
-#include "sys/gl/gl_polygrid.h"   // OT_POLYGRID = water / ice
-#include "sys/gl/gl_particles.h"  // OT_PARTICLESYSTEM = fire, smoke, waterfall
+#include "sys/shared/world_renderdata.h"
+#include "sys/shared/model_renderdata.h"
+#include "sys/shared/render_drawprim.h"
+#include "sys/shared/render_convar.h"  // renderer console vars (see render_convar.cpp)
+#include "sys/shared/render_polygrid.h"   // OT_POLYGRID = water / ice
+#include "sys/shared/render_particles.h"  // OT_PARTICLESYSTEM = fire, smoke, waterfall
+// ★ THE METAL BACKEND -- the only backend. The gl_* headers above no longer
+// name a GL module: those files hold the backend-neutral parse/walk/scene code
+// the Metal passes consume, and are being renamed out of gl/ as they move.
+#include "mtl_device.h"
+#include "mtl_texture.h"
+#include "mtl_drawprim.h"
+#include "mtl_matrix.h"
+#include "mtl_world.h"
+#include "mtl_model.h"
 #include "pixelformat.h"   // CalcImageSize (ConvertTexDataToDD passthrough)
 #include "de_objects.h"    // MAX_OBJECT_RENDER_GROUPS
 #include "renderinfostruct.h"
@@ -47,13 +54,15 @@ static bool nr_UseDebugClear()
 	return s_nDebugClear != 0;
 }
 
-// fScale dims the debug colour (the scene pass used a darker variant).
-static void nr_SetClearColor(float fScale)
+// fScale dims the debug colour (the scene pass uses a darker variant).
+// The clear happens in the render pass's load action, so this only records the
+// colour BeginFrame/MTLDev_Clear will use.
+static void nr_SetMetalClearColor(float fScale)
 {
 	if (nr_UseDebugClear())
-		glClearColor(g_fClearR * fScale, g_fClearG * fScale, g_fClearB * fScale, 1.0f);
+		MTLDev_SetClearColor(g_fClearR * fScale, g_fClearG * fScale, g_fClearB * fScale, 1.0f);
 	else
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		MTLDev_SetClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 }
 #endif
 
@@ -91,9 +100,11 @@ int nr_Init(struct RenderStructInit *pInit)
 #ifdef LT_MACOS
 	pInit->m_RendererVersion = LTRENDER_VERSION;
 
-	// Bring up GL on the Cocoa context and show one cleared frame, so a
-	// successful render-init is immediately visible in the window.
-	LTMacWin_MakeCurrent();
+	if (!MTLDev_Init())
+	{
+		fprintf(stderr, "[nr] Metal init FAILED\n");
+		return RENDER_ERROR;
+	}
 	int vpW = (int)pInit->m_Mode.m_Width, vpH = (int)pInit->m_Mode.m_Height;
 	LTMacWin_GetSize(&vpW, &vpH);          // actual (point/backing) drawable size
 
@@ -106,52 +117,25 @@ int nr_Init(struct RenderStructInit *pInit)
 	pInit->m_Mode.m_Height = (uint32)vpH;
 	g_DibWidth  = (uint32)vpW;
 	g_DibHeight = (uint32)vpH;
-	if (g_pGLStruct)
+	if (g_pRenderStruct)
 	{
-		g_pGLStruct->m_Width  = (uint32)vpW;   // engine reads these before Init returns them
-		g_pGLStruct->m_Height = (uint32)vpH;
+		g_pRenderStruct->m_Width  = (uint32)vpW;   // engine reads these before Init returns them
+		g_pRenderStruct->m_Height = (uint32)vpH;
 	}
 
 	// Publish the renderer's console variables (rendererconsolevars.h) to the
 	// engine console — mirrors d3d_CreateConsoleVariables at common_init.cpp:120.
 	// MUST happen here, before any world loads: WorldProperties writes the
 	// level's authored fog/far-Z/sky settings into these by name, and a write to
-	// a variable that does not exist is silently dropped. See gl_convar.cpp.
-	GLConVar_Create(g_pGLStruct);
-	GLConVar_Read(g_pGLStruct);
+	// a variable that does not exist is silently dropped. See render_convar.cpp.
+	RenderConVar_Create(g_pRenderStruct);
+	RenderConVar_Read(g_pRenderStruct);
 
-	// LT_GL_INFO=1 — version/renderer plus the fixed-function limits and the
-	// texture-env extensions. Which combiner ops exist decides how the authored
-	// D3D texture stages can be reproduced at all (EnvMapAlpha's
-	// D3DTOP_MODULATEALPHA_ADDCOLOR needs GL_ATI_texture_env_combine3), so this
-	// is a design input, not just decoration.
-	if (getenv("LT_GL_INFO"))
-	{
-		GLint nMaxUnits = 0, nMaxImageUnits = 0;
-		glGetIntegerv(GL_MAX_TEXTURE_UNITS, &nMaxUnits);
-		glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &nMaxImageUnits);
-		const char *pExt = (const char*)glGetString(GL_EXTENSIONS);
-		fprintf(stderr, "[glinfo] version='%s'\n[glinfo] renderer='%s'\n"
-		                "[glinfo] vendor='%s'\n"
-		                "[glinfo] MAX_TEXTURE_UNITS=%d MAX_TEXTURE_IMAGE_UNITS=%d\n",
-		        (const char*)glGetString(GL_VERSION),
-		        (const char*)glGetString(GL_RENDERER),
-		        (const char*)glGetString(GL_VENDOR),
-		        (int)nMaxUnits, (int)nMaxImageUnits);
-		static const char *kInteresting[] = {
-			"GL_ARB_texture_env_combine", "GL_EXT_texture_env_combine",
-			"GL_ATI_texture_env_combine3", "GL_NV_texture_env_combine4",
-			"GL_ARB_texture_env_dot3", "GL_ARB_texture_env_crossbar",
-			"GL_EXT_texture_compression_s3tc", 0 };
-		for (int i = 0; kInteresting[i]; ++i)
-			fprintf(stderr, "[glinfo] %-34s %s\n", kInteresting[i],
-			        (pExt && strstr(pExt, kInteresting[i])) ? "YES" : "no");
-	}
-
-	glViewport(0, 0, vpW, vpH);
-	nr_SetClearColor(1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	LTMacWin_SwapBuffers();
+	// One cleared frame, so a successful render-init is immediately visible in
+	// the window.
+	nr_SetMetalClearColor(1.0f);
+	if (MTLDev_EnsureFrame())
+		MTLDev_EndFrame();
 	return RENDER_OK;
 #else
 	RECT screenRect, wndRect;
@@ -213,7 +197,13 @@ int nr_Init(struct RenderStructInit *pInit)
 void nr_Term(bool bFullTerm)
 {
 #ifdef LT_MACOS
-	GLWorld_Free();
+	// ⚠️ No RWorld_Free() here. The GL branch used to call it at Term; Metal
+	// never did — RWorld_Load frees the previous world at load time, which is
+	// the path every level change takes. Leaving it out preserves the Metal
+	// behaviour that has always shipped; the only cost is that the last loaded
+	// world is still allocated at process exit.
+	MTLDrawPrim_Term();
+	MTLDev_Term();
 #endif
 	g_hWnd = 0;
 
@@ -227,11 +217,11 @@ void nr_Term(bool bFullTerm)
 }
 
 
+// SharedTexture::m_pRenderData belongs to the Metal texture manager alone.
 void nr_BindTexture(SharedTexture *pTexture, bool bTextureChanged)
 {
 #ifdef LT_MACOS
-	LTMacWin_MakeCurrent();
-	GLTex_Bind(pTexture, bTextureChanged);
+	MTLTex_Bind(pTexture, bTextureChanged);
 #endif
 }
 
@@ -239,8 +229,7 @@ void nr_BindTexture(SharedTexture *pTexture, bool bTextureChanged)
 void nr_UnbindTexture(SharedTexture *pTexture)
 {
 #ifdef LT_MACOS
-	LTMacWin_MakeCurrent();
-	GLTex_Unbind(pTexture);
+	MTLTex_Unbind(pTexture);
 #endif
 }
 
@@ -266,16 +255,14 @@ void nr_Clear(LTRect *pRect, DDWORD flags, LTRGBColor& ClearColor)
 {
 #ifdef LT_MACOS
 	// Honour the colour the engine asked for (the game clears to black before
-	// drawing the interface). A future pass can map pRect to glScissor.
-	// Reassert it each call — the Cocoa view's drawRect also sets glClearColor.
-	LTMacWin_MakeCurrent();
+	// drawing the interface).
 	if (nr_UseDebugClear())
-		nr_SetClearColor(1.0f);
-	else
-		glClearColor(ClearColor.rgb.r * (1.0f / 255.0f),
-		             ClearColor.rgb.g * (1.0f / 255.0f),
-		             ClearColor.rgb.b * (1.0f / 255.0f), 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		nr_SetMetalClearColor(1.0f);
+	MTLDev_Clear(true, true,
+	             nr_UseDebugClear() ? g_fClearR : ClearColor.rgb.r * (1.0f / 255.0f),
+	             nr_UseDebugClear() ? g_fClearG : ClearColor.rgb.g * (1.0f / 255.0f),
+	             nr_UseDebugClear() ? g_fClearB : ClearColor.rgb.b * (1.0f / 255.0f),
+	             1.0f);
 #else
 	BYTE *pCurLine, *pEndLine;
 
@@ -306,8 +293,20 @@ static void nr_DumpDrawable(int nFrame, const char *pWhat, bool bNumbered)
 	unsigned char *pPixels = (unsigned char*)malloc((size_t)nDrawW * nDrawH * 3);
 	if (!pPixels)
 		return;
-	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glReadPixels(0, 0, nDrawW, nDrawH, GL_RGB, GL_UNSIGNED_BYTE, pPixels);
+
+	// ★ Metal reads back the LAST PRESENTED frame and hands it over top-down
+	// already, so it needs no row flip (GL's readback was bottom-up and the
+	// writer below flipped it). It also waits for the GPU first --
+	// see MTLDev_ReadbackFrame.
+	{
+		int nGotW = 0, nGotH = 0;
+		if (!MTLDev_ReadbackFrame(pPixels, &nGotW, &nGotH))
+		{
+			free(pPixels);
+			return;
+		}
+		nDrawW = nGotW; nDrawH = nGotH;
+	}
 	char sPath[128];
 	if (bNumbered)
 		snprintf(sPath, sizeof(sPath), "/tmp/nolf2_%s_%d.ppm", pWhat, nFrame);
@@ -317,9 +316,7 @@ static void nr_DumpDrawable(int nFrame, const char *pWhat, bool bNumbered)
 	if (fp)
 	{
 		fprintf(fp, "P6\n%d %d\n255\n", nDrawW, nDrawH);
-		// GL rows are bottom-up; PPM wants top-down.
-		for (int nRow = nDrawH - 1; nRow >= 0; --nRow)
-			fwrite(pPixels + (size_t)nRow * nDrawW * 3, 1, (size_t)nDrawW * 3, fp);
+		fwrite(pPixels, 1, (size_t)nDrawW * nDrawH * 3, fp);
 		fclose(fp);
 		fprintf(stderr, "[nr] %s %d dumped to %s (%dx%d)\n",
 		        pWhat, nFrame, sPath, nDrawW, nDrawH);
@@ -362,247 +359,310 @@ static int nr_ParseDumpList(const char *pEnv, int *pOut)
 }
 #endif
 
+// ★ LT_DUMP_FRAME under Metal. The GL path reads the back buffer mid-frame,
+// right after the scene and before any 2D. Metal cannot: its readback retains
+// the LAST PRESENTED texture, so the dump has to be deferred to just after
+// EndFrame in nr_SwapBuffers. With the null shell (which draws only the
+// console) that is the same picture; with the real game shell it also carries
+// the HUD, which is why LT_DUMP_SWAP_T remains the one to reach for there.
+// LT_DUMP_DEPTH=1 with LT_DUMP_FRAME=<n>: write the WINNING FRAGMENT'S DEPTH
+// for frame n to /tmp/nolf2_depth_<n>.f32 ("DEPTH <w> <h>\n" then w*h float32,
+// window space 0..1). Both backends produce the same encoding, so the two files
+// diff directly.
+//
+// ⚠️ THIS IS THE INSTRUMENT FOR "WHICH LAYER WON THE PIXEL". Every comparison
+// of the INPUTS to the foliage difference (draws, fog state, fog factor, alpha
+// gate/ref/operand, filtering, mip chains) now says the two backends agree; the
+// only thing left that can differ is which fragment survived, and that is a
+// depth question, not a colour one.
+static void nr_DumpDepth(int nFrame)
+{
+	// Same size source as nr_DumpDrawable: LTMacWin_GetSize is the drawable in
+	// pixels; Metal then reports back what it actually read.
+	int w = 0, h = 0;
+	LTMacWin_GetSize(&w, &h);
+	if (w <= 0 || h <= 0)
+		return;
+	std::vector<float> aDepth((size_t)w * h, 0.0f);
+
+	if (!MTLDev_ReadbackDepth(&aDepth[0], &w, &h))
+	{
+		fprintf(stderr, "[nr] depth dump: readback failed (LT_DUMP_DEPTH set at startup?)\n");
+		return;
+	}
+
+	char sPath[128];
+	snprintf(sPath, sizeof(sPath), "/tmp/nolf2_depth_%d.f32", nFrame);
+	FILE *fp = fopen(sPath, "wb");
+	if (!fp)
+		return;
+	fprintf(fp, "DEPTH %d %d\n", w, h);
+	fwrite(&aDepth[0], sizeof(float), (size_t)w * h, fp);
+	fclose(fp);
+	fprintf(stderr, "[nr] depth %d dumped to %s (%dx%d)\n", nFrame, sPath, w, h);
+}
+
+// ★ PASS ISOLATION, AND BOTH BACKENDS MUST OBEY IT.
+//   LT_SKY_ONLY=1   draws the sky and nothing else.
+//   LT_WORLD_ONLY=1 draws the sky + the BSP world and nothing else.
+// "Which pass produces this artifact?" is the question these answer, and it is
+// the one that keeps coming up (§48 found the world backface z-fighting exactly
+// this way).
+//
+// ⚠️⚠️ LT_SKY_ONLY USED TO BE READ ONLY IN THE METAL BRANCH of nr_RenderScene.
+// Under GL it therefore did NOTHING -- the whole scene drew -- so a GL-vs-Metal
+// "sky isolation" A/B compared a FULL SCENE against a bare sky and reported
+// ~52 mean abs of pure instrument error. Both branches read one decision now,
+// from above the backend split, exactly as LT_NO_FOG had to (§96).
+// ⇒ An isolation switch that only one backend obeys is worse than no switch at
+// all: it produces numbers.
+static bool nr_SkyOnly(void)
+{
+	static int s_n = -1;
+	if (s_n < 0) s_n = getenv("LT_SKY_ONLY") ? 1 : 0;
+	return s_n != 0;
+}
+
+static bool nr_WorldOnly(void)
+{
+	static int s_n = -1;
+	if (s_n < 0) s_n = getenv("LT_WORLD_ONLY") ? 1 : 0;
+	return s_n != 0;
+}
+
+static int g_nPendingSceneDump = 0;
+static bool g_bPendingSceneNumbered = false;
+
+#ifdef LT_MACOS
+// LT_TEST_LIGHTGROUPS_AT=<n>: switch the pure-Gouraud light groups OFF after
+// the n-th scene — i.e. once the world has already been drawn and, under Metal,
+// once its vertex-colour buffers are already on the GPU. That is the whole
+// point: the load-time LT_TEST_LIGHTGROUPS_ON runs before any buffer exists, so
+// only a MID-RUN change can prove the re-upload. Dump a later frame and A/B it
+// against LT_RENDER_GL=1; the change takes effect from frame n+1.
+// ⚠️ Called from BOTH branches of nr_RenderScene. The Metal branch returns
+// early, so a hook placed only in the GL tail never runs under Metal — which is
+// exactly how this one silently did nothing on its first outing.
+static void nr_TestLightGroupTick(int nSceneCount)
+{
+	static int s_nFrame = -2;
+	if (s_nFrame == -2)
+	{
+		const char *pAt = getenv("LT_TEST_LIGHTGROUPS_AT");
+		s_nFrame = pAt ? atoi(pAt) : -1;
+	}
+	if (s_nFrame > 0 && nSceneCount == s_nFrame)
+		fprintf(stderr, "[nr] TEST: frame %d switched %u Gouraud light groups OFF\n",
+		        nSceneCount, RWorld_TestSwitchGouraudLightGroupsOff());
+}
+#endif
+
 int nr_RenderScene(struct SceneDesc *pScene)
 {
 #ifdef LT_MACOS
-	// Phase-2 GL: draw the loaded world from the camera in pScene.
-	LTMacWin_MakeCurrent();
-
-	// ★ DRAWMODE_OBJECTLIST (renderstruct.h:55) -- "only render the objects in
-	// m_pObjectList", and no world. The interface uses it for every menu,
-	// loading screen and the paused state (CInterfaceMgr::DrawSFX ->
-	// ILTClient::RenderObjects). D3D also drops g_have_world for this mode
-	// (common_draw.cpp:423), which is why interface models get no environment
-	// lighting there.
-	const bool bObjectList = (pScene->m_DrawMode == DRAWMODE_OBJECTLIST) &&
-	                         pScene->m_pObjectList && pScene->m_ObjectListSize > 0;
-
-	GLModel_BeginSceneFrame();   // LT_TRACE_UI frame counter (counts every pass)
-
-	int nWinW = 0, nWinH = 0;
-	LTMacWin_GetSize(&nWinW, &nWinH);
-	if (nWinW <= 0 || nWinH <= 0) { nWinW = 640; nWinH = 480; }
-
-	// Viewport from the scene rect (RenderCamera fills it from the camera).
-	int nVpX = pScene->m_Rect.left;
-	int nVpW = pScene->m_Rect.right  - pScene->m_Rect.left;
-	int nVpH = pScene->m_Rect.bottom - pScene->m_Rect.top;
-	if (nVpW <= 0 || nVpH <= 0) { nVpX = 0; nVpW = nWinW; nVpH = nWinH; }
-	// GL's viewport origin is bottom-left; the engine rect's is top-left.
-	int nVpY = nWinH - pScene->m_Rect.top - nVpH;
-	if (nVpY < 0) nVpY = 0;
-	glViewport(nVpX, nVpY, nVpW, nVpH);
-
-	// Fog state for this frame (read from the level's console vars every frame —
-	// WorldProperties and VolumeBrushes both drive them at runtime). Applied
-	// before the sky pass with the SkyFog range, then re-applied with the main
-	// range for the world/models; disabled again before any 2D.
-	if (bObjectList)
-		GLWorld_DisableFog();
-	else
-		GLWorld_ApplyFog(true);
-
-	// ⚠️ AN OBJECT-LIST PASS MUST NOT CLEAR. CInterfaceMgr::UpdateInterfaceSFX
-	// calls RenderObjects ONCE PER MENU LAYER (InterfaceMgr.cpp:5594 — a while
-	// loop over the render list, one call per nLayer), so several object-list
-	// scenes compose into a single frame. Clearing here wiped every layer but
-	// the last and the menu went black. The GAME owns the clear in these states:
-	// CInterfaceMgr::Update -> ClearScreen(CLEARSCREEN_SCREEN|CLEARSCREEN_RENDER)
-	// (InterfaceMgr.cpp:784-795), which reaches us as nr_Clear.
-	if (!bObjectList)
 	{
-		// With fog on, clear to the fog colour: anywhere the world does not reach
-		// should read as haze, not as the void behind it.
-		float fFogR, fFogG, fFogB;
-		if (GLWorld_GetFogColor(fFogR, fFogG, fFogB))
-			glClearColor(fFogR, fFogG, fFogB, 1.0f);
-		else
-			nr_SetClearColor(0.25f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	}
+		// Per-scene bookkeeping (the LT_TRACE_UI frame counter). The GL path
+		// calls this at the top of every scene; the Metal branch was returning
+		// before it, which silently disabled every UI diagnostic under Metal.
+		RModel_BeginSceneFrame();
 
-	// Projection parameters from the scene FOV (full angles, radians).
-	float fZNear = 5.0f, fZFar = 100000.0f;
-	float fFovY = (pScene->m_yFov > 0.01f) ? pScene->m_yFov : 1.2f;
-	float fFovX = (pScene->m_xFov > 0.01f) ? pScene->m_xFov : 1.6f;
-	float fTop   = fZNear * tanf(fFovY * 0.5f);
-	float fRight = fZNear * tanf(fFovX * 0.5f);
+		const bool bObjList = (pScene->m_DrawMode == DRAWMODE_OBJECTLIST) &&
+		                      pScene->m_pObjectList && pScene->m_ObjectListSize > 0;
 
-	// View from the camera transform. Lithtech is left-handed (+Z forward);
-	// GL eye space looks down -Z, so the third row is the negated forward.
-	LTVector vR = pScene->m_Rotation.Right();
-	LTVector vU = pScene->m_Rotation.Up();
-	LTVector vF = pScene->m_Rotation.Forward();
-	const LTVector &vPos = pScene->m_Pos;
+		int nWinW = 0, nWinH = 0;
+		LTMacWin_GetSize(&nWinW, &nWinH);
+		if (nWinW <= 0 || nWinH <= 0) { nWinW = 640; nWinH = 480; }
 
-	float aView[16];
-	aView[0] =  vR.x; aView[4] =  vR.y; aView[8]  =  vR.z; aView[12] = -vR.Dot(vPos);
-	aView[1] =  vU.x; aView[5] =  vU.y; aView[9]  =  vU.z; aView[13] = -vU.Dot(vPos);
-	aView[2] = -vF.x; aView[6] = -vF.y; aView[10] = -vF.z; aView[14] =  vF.Dot(vPos);
-	aView[3] = 0.0f;  aView[7] = 0.0f;  aView[11] = 0.0f;  aView[15] = 1.0f;
+		int nVpX = pScene->m_Rect.left;
+		int nVpY = pScene->m_Rect.top;
+		int nVpW = pScene->m_Rect.right  - pScene->m_Rect.left;
+		int nVpH = pScene->m_Rect.bottom - pScene->m_Rect.top;
+		if (nVpW <= 0 || nVpH <= 0) { nVpX = 0; nVpY = 0; nVpW = nWinW; nVpH = nWinH; }
 
-	// --- Sky pass (backdrop, before the world). The sky camera keeps the
-	// scene rotation but sits inside the sky box: the camera's normalized
-	// position within the world extents maps into SkyDef view min/max
-	// (mirrors d3d_SetupSkyStuff/drawsky.cpp). Sky geometry is small and
-	// close, so use a much nearer near-plane; depth stays untouched.
-	GLWorld_SetSkyObjects(pScene->m_SkyObjects, pScene->m_nSkyObjects);
-	static bool s_bSkyLogged = false;
-	if (!s_bSkyLogged && GLWorld_IsLoaded())
-	{
-		s_bSkyLogged = true;
-		fprintf(stderr, "[nr] sky: %d objects, viewbox (%.0f %.0f %.0f)-(%.0f %.0f %.0f)\n",
-		        pScene->m_nSkyObjects,
-		        pScene->m_SkyDef.m_ViewMin.x, pScene->m_SkyDef.m_ViewMin.y, pScene->m_SkyDef.m_ViewMin.z,
-		        pScene->m_SkyDef.m_ViewMax.x, pScene->m_SkyDef.m_ViewMax.y, pScene->m_SkyDef.m_ViewMax.z);
-	}
-	LTVector vBoundsCenter, vBoundsHalf;
-	if (!bObjectList && pScene->m_nSkyObjects > 0 && GLWorld_GetBounds(vBoundsCenter, vBoundsHalf))
-	{
-		LTVector vMin = vBoundsCenter - vBoundsHalf;
-		LTVector vMax = vBoundsCenter + vBoundsHalf;
-		LTVector vPercent(0.5f, 0.5f, 0.5f);
-		if (vMax.x > vMin.x) vPercent.x = (vPos.x - vMin.x) / (vMax.x - vMin.x);
-		if (vMax.y > vMin.y) vPercent.y = (vPos.y - vMin.y) / (vMax.y - vMin.y);
-		if (vMax.z > vMin.z) vPercent.z = (vPos.z - vMin.z) / (vMax.z - vMin.z);
-
-		const SkyDef &cSky = pScene->m_SkyDef;
-		LTVector vSkyPos(
-			cSky.m_ViewMin.x + (cSky.m_ViewMax.x - cSky.m_ViewMin.x) * vPercent.x,
-			cSky.m_ViewMin.y + (cSky.m_ViewMax.y - cSky.m_ViewMin.y) * vPercent.y,
-			cSky.m_ViewMin.z + (cSky.m_ViewMax.z - cSky.m_ViewMin.z) * vPercent.z);
-
-		const float fSkyNear = 0.3f, fSkyFar = 30000.0f;
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-		glFrustum(-tanf(fFovX * 0.5f) * fSkyNear, tanf(fFovX * 0.5f) * fSkyNear,
-		          -tanf(fFovY * 0.5f) * fSkyNear, tanf(fFovY * 0.5f) * fSkyNear,
-		          fSkyNear, fSkyFar);
-
-		float aSkyView[16];
-		memcpy(aSkyView, aView, sizeof(aSkyView));
-		aSkyView[12] = -vR.Dot(vSkyPos);
-		aSkyView[13] = -vU.Dot(vSkyPos);
-		aSkyView[14] =  vF.Dot(vSkyPos);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadMatrixf(aSkyView);
-
-		GLWorld_DrawSkyWorldModels();
-	}
-
-	// --- Main scene matrices ---
-	if (!bObjectList)
-		GLWorld_ApplyFog(false);   // swap SkyFogNearZ/FarZ for the world's range
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glFrustum(-fRight, fRight, -fTop, fTop, fZNear, fZFar);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadMatrixf(aView);
-
-	// Let the DrawPrim interface reuse this scene's transforms for
-	// CAMERA/WORLD-space primitives.
-	GLDrawPrim_SetSceneTransform(aView, fRight, fTop, fZNear, fZFar);
-
-	GLSprite_SetCamera(vR, vU, vF, vPos);   // billboard basis + glow-scale reference
-	GLParticle_SetCamera(vR, vU, vF, vPos); // particles billboard off the same basis
-	GLPolyGrid_SetCamera(vR, vU, vF, vPos); // water env-map transform + Fresnel view vector
-	GLWorld_SetCamera(vR, vU, vF);          // world-surface reflection transform (§40c)
-
-	if (bObjectList)
-	{
-		// ★ DRAWMODE_OBJECTLIST: the caller named exactly what to draw and
-		// wants NO world. This is the whole interface (menus, loading screens,
-		// the in-game Options/Load screens) via ILTClient::RenderObjects.
-		// Drawing the world here is what put the live level and the player-view
-		// weapon behind every in-game menu.
-		// The interface pass draws models too, and the attachment loop used to
-		// live inside the model draw — so process them here as well, or an
-		// interface model with an attachment would stop tracking its parent.
-		GLModel_ProcessAttachments();
-
-		GLObjectList_Draw(pScene->m_pObjectList, pScene->m_ObjectListSize);
-	}
-	else
-	{
-		// ★ FIRST: recompute every attached object's transform from its parent.
-		// Must precede all draw passes, and must cover every object type — a
-		// door handle attached to a world-model door is only re-oriented here.
-		// (D3D does this inside its object walk; see GLModel_ProcessAttachments.)
-		GLModel_ProcessAttachments();
-
-		// LT_WORLD_ONLY=1 draws the BSP world and nothing else — pass isolation
-		// for "which pass produces this artifact?". This is what identified
-		// the world backface z-fighting in §48.
-		static int s_nWorldOnly = -1;
-		if (s_nWorldOnly < 0) s_nWorldOnly = getenv("LT_WORLD_ONLY") ? 1 : 0;
-
-		GLWorld_Draw();
-		if (s_nWorldOnly)
+		// ⚠️ AN OBJECT-LIST PASS MUST NOT CLEAR: CInterfaceMgr calls
+		// RenderObjects once per menu LAYER, so several object-list scenes
+		// compose into one frame and a clear here wipes all but the last.
+		// (The GAME owns the clear in those states -- it reaches us as nr_Clear.)
+		if (!bObjList)
 		{
-			GLWorld_DisableFog();
-			goto scene_done;
+			// ⚠️ WITH FOG ON, CLEAR TO THE FOG COLOUR. Anywhere the world does
+			// not reach should read as haze, not as the void behind it — the GL
+			// path below does exactly this, and c01s01's fog is WHITE, so a
+			// black clear is not a subtle difference. (The fog state for this
+			// frame was pushed by RWorld_ApplyFog just above.)
+			float fFogR, fFogG, fFogB;
+			if (RWorld_GetFogColor(fFogR, fFogG, fFogB))
+				MTLDev_Clear(true, true, fFogR, fFogG, fFogB, 1.0f);
+			else
+			{
+				nr_SetMetalClearColor(0.25f);
+				MTLDev_Clear(true, true, 0.0f, 0.0f, 0.0f, 1.0f);
+			}
 		}
-		GLWorld_DrawWorldModels(false);      // SOLID world models
-		GLPolyGrid_Draw(false);        // OPAQUE polygrids draw with the world
-		GLModel_DrawModels(fRight / fTop);   // world-space models only
-		GLWorld_DrawDynamicLights();   // lamp pools etc. (additive, depth-tested)
-		// ⚠️ TRANSLUCENT world models come AFTER the models, exactly as
-		// d3d_FlushObjectQueues orders them (drawobjects.cpp:218: solid world
-		// models -> solid models -> the sorted translucent set). Drawing them
-		// with the solid set made C08S03's glass cage depth-reject every
-		// character inside and outside it.
-		GLWorld_DrawWorldModels(true);       // glass etc.
-		GLPolyGrid_Draw(true);         // water/ice: translucent, after the opaque scene
-		GLParticle_DrawSystems();      // fire, smoke, the waterfall sheet
-		GLSprite_DrawSprites();        // lamp halos / glows (translucent quads)
+		else
+			MTLDev_EnsureFrame();
 
-		// ⚠️ LAST. The player-view pass CLEARS THE DEPTH BUFFER so the weapon can
-		// never clip into the world; anything world-space drawn after it would then
-		// depth-test against an empty buffer and paint over the whole level. That is
-		// precisely what made the water "float above the world" in gameplay while
-		// looking correct in cinematics (which draw no player-view weapon).
-		GLModel_DrawPlayerView(fRight / fTop);
+		// Metal's viewport origin is top-left, like the engine's rect -- unlike
+		// GL, no y flip.
+		MTLDev_SetViewport(nVpX, nVpY, nVpW, nVpH);
+
+		// Same LTRotation -> view matrix as the GL path below (third row
+		// negated: Lithtech is left-handed, eye space looks down -Z).
+		const float fZNear = 5.0f, fZFar = 100000.0f;
+		const float fFovY = (pScene->m_yFov > 0.01f) ? pScene->m_yFov : 1.2f;
+		const float fFovX = (pScene->m_xFov > 0.01f) ? pScene->m_xFov : 1.6f;
+		const float fTop   = fZNear * tanf(fFovY * 0.5f);
+		const float fRight = fZNear * tanf(fFovX * 0.5f);
+		LTVector vR = pScene->m_Rotation.Right();
+		LTVector vU = pScene->m_Rotation.Up();
+		LTVector vF = pScene->m_Rotation.Forward();
+		const LTVector &vP = pScene->m_Pos;
+
+		float aView[16];
+		aView[0] =  vR.x; aView[4] =  vR.y; aView[8]  =  vR.z; aView[12] = -vR.Dot(vP);
+		aView[1] =  vU.x; aView[5] =  vU.y; aView[9]  =  vU.z; aView[13] = -vU.Dot(vP);
+		aView[2] = -vF.x; aView[6] = -vF.y; aView[10] = -vF.z; aView[14] =  vF.Dot(vP);
+		aView[3] = 0.0f;  aView[7] = 0.0f;  aView[11] = 0.0f;  aView[15] = 1.0f;
+
+		// Billboards need the camera basis (they face it).
+		RSprite_SetCamera(vR, vU, vF, vP);
+		RParticle_SetCamera(vR, vU, vF, vP);
+		RPolyGrid_SetCamera(vR, vU, vF, vP);
+
+		// Publish the scene transform for CAMERA/WORLD-space drawprims, and the
+		// matching Metal projection for the world and model passes.
+		RenderDrawPrim_SetSceneTransform(aView, fRight, fTop, fZNear, fZFar);
+		float aProj0[16];
+		mtl_Frustum(aProj0, fRight, fTop, fZNear, fZFar);
+
+		if (bObjList)
+		{
+			// ★ DRAWMODE_OBJECTLIST: the caller named exactly what to draw and
+			// wants NO world -- the whole interface (menus, loading screens).
+			// Models are converted now; sprites and particles are not.
+			MTLModel_SetTransform(aView, aProj0);
+			RModel_ProcessAttachments();
+			RObjectList_Draw(pScene->m_pObjectList, pScene->m_ObjectListSize);
+			return 0;
+		}
+
+		// --- sky pass (backdrop, before the world) ---
+		// Same sky camera as the GL path: the camera's normalized position
+		// within the world extents mapped into the SkyDef view box, with a much
+		// nearer near-plane. Depth is untouched (the params say so).
+		RWorld_SetSkyObjects(pScene->m_SkyObjects, pScene->m_nSkyObjects);
+		LTVector vBoundsCenter, vBoundsHalf;
+		if (pScene->m_nSkyObjects > 0 && RWorld_GetBounds(vBoundsCenter, vBoundsHalf))
+		{
+			LTVector vMin = vBoundsCenter - vBoundsHalf;
+			LTVector vMax = vBoundsCenter + vBoundsHalf;
+			LTVector vPercent(0.5f, 0.5f, 0.5f);
+			if (vMax.x > vMin.x) vPercent.x = (vP.x - vMin.x) / (vMax.x - vMin.x);
+			if (vMax.y > vMin.y) vPercent.y = (vP.y - vMin.y) / (vMax.y - vMin.y);
+			if (vMax.z > vMin.z) vPercent.z = (vP.z - vMin.z) / (vMax.z - vMin.z);
+
+			const SkyDef &cSky = pScene->m_SkyDef;
+			LTVector vSkyPos(
+				cSky.m_ViewMin.x + (cSky.m_ViewMax.x - cSky.m_ViewMin.x) * vPercent.x,
+				cSky.m_ViewMin.y + (cSky.m_ViewMax.y - cSky.m_ViewMin.y) * vPercent.y,
+				cSky.m_ViewMin.z + (cSky.m_ViewMax.z - cSky.m_ViewMin.z) * vPercent.z);
+
+			const float fSkyNear = 0.3f, fSkyFar = 30000.0f;
+			float aSkyProj[16];
+			mtl_Frustum(aSkyProj, tanf(fFovX * 0.5f) * fSkyNear,
+			            tanf(fFovY * 0.5f) * fSkyNear, fSkyNear, fSkyFar);
+
+			float aSkyView[16];
+			memcpy(aSkyView, aView, sizeof(aSkyView));
+			aSkyView[12] = -vR.Dot(vSkyPos);
+			aSkyView[13] = -vU.Dot(vSkyPos);
+			aSkyView[14] =  vF.Dot(vSkyPos);
+
+			RWorld_ApplyFog(true);   // SkyFogNearZ/FarZ
+			MTLWorld_SetSceneTransform(aSkyView, aSkyProj);
+			RWorld_DrawSkyWorldModels();
+		}
+
+		// --- main scene ---
+		RWorld_ApplyFog(false);      // swap in the world's fog range
+		MTLWorld_SetSceneTransform(aView, aProj0);
+		MTLModel_SetTransform(aView, aProj0);
+
+		// ★ FIRST: recompute every attached object's transform from its parent.
+		// Must precede all draw passes and must cover every object type -- a
+		// door handle attached to a world-model door is only re-oriented here.
+		RModel_ProcessAttachments();
+
+		// ⚠️ The two world-model calls are DELIBERATELY not collapsed: D3D draws
+		// solid world models, then models, then the translucent set
+		// (drawobjects.cpp:218). Models are not converted yet, so nothing sits
+		// between them today -- keep the shape, so the ordering is already right
+		// when the model pass lands (§43: collapsing it let a glass pane's depth
+		// write hide every character behind it).
+		// Pass isolation, the Metal analogue of LT_WORLD_ONLY: LT_SKY_ONLY=1
+		// draws the sky and nothing else, LT_WORLD_ONLY=1 the reverse. "Which
+		// pass produces this artifact?" is the question these answer, and it is
+		// the one that keeps coming up (§48 found the world backface z-fighting
+		// exactly this way).
+		if (!nr_SkyOnly())
+		{
+			RWorld_Draw();
+			if (!nr_WorldOnly())
+			{
+				// ⚠️ D3D's order (drawobjects.cpp:218): solid world models ->
+				// SOLID MODELS -> the whole translucent set. Running the world
+				// models together let a glass pane's depth write reject every
+				// character behind it (§43).
+				RWorld_DrawWorldModels(false);        // solid
+				RPolyGrid_Draw(false);                // opaque water/ice
+				RModel_DrawModels(fRight / fTop);     // world-space models
+				RWorld_DrawDynamicLights();           // lamp pools, muzzle flashes
+				RWorld_DrawWorldModels(true);         // glass etc.
+				RPolyGrid_Draw(true);                 // translucent water
+				RParticle_DrawSystems();              // fire, smoke, sparks
+				RSprite_DrawSprites();                // lamp halos / glows
+
+				// ⚠️ LAST. The player-view pass CLEARS THE DEPTH BUFFER so the
+				// weapon can never clip into the world; anything world-space
+				// drawn after it would then depth-test against an empty buffer
+				// and paint over the whole level.
+				RModel_DrawPlayerView(fRight / fTop);
+			}
+		}
+
+		// Everything after this point is 2D (console, HUD) and must not fog.
+		RWorld_DisableFog();
+
+		// Frame dump for headless verification, same counter and env var as the
+		// GL path below; serviced after the present (see g_nPendingSceneDump).
+		{
+			static int s_aDumpFrame[NR_MAX_DUMP_FRAMES];
+			static int s_nDumpFrameCount = -1;
+			if (s_nDumpFrameCount < 0)
+				s_nDumpFrameCount = nr_ParseDumpList(getenv("LT_DUMP_FRAME"), s_aDumpFrame);
+			static int s_nSceneCount = 0;
+			++s_nSceneCount;
+			nr_TestLightGroupTick(s_nSceneCount);
+			for (int i = 0; i < s_nDumpFrameCount; ++i)
+				if (s_nSceneCount == s_aDumpFrame[i])
+				{
+					g_nPendingSceneDump = s_nSceneCount;
+					g_bPendingSceneNumbered = (s_nDumpFrameCount > 1);
+				}
+		}
+		return 0;
 	}
-scene_done:;      // LT_WORLD_ONLY lands here
-
-	// Scene done: fog is scene state, and everything drawn after this point
-	// (console, HUD, menus, the frame dump) is 2D.
-	GLWorld_DisableFog();
-
-	// One-time confirmation that a scene actually rendered.
-	static bool s_bReportedScene = false;
-	if (!s_bReportedScene && GLWorld_IsLoaded())
-	{
-		s_bReportedScene = true;
-		fprintf(stderr, "[nr] RenderScene: cam=(%.0f %.0f %.0f) fov=(%.2f %.2f) vp=%dx%d\n",
-		        vPos.x, vPos.y, vPos.z, fFovX, fFovY, nVpW, nVpH);
-	}
-
-	// Frame dump for headless verification (LT_DUMP_FRAME=<n>[,<n>...] dumps
-	// the n-th rendered scene — world only; LT_DUMP_SWAP in nr_SwapBuffers
-	// captures the final presented frame incl. console/2D).
-	static int s_aDumpFrame[NR_MAX_DUMP_FRAMES];
-	static int s_nDumpFrameCount = -1;
-	if (s_nDumpFrameCount < 0)
-		s_nDumpFrameCount = nr_ParseDumpList(getenv("LT_DUMP_FRAME"), s_aDumpFrame);
-	static int s_nSceneCount = 0;
-	++s_nSceneCount;
-	for (int i = 0; i < s_nDumpFrameCount; ++i)
-	{
-		if (s_nSceneCount == s_aDumpFrame[i])
-			nr_DumpDrawable(s_nSceneCount, "scene", s_nDumpFrameCount > 1);
-	}
-#endif
 	return 0;
+#else
+	return 0;
+#endif
 }
 
 #ifdef LT_MACOS
-// World render-data loader for the RenderStruct seam (Phase-2 GL).
+// World render-data loader for the RenderStruct seam.
 bool nr_LoadWorldData(ILTStream *pStream)
 {
-	// The loader creates GL textures (lightmaps) as it parses.
-	LTMacWin_MakeCurrent();
-	return GLWorld_Load(pStream);
+	return RWorld_Load(pStream);
 }
 #endif
 
@@ -766,9 +826,19 @@ void* nr_GetHook(char *pHook)
 void nr_SwapBuffers(uint flags)
 {
 #ifdef LT_MACOS
-	// Present the back buffer. Scene content is drawn by nr_RenderScene (and 2D
-	// by the optimized-2D path later); presenting must not clear it.
-	LTMacWin_MakeCurrent();
+	// ★ THE FRAME ENDS HERE, BEFORE THE DUMPS. Metal's readback retains the
+	// LAST PRESENTED texture, so a dump taken before EndFrame would capture the
+	// previous frame. EnsureFrame first, so a frame in which nothing drew still
+	// presents its clear instead of leaving the last frame on screen.
+	MTLDev_EnsureFrame();
+	MTLDev_EndFrame();
+	if (g_nPendingSceneDump)
+	{
+		nr_DumpDrawable(g_nPendingSceneDump, "scene", g_bPendingSceneNumbered);
+		if (getenv("LT_DUMP_DEPTH"))
+			nr_DumpDepth(g_nPendingSceneDump);
+		g_nPendingSceneDump = 0;
+	}
 
 	// FPS counter in the window title, refreshed once a second.
 	{
@@ -783,7 +853,7 @@ void nr_SwapBuffers(uint flags)
 		else if (fNow - s_fLastTime >= 1.0)
 		{
 			char sTitle[128];
-			snprintf(sTitle, sizeof(sTitle), "No One Lives Forever 2 (GL) — %.0f FPS",
+			snprintf(sTitle, sizeof(sTitle), "No One Lives Forever 2 — %.0f FPS",
 			         (double)s_nFrames / (fNow - s_fLastTime));
 			LTMacWin_SetTitle(sTitle);
 			s_nFrames = 0;
@@ -843,15 +913,6 @@ void nr_SwapBuffers(uint flags)
 		}
 	}
 
-	LTMacWin_SwapBuffers();
-
-	// If no scene has ever been rendered (world not loaded yet), keep the
-	// window visibly alive with the bring-up clear for the NEXT frame.
-	if (!GLWorld_IsLoaded())
-	{
-		nr_SetClearColor(1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	}
 #else
 	BOOL ret;
 	HDC hDC;
@@ -961,7 +1022,6 @@ void nr_UnlockScreen()
 // screen-space quad -- correct AND GPU-fast.
 // --------------------------------------------------------------------------
 
-static GLuint g_SurfTex = 0;
 static uint8 *g_SurfBuf = NULL;
 static size_t g_SurfBufCap = 0;
 
@@ -998,68 +1058,42 @@ static void nr_PresentSurface(NullBuf *pBuf, bool bTransparent, uint16 transColo
 	if (!pBuf || pBuf->m_Width == 0 || pBuf->m_Height == 0)
 		return;
 
-	LTMacWin_MakeCurrent();
+	// ⚠️ RESOLVE THE BLEND ONCE, HERE. The GL code below reads both the
+	// transparency flag and the alpha to decide; passing the decision to Metal
+	// rather than letting it re-derive one keeps the two from drifting (§89).
+	const bool bBlend = (bTransparent || alpha < 0.999f);
+
 	nr_ExpandSurfaceRGBA(pBuf, bTransparent, transColor);
+	MTLDrawPrim_PresentSurface(g_SurfBuf, pBuf->m_Width, pBuf->m_Height,
+	                           dst, src, alpha, bBlend);
+}
 
-	int drawW = 640, drawH = 480;
-	LTMacWin_GetSize(&drawW, &drawH);
-	float scrW = (g_pGLStruct && g_pGLStruct->m_Width)  ? (float)g_pGLStruct->m_Width  : (float)drawW;
-	float scrH = (g_pGLStruct && g_pGLStruct->m_Height) ? (float)g_pGLStruct->m_Height : (float)drawH;
+// LT_TRACE_SURFACE=1: a census of the optimized-2D SURFACE path -- the software
+// interface surfaces the engine hands to BlitToScreen / WarpToScreen. It exists
+// because that path is GL-only: under Metal nr_PresentSurface's 34 GL calls are
+// no-ops without a context, so ANY surface presented here is invisible. The
+// question the census answers is which screens actually use it. Deduped per
+// distinct descriptor -- the interface re-blits the same surface every frame.
+static void nr_TraceSurface(const char *pWhat, NullBuf *pBuf, float alpha,
+                            bool bTransparent, float dx0, float dy0,
+                            float dx1, float dy1)
+{
+	static int s_nTrace = -1;
+	if (s_nTrace < 0) s_nTrace = getenv("LT_TRACE_SURFACE") ? 1 : 0;
+	if (!s_nTrace)
+		return;
 
-	if (!g_SurfTex)
-		glGenTextures(1, &g_SurfTex);
-	glBindTexture(GL_TEXTURE_2D, g_SurfTex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pBuf->m_Width, pBuf->m_Height, 0,
-	             GL_RGBA, GL_UNSIGNED_BYTE, g_SurfBuf);
+	char sKey[256];
+	snprintf(sKey, sizeof(sKey), "%s %ux%u -> (%.0f %.0f)-(%.0f %.0f) alpha=%.2f trans=%d",
+	         pWhat, pBuf->m_Width, pBuf->m_Height, dx0, dy0, dx1, dy1, alpha,
+	         bTransparent ? 1 : 0);
 
-	// Screen ortho over the engine's logical screen (== the backing drawable).
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-	glViewport(0, 0, drawW, drawH);
-	glOrtho(0.0, scrW, scrH, 0.0, -1.0, 1.0);
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_ALPHA_TEST);
-	glDisable(GL_FOG);       // 2D surface blit: D3D forces FOGENABLE FALSE too
-	glEnable(GL_TEXTURE_2D);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	if (bTransparent || alpha < 0.999f)
-	{
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	}
-	else
-		glDisable(GL_BLEND);
-	glColor4f(1.0f, 1.0f, 1.0f, alpha);
-
-	float iw = 1.0f / (float)pBuf->m_Width;
-	float ih = 1.0f / (float)pBuf->m_Height;
-	glBegin(GL_QUADS);
-	for (int i = 0; i < 4; ++i)
-	{
-		glTexCoord2f(src[i][0] * iw, src[i][1] * ih);
-		glVertex2f(dst[i][0], dst[i][1]);
-	}
-	glEnd();
-
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
-	glDisable(GL_BLEND);
-	glDisable(GL_TEXTURE_2D);
-	glDepthMask(GL_TRUE);
+	static std::vector<std::string> s_aSeen;
+	for (size_t i = 0; i < s_aSeen.size(); ++i)
+		if (s_aSeen[i] == sKey)
+			return;
+	s_aSeen.push_back(sKey);
+	fprintf(stderr, "[surf] %s   (distinct #%u)\n", sKey, (uint32)s_aSeen.size());
 }
 
 void nr_BlitToScreen(BlitRequest *pRequest)
@@ -1081,6 +1115,8 @@ void nr_BlitToScreen(BlitRequest *pRequest)
 
 	const float dst[4][2] = { {dx0,dy0}, {dx1,dy0}, {dx1,dy1}, {dx0,dy1} };
 	const float src[4][2] = { {sx0,sy0}, {sx1,sy0}, {sx1,sy1}, {sx0,sy1} };
+	nr_TraceSurface("blit", pBuf, pRequest->m_Alpha,
+	                (pRequest->m_BlitOptions & BLIT_TRANSPARENT) != 0, dx0, dy0, dx1, dy1);
 	nr_PresentSurface(pBuf, (pRequest->m_BlitOptions & BLIT_TRANSPARENT) != 0,
 	                  pRequest->m_TransparentColor.wVal, pRequest->m_Alpha, dst, src);
 }
@@ -1098,14 +1134,86 @@ bool nr_WarpToScreen(BlitRequest *pRequest)
 		dst[i][0] = wp[i].dest_x;   dst[i][1] = wp[i].dest_y;
 		src[i][0] = wp[i].source_x; src[i][1] = wp[i].source_y;
 	}
+	nr_TraceSurface("warp", pBuf, pRequest->m_Alpha,
+	                (pRequest->m_BlitOptions & BLIT_TRANSPARENT) != 0,
+	                dst[0][0], dst[0][1], dst[2][0], dst[2][1]);
 	nr_PresentSurface(pBuf, (pRequest->m_BlitOptions & BLIT_TRANSPARENT) != 0,
 	                  pRequest->m_TransparentColor.wVal, pRequest->m_Alpha, dst, src);
 	return true;
 }
 
 
+// ★ SCREENSHOTS. Empty in this port until now (and in the GL build too, so this
+// was a missing FEATURE, not a Metal regression).
+//
+// Writes a 24-bit uncompressed BMP because that is what the engine's own caller
+// names the file: client.cpp builds "<SSFile><n>.bmp" and hands it here. BMP is
+// bottom-up and BGR; Metal's readback is top-down, so the rows are walked
+// backwards -- the reverse of the PPM dump above.
 void nr_MakeScreenShot(const char *pFilename)
 {
+	if (!pFilename || !pFilename[0])
+		return;
+
+	int nW = 0, nH = 0;
+	LTMacWin_GetSize(&nW, &nH);
+	if (nW <= 0 || nH <= 0)
+		return;
+
+	std::vector<uint8> aRGB((size_t)nW * nH * 3);
+	{
+		int nGotW = 0, nGotH = 0;
+		if (!MTLDev_ReadbackFrame(&aRGB[0], &nGotW, &nGotH))
+			return;
+		nW = nGotW; nH = nGotH;
+		aRGB.resize((size_t)nW * nH * 3);
+	}
+
+	FILE *fp = fopen(pFilename, "wb");
+	if (!fp)
+	{
+		fprintf(stderr, "[nr] screenshot FAILED to open '%s'\n", pFilename);
+		return;
+	}
+
+	// BMP rows are padded to a 4-byte boundary.
+	const uint32 nRowBytes = (uint32)nW * 3;
+	const uint32 nPad      = (4 - (nRowBytes & 3)) & 3;
+	const uint32 nImage    = (nRowBytes + nPad) * (uint32)nH;
+	const uint32 nOffset   = 14 + 40;
+
+	uint8 aHdr[54];
+	memset(aHdr, 0, sizeof(aHdr));
+	aHdr[0] = 'B'; aHdr[1] = 'M';
+	*(uint32*)&aHdr[2]  = nOffset + nImage;   // file size
+	*(uint32*)&aHdr[10] = nOffset;            // pixel data offset
+	*(uint32*)&aHdr[14] = 40;                 // BITMAPINFOHEADER size
+	*(int32*) &aHdr[18] = (int32)nW;
+	*(int32*) &aHdr[22] = (int32)nH;          // positive = bottom-up
+	*(uint16*)&aHdr[26] = 1;                  // planes
+	*(uint16*)&aHdr[28] = 24;                 // bits per pixel
+	*(uint32*)&aHdr[34] = nImage;
+	fwrite(aHdr, 1, sizeof(aHdr), fp);
+
+	const uint8 aPad[3] = { 0, 0, 0 };
+	std::vector<uint8> aRow((size_t)nW * 3);
+	for (int nOut = 0; nOut < nH; ++nOut)
+	{
+		// BMP stores the BOTTOM row first; Metal's readback is top-down.
+		const int nSrc = nH - 1 - nOut;
+		const uint8 *pSrc = &aRGB[(size_t)nSrc * nW * 3];
+		for (int x = 0; x < nW; ++x)
+		{
+			aRow[x * 3 + 0] = pSrc[x * 3 + 2];   // B
+			aRow[x * 3 + 1] = pSrc[x * 3 + 1];   // G
+			aRow[x * 3 + 2] = pSrc[x * 3 + 0];   // R
+		}
+		fwrite(&aRow[0], 1, nRowBytes, fp);
+		if (nPad)
+			fwrite(aPad, 1, nPad, fp);
+	}
+	fclose(fp);
+	fprintf(stderr, "[nr] screenshot written: %s (%dx%d)\n", pFilename, nW, nH);
 }
 
 
@@ -1167,7 +1275,7 @@ bool nr_QueryDeletePalette(struct DEPalette_t *pPalette)
 
 void nr_ReadConsoleVariables()
 {
-	GLConVar_Read(g_pGLStruct);
+	RenderConVar_Read(g_pRenderStruct);
 }
 
 
@@ -1199,7 +1307,7 @@ extern "C"
 void rdll_RenderDLLSetup(RenderStruct *pStruct)
 {
 #ifdef LT_MACOS
-	g_pGLStruct = pStruct;   // engine-side services for the GL texture/world code
+	g_pRenderStruct = pStruct;   // engine-side services for the GL texture/world code
 #endif
 	pStruct->Start3D = nr_Start3D;
 	pStruct->End3D = nr_End3D;
@@ -1213,8 +1321,8 @@ void rdll_RenderDLLSetup(RenderStruct *pStruct)
 	pStruct->Term = nr_Term;
 #ifdef LT_MACOS
 	pStruct->LoadWorldData = nr_LoadWorldData;   // Phase-2 GL world loader
-	pStruct->CreateRenderObject = GLModel_CreateRenderObject;   // model LTB meshes
-	pStruct->DestroyRenderObject = GLModel_DestroyRenderObject;
+	pStruct->CreateRenderObject = RModel_CreateRenderObject;   // model LTB meshes
+	pStruct->DestroyRenderObject = RModel_DestroyRenderObject;
 	pStruct->ConvertTexDataToDD = nr_ConvertTexDataToDD;   // same-format copy
 	pStruct->AddGlowRenderStyleMapping = nr_AddGlowRenderStyleMapping;   // glow: no-op
 	pStruct->SetGlowDefaultRenderStyle = nr_SetGlowDefaultRenderStyle;
@@ -1261,7 +1369,7 @@ void rdll_RenderDLLSetup(RenderStruct *pStruct)
 	pStruct->GetScreenFormat = nr_GetScreenFormat;
 	pStruct->BlitToScreen = nr_BlitToScreen;   // present software interface surfaces to GL
 	pStruct->WarpToScreen = nr_WarpToScreen;   // scaled/warped surface blits (menu bg, splash)
-	pStruct->SetLightGroupColor = GLWorld_SetLightGroupColor;   // switchable lights (lamps)
+	pStruct->SetLightGroupColor = RWorld_SetLightGroupColor;   // switchable lights (lamps)
 }
 
 

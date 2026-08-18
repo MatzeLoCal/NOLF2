@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_particles.cpp
+// MODULE  : render_particles.cpp
 //
 // PURPOSE : OT_PARTICLESYSTEM. A particle system is a linked list of PSParticle
 //           (de_objects.h:638) that the GAME animates every frame; the renderer
@@ -29,12 +29,16 @@
 #include "clientmgr.h"       // g_pClientMgr (object lists)
 #include "renderstruct.h"
 #include "iltclient.h"       // PS_WORLDSPACE / PS_USEROTATION
-#include "gl_texture.h"
-#include "gl_worlddata.h"    // GLWorld_ApplyObjectFog / GLWorld_RestoreSceneFog
-#include "gl_particles.h"
-#include <OpenGL/gl.h>
+#include "world_renderdata.h"
+#include "model_renderdata.h"      // REmitState — particles share the model emit
+#include "mtl_device.h"    // MTLDev_IsMetalBackend
+#include "mtl_model.h"     // MTLModel_DrawTris
+#include <vector>    // RWorld_ApplyObjectFog / RWorld_RestoreSceneFog
+#include "render_particles.h"
 #include <stdio.h>
 #include <math.h>
+#include "sys/shared/render_texture.h"  // RTex_* — neutral texture queries
+#include "sys/shared/render_globals.h"  // g_pRenderStruct — the engine function table
 
 namespace
 {
@@ -42,18 +46,18 @@ namespace
 	LTVector g_vCamRight(1, 0, 0), g_vCamUp(0, 1, 0);
 	LTVector g_vCamFwd(0, 0, 1),   g_vCamPos(0, 0, 0);
 
-	inline int glp_RoundToInt(float f)
+	inline int rp_RoundToInt(float f)
 	{
 		return (int)(f + ((f < 0.0f) ? -0.5f : 0.5f));
 	}
 
-	inline uint8 glp_ClampByte(int n)
+	inline uint8 rp_ClampByte(int n)
 	{
 		return (uint8)((n < 0) ? 0 : ((n > 255) ? 255 : n));
 	}
 }
 
-void GLParticle_SetCamera(const LTVector &vRight, const LTVector &vUp,
+void RParticle_SetCamera(const LTVector &vRight, const LTVector &vUp,
                           const LTVector &vForward, const LTVector &vPos)
 {
 	g_vCamRight = vRight;
@@ -64,13 +68,13 @@ void GLParticle_SetCamera(const LTVector &vRight, const LTVector &vUp,
 
 // Draw one system. Assumes the shared translucent state is already set.
 // bPlayerView selects the PLAYER-VIEW billboard basis (see below).
-static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerView)
+static bool rp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerView)
 {
 	if (!pSystem || !(pSystem->m_Flags & FLAG_VISIBLE))
 		return false;
 
-	if (g_pGLStruct && g_pGLStruct->IsObjectGroupEnabled &&
-	    !g_pGLStruct->IsObjectGroupEnabled(pSystem->m_nRenderGroup))
+	if (g_pRenderStruct && g_pRenderStruct->IsObjectGroupEnabled &&
+	    !g_pRenderStruct->IsObjectGroupEnabled(pSystem->m_nRenderGroup))
 		return false;
 
 	// ★★ THE FEEDBACK EDGE — see the file header. Set it whether or not we end
@@ -90,23 +94,21 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 			fprintf(stderr, "[glps] %s system @(%.0f %.0f %.0f): EMPTY (0 particles) tex=%s\n",
 			        bPlayerView ? "PV" : "world",
 			        pSystem->m_Pos.x, pSystem->m_Pos.y, pSystem->m_Pos.z,
-			        pT ? GLTex_GetTexName(pT) : "<none>");
+			        pT ? RTex_GetName(pT) : "<none>");
 		}
 		return false;
 	}
 
 	SharedTexture *pTex = pSystem->m_pCurTexture;
-	GLuint nName = pTex ? GLTex_GetName(pTex) : 0;
-	if (nName)
-	{
-		glEnable(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, nName);
-	}
-	else
-	{
-		// d3d_DisableTexture(0): untextured particles are legal.
-		glDisable(GL_TEXTURE_2D);
-	}
+	// ⚠️ Neutral query (render_texture.h) — the GL-era GLTex_GetName reinterpreted
+	// the Metal entry and returned garbage (§88's vanished sprites).
+	const bool bTexOk = RTex_IsValid(pTex);
+	const unsigned nName = bTexOk ? 1u : 0u;   // diagnostics only
+
+	REmitState cPart;
+	cPart.m_pTexture = bTexOk ? pTex : 0;
+	cPart.m_bZWrite  = false;      // translucent: test but do not write
+	cPart.m_bBlend   = true;
 
 	// Blend mode from the object's flags2 — d3d_GetBlendStates (d3d_draw.h:128).
 	// Fire is overwhelmingly FLAG2_ADDITIVE.
@@ -123,11 +125,11 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 	// SRCALPHA/ONE for additive WORLD MODELS. Particles, sprites and polygrids
 	// go through d3d_GetBlendStates and use ONE/ONE.
 	if (pSystem->m_Flags2 & FLAG2_ADDITIVE)
-		glBlendFunc(GL_ONE, GL_ONE);
+	{ cPart.m_nSrcBlend = kRBlend_One;       cPart.m_nDstBlend = kRBlend_One; }
 	else if (pSystem->m_Flags2 & FLAG2_MULTIPLY)
-		glBlendFunc(GL_ZERO, GL_SRC_COLOR);
+	{ cPart.m_nSrcBlend = kRBlend_Zero;      cPart.m_nDstBlend = kRBlend_SrcColor; }
 	else
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	{ cPart.m_nSrcBlend = kRBlend_SrcAlpha; cPart.m_nDstBlend = kRBlend_InvSrcAlpha; }
 
 	// PS_WORLDSPACE means the particle positions are already world space;
 	// otherwise they are in the system's object space and the system's
@@ -145,8 +147,7 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 	LTVector vUp    = bPlayerView ? LTVector(0.0f, 1.0f, 0.0f) : g_vCamUp;
 	LTVector vRight = bPlayerView ? LTVector(1.0f, 0.0f, 0.0f) : g_vCamRight;
 
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
+	float aRModel[16];
 
 	if (bObjectSpace)
 	{
@@ -156,7 +157,7 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 		LTMatrix mRot;
 		pSystem->m_Rotation.ConvertToMatrix(mRot);
 
-		float aGL[16];
+		float *aGL = aRModel;
 		for (int nRow = 0; nRow < 3; ++nRow)
 			for (int nCol = 0; nCol < 3; ++nCol)
 				aGL[nCol * 4 + nRow] = mRot.m[nRow][nCol] *
@@ -168,7 +169,7 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 		aGL[13] = pSystem->m_Pos.y;
 		aGL[14] = pSystem->m_Pos.z;
 		aGL[15] = 1.0f;
-		glMultMatrixf(aGL);
+		cPart.m_pModelMatrix = aRModel;
 
 		// Inverse-rotate the basis into object space. The rotation part is
 		// orthonormal, so its inverse is its transpose; divide out the scale
@@ -203,7 +204,8 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 	const bool bRotate = (pSystem->m_psFlags & PS_USEROTATION) != 0;
 
 	uint32 nDrawn = 0;
-	glBegin(GL_QUADS);
+	static std::vector<MTLModelVert> s_aPartVerts;   // static: no per-system alloc
+	s_aPartVerts.clear();
 	for (PSParticle *pCur = pSystem->m_ParticleHead.m_pNext;
 	     pCur && pCur != &pSystem->m_ParticleHead;
 	     pCur = pCur->m_pNext)
@@ -219,10 +221,10 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 			vR = vRight * fC - vUp * fS;
 		}
 
-		glColor4ub(glp_ClampByte(glp_RoundToInt(pCur->m_Color.x * fR)),
-		           glp_ClampByte(glp_RoundToInt(pCur->m_Color.y * fG)),
-		           glp_ClampByte(glp_RoundToInt(pCur->m_Color.z * fB)),
-		           glp_ClampByte(glp_RoundToInt(pCur->m_Alpha   * fA)));
+		const uint8 nCR = rp_ClampByte(rp_RoundToInt(pCur->m_Color.x * fR));
+		const uint8 nCG = rp_ClampByte(rp_RoundToInt(pCur->m_Color.y * fG));
+		const uint8 nCB = rp_ClampByte(rp_RoundToInt(pCur->m_Color.z * fB));
+		const uint8 nCA = rp_ClampByte(rp_RoundToInt(pCur->m_Alpha   * fA));
 
 		const LTVector &vP = pCur->m_Pos;
 		const float fSize  = pCur->m_Size;
@@ -235,15 +237,26 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 		LTVector v2 = vP + (-vU + vR) * fSize;
 		LTVector v3 = vP + (-vU - vR) * fSize;
 
-		glTexCoord2f(0.0f, 0.0f); glVertex3f(v0.x, v0.y, v0.z);
-		glTexCoord2f(1.0f, 0.0f); glVertex3f(v1.x, v1.y, v1.z);
-		glTexCoord2f(1.0f, 1.0f); glVertex3f(v2.x, v2.y, v2.z);
-		glTexCoord2f(0.0f, 1.0f); glVertex3f(v3.x, v3.y, v3.z);
+		{
+			// Metal has no GL_QUADS: (0,1,2)(0,2,3), same winding.
+			const LTVector aC[4] = { v0, v1, v2, v3 };
+			const float    aUV[4][2] = { {0,0}, {1,0}, {1,1}, {0,1} };
+			static const int kTri[6] = { 0, 1, 2, 0, 2, 3 };
+			for (int i = 0; i < 6; ++i)
+			{
+				const int n = kTri[i];
+				MTLModelVert cV = { aC[n].x, aC[n].y, aC[n].z,
+				                    aUV[n][0], aUV[n][1], nCR, nCG, nCB, nCA };
+				s_aPartVerts.push_back(cV);
+			}
+		}
 		++nDrawn;
 	}
-	glEnd();
 
-	glPopMatrix();
+	// One draw per SYSTEM, not per particle -- the whole system shares its
+	// texture and blend state.
+	MTLModel_DrawTris(s_aPartVerts.empty() ? 0 : &s_aPartVerts[0],
+	                  (uint32)s_aPartVerts.size(), &cPart);
 
 	if (bLog)
 		fprintf(stderr, "[glps] %s system @(%.0f %.0f %.0f): %d particles, %u drawn, "
@@ -251,7 +264,7 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 		        bPlayerView ? "PV" : "world",
 		        pSystem->m_Pos.x, pSystem->m_Pos.y, pSystem->m_Pos.z,
 		        pSystem->m_nParticles, nDrawn, (unsigned)nName,
-		        pTex ? GLTex_GetTexName(pTex) : "<none>",
+		        pTex ? RTex_GetName(pTex) : "<none>",
 		        bObjectSpace ? "object" : "world",
 		        (pSystem->m_Flags2 & FLAG2_ADDITIVE) ? "add" :
 		        ((pSystem->m_Flags2 & FLAG2_MULTIPLY) ? "mul" : "alpha"),
@@ -263,7 +276,7 @@ static bool glp_DrawSystem(LTParticleSystem *pSystem, bool bLog, bool bPlayerVie
 // Shared body: bPlayerView picks WHICH set to draw — the world-space systems or
 // the FLAG_REALLYCLOSE (player-view) ones. They cannot be drawn together: the
 // two live in different spaces under different projections.
-static void glp_DrawPass(bool bPlayerView)
+static void rp_DrawPass(bool bPlayerView)
 {
 	if (!g_pClientMgr)
 		return;
@@ -299,18 +312,9 @@ static void glp_DrawPass(bool bPlayerView)
 		}
 	}
 
-	// Translucent state, mirroring the sprite pass: depth-test but do not
-	// write (particles must not occlude each other or anything after them).
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_ALPHA_TEST);
-	glActiveTexture(GL_TEXTURE1);
-	glDisable(GL_TEXTURE_2D);
-	glActiveTexture(GL_TEXTURE0);
-	glEnable(GL_TEXTURE_2D);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glEnable(GL_BLEND);
+	// Translucent: depth-test but do not write (particles must not occlude each
+	// other or anything after them). Every one of these is a per-draw parameter
+	// carried by REmitState -- there is no ambient state to set.
 
 	for (LTLink *pCur = pHead->m_pNext; pCur != pHead; pCur = pCur->m_pNext)
 	{
@@ -320,24 +324,21 @@ static void glp_DrawPass(bool bPlayerView)
 		// Each pass takes only its own set.
 		if (((pS->m_Flags & FLAG_REALLYCLOSE) != 0) != bPlayerView)
 			continue;
-		glp_DrawSystem(pS, bLog, bPlayerView);
+		rp_DrawSystem(pS, bLog, bPlayerView);
 	}
 
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
-	glColor4ub(255, 255, 255, 255);
 }
 
-void GLParticle_DrawSystems()
+void RParticle_DrawSystems()
 {
-	glp_DrawPass(false);
+	rp_DrawPass(false);
 }
 
 // ⚠️ Must be called by the PLAYER-VIEW pass, while its projection and view are
-// still installed — GLModel_DrawPlayerView does it just before its teardown.
+// still installed — RModel_DrawPlayerView does it just before its teardown.
 // Drawing these in the world pass puts them at the wrong place entirely, which
 // is why the welder's flame was invisible while the tool worked.
-void GLParticle_DrawPlayerView()
+void RParticle_DrawPlayerView()
 {
-	glp_DrawPass(true);
+	rp_DrawPass(true);
 }

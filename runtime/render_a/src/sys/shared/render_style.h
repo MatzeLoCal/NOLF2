@@ -1,8 +1,8 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_renderstyle.h
+// MODULE  : render_style.h
 //
-// PURPOSE : Render styles for the GL renderer.
+// PURPOSE : Authored render styles (backend-neutral).
 //
 //           A RENDER STYLE IS THE AUTHORED RENDER STATE FOR A MODEL PIECE --
 //           blend mode, alpha test mode + reference, z read/write, cull and
@@ -26,22 +26,23 @@
 //
 // ----------------------------------------------------------------------- //
 
-#ifndef __GL_RENDERSTYLE_H__
-#define __GL_RENDERSTYLE_H__
+#ifndef __RENDER_STYLE_H__
+#define __RENDER_STYLE_H__
 
+#include "sys/shared/render_state.h"   // kRBlend_* / kRAlpha_* (was GLenum)
 #include "ltrenderstyle.h"
 
 #include <vector>
 
 // Version of the render-style LTB chunk this parser understands. Must match
 // d3d_renderstyle.h's RENDERSTYLE_D3D_VERSION -- the files are shared.
-#define GL_RENDERSTYLE_VERSION      3
+#define R_RENDERSTYLE_VERSION      3
 
-class CGLRenderStyle : public CRenderStyle
+class CRRenderStyle : public CRenderStyle
 {
 public:
-    CGLRenderStyle();
-    virtual ~CGLRenderStyle() {}
+    CRRenderStyle();
+    virtual ~CRRenderStyle() {}
 
     // Lighting material
     virtual bool    SetLightingMaterial(LightingMaterial& LightMaterial);
@@ -58,7 +59,7 @@ public:
     virtual bool    Compile()               { return true; }   // nothing to precompute
     virtual void    SetDefaults();
     virtual bool    CopyRenderStyle(CRenderStyle* pSrcRenderStyle);
-    virtual bool    IsSupportedOnDevice()   { return true; }   // fixed-function GL: everything we honour is supported
+    virtual bool    IsSupportedOnDevice()   { return true; }   // everything we honour is supported
 
     // NOTE: SetFilename/GetFilename come from CRenderStyle -- m_pFilename is
     // private in the base, so do not shadow them here.
@@ -72,20 +73,19 @@ private:
 //
 // What a draw path actually needs out of a style, resolved once so callers do
 // not each re-interpret the enums. Pass index is almost always 0: multi-pass
-// styles are an effects feature we do not implement yet (see GLRenderStyle_
+// styles are an effects feature we do not implement yet (see RRenderStyle_
 // GetPassCount if you need to know).
-struct GLRenderStyleState
+struct RRenderStyleState
 {
-    bool    bAlphaTest;      // enable GL_ALPHA_TEST
-    uint32  nAlphaFunc;      // GLenum for glAlphaFunc
-    float   fAlphaRef;       // 0..1 reference for glAlphaFunc
-    bool    bBlend;          // enable GL_BLEND
-    uint32  nSrcBlend;       // GLenum
-    uint32  nDstBlend;       // GLenum
+    bool    bAlphaTest;      // enable alpha testing
+    uint32  nAlphaFunc;      // ERAlphaFunc (kRAlpha_*)
+    float   fAlphaRef;       // 0..1 alpha-test reference
+    bool    bBlend;          // enable blending
+    uint32  nSrcBlend;       // ERBlendFactor (kRBlend_*)
+    uint32  nDstBlend;       // ERBlendFactor (kRBlend_*)
     bool    bZRead;
     bool    bZWrite;
-    bool    bCull;           // enable GL_CULL_FACE
-    uint32  nCullFace;       // GLenum (GL_BACK / GL_FRONT)
+    bool    bCull;           // enable backface culling
 
     // ★ THE AUTHORED COLOUR PIPELINE (RenderPassOp::TextureStages[0]).
     // D3D's ColorOp/ColorArg1/ColorArg2 say how the texture combines with the
@@ -122,18 +122,22 @@ struct GLRenderStyleState
     bool    bTextureAlpha;   // does TextureStages[0]'s ALPHA op read the TEXTURE?
 };
 
-// Apply pOut's colour pipeline to the active texture unit's texture environment,
-// and restore the plain GL_MODULATE default afterwards.
-void GLRenderStyle_ApplyColorOp(const GLRenderStyleState* pState);
-void GLRenderStyle_ResetColorOp(void);
+// ⚠️ IS THE AUTHORED COLOUR SCALE (MODULATE2X) ACTUALLY IN EFFECT?
+// It is PARKED behind LT_RS_COLORSCALE (§68/§71). Any backend applying
+// fColorScale MUST ask this first, or it silently un-parks the feature and
+// renders those pieces at 2x -- exactly what the Metal model pass did (§89):
+// the world matched to 0.00 while characters came out up to +48/255 too bright.
+// ⚠️ The gate's own precondition ("turn this on together with real model
+// lighting") has been satisfied since §71; nobody has revisited it.
+bool RRenderStyle_ColorScaleEnabled(void);
 
 // Resolve pass `nPass` of `pStyle` into GL state. Returns false (and leaves
 // pOut at the fixed-function defaults) when the style is NULL or the pass does
 // not exist, so callers can use one code path.
-bool GLRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, GLRenderStyleState* pOut);
+bool RRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, RRenderStyleState* pOut);
 
 // Fill pOut with the state used when an object has no render style at all.
 // This is CD3DRenderStyle::SetDefaults(): opaque, no alpha test, z read+write.
-void GLRenderStyle_GetDefaultState(GLRenderStyleState* pOut);
+void RRenderStyle_GetDefaultState(RRenderStyleState* pOut);
 
-#endif // __GL_RENDERSTYLE_H__
+#endif // __RENDER_STYLE_H__

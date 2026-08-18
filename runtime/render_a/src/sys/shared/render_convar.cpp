@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_convar.cpp
+// MODULE  : render_convar.cpp
 //
 // PURPOSE : Register the RENDERER CONSOLE VARIABLES with the engine console.
 //
@@ -18,7 +18,7 @@
 //           The D3D renderer creates every one of them at init
 //           (common_init.cpp:120 -> d3d_CreateConsoleVariables ->
 //           d3d_MaybeCreateCVar, which RUNS "<name> <default>" through the
-//           console when the variable does not exist yet). Our GL renderer
+//           console when the variable does not exist yet). Our renderer
 //           never did, so those variables simply DID NOT EXIST: every one of
 //           the game's SetGameConVar writes went nowhere, and the renderer's
 //           own GetParameter lookups all missed and fell back to hardcoded
@@ -29,7 +29,7 @@
 //
 //           This file is the GL twin of d3d_convar/common_stuff's half:
 //           instantiate the variables and mirror the create/read walks.
-//           Nothing else in the GL renderer reads the ConVar objects yet (the
+//           Nothing else in the renderer reads the ConVar objects yet (the
 //           gl_* modules query the engine console directly by name), but
 //           registering them is what makes those queries -- and the game's
 //           writes -- resolve at all.
@@ -49,13 +49,13 @@ BaseConVar* g_pConVars = NULL;
 #define INSTANTIATE_RENDERER_CONSOLE_VARS
 #include "rendererconsolevars.h"
 
-#include "gl_convar.h"
+#include "render_convar.h"
 
 // Mirrors d3d_MaybeCreateCVar (common_stuff.cpp:43): use the engine's variable
 // if it already exists (autoexec.cfg / display.cfg have priority -- that is how
 // retail's "Saturate" "1" and "FogEnable" "1" survive), otherwise create it by
 // running a console assignment with the renderer's default.
-static HLTPARAM glcv_MaybeCreate(RenderStruct *pStruct, const char *pName, float fDefault)
+static HLTPARAM rcv_MaybeCreate(RenderStruct *pStruct, const char *pName, float fDefault)
 {
 	HLTPARAM hRet = pStruct->GetParameter(const_cast<char*>(pName));
 	if (hRet)
@@ -67,7 +67,7 @@ static HLTPARAM glcv_MaybeCreate(RenderStruct *pStruct, const char *pName, float
 	return pStruct->GetParameter(const_cast<char*>(pName));
 }
 
-void GLConVar_Create(RenderStruct *pStruct)
+void RenderConVar_Create(RenderStruct *pStruct)
 {
 	if (!pStruct || !pStruct->GetParameter || !pStruct->RunConsoleString)
 		return;
@@ -76,7 +76,7 @@ void GLConVar_Create(RenderStruct *pStruct)
 	for (BaseConVar *pCur = g_pConVars; pCur; pCur = pCur->m_pNext)
 	{
 		bool bExisted = (pStruct->GetParameter(const_cast<char*>(pCur->m_pName)) != NULL);
-		pCur->m_hParam = glcv_MaybeCreate(pStruct, pCur->m_pName, pCur->m_DefaultVal);
+		pCur->m_hParam = rcv_MaybeCreate(pStruct, pCur->m_pName, pCur->m_DefaultVal);
 		if (bExisted) ++nExisting; else ++nCreated;
 	}
 
@@ -84,7 +84,7 @@ void GLConVar_Create(RenderStruct *pStruct)
 	        nCreated, nExisting);
 }
 
-void GLConVar_Read(RenderStruct *pStruct)
+void RenderConVar_Read(RenderStruct *pStruct)
 {
 	if (!pStruct || !pStruct->GetParameterValueFloat)
 		return;

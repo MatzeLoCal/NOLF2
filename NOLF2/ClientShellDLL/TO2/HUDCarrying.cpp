@@ -116,9 +116,14 @@ void CHUDCarrying::Update()
 {
 	if (!g_pPlayerMgr->GetCarryingObject() && !g_pPlayerMgr->CanCarryObject()) return;
 
+	// §67's convention: x by XRatio, vertical position by YRatio, and any
+	// authored SIZE by GetFontRatio() (the min). XRatio for y is invisible at
+	// 4:3, where the ratios are equal, but on a wider drawable it put this icon
+	// ~8% of its authored y too low (390 -> 1560px instead of 1446) and ~8%
+	// oversized.
 	float fx = (float)(m_BasePos.x) * g_pInterfaceResMgr->GetXRatio();
-	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetXRatio();
-	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetXRatio();
+	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetYRatio();
+	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetFontRatio();
 
 	g_pDrawPrim->SetXYWH(&m_Poly,fx,fy,fw,fw);
 

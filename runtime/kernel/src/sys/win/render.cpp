@@ -59,8 +59,22 @@ void r_UnloadSystemTexture(TextureData *pTexture)
 	if(!pTexture)
 		return;
 
-	ASSERT(g_SysCache.m_CurMem >= pTexture->m_AllocSize);
-	g_SysCache.m_CurMem -= pTexture->m_AllocSize;
+	// ⚠️ IS THIS TEXTURE ACTUALLY IN THE MRU CACHE? Membership and the memory
+	// accounting are established TOGETHER in r_LoadSystemTexture (dl_AddHead
+	// immediately followed by m_CurMem +=), so they have to be undone together
+	// too. A TextureData that never got that far still reaches here -- and used
+	// to crash in dl_RemoveAt on its uninitialised link (SIGSEGV at 0x8; the
+	// link is now tied off at allocation in dtx_Alloc, which makes the removal
+	// harmless). Without this guard it would instead underflow m_CurMem and
+	// m_nElements silently, which trades a loud bug for a quiet one.
+	// A tied-off link points at itself; that is precisely "not in any list".
+	const bool bInCache = (pTexture->m_Link.m_pPrev != &pTexture->m_Link);
+
+	if (bInCache)
+	{
+		ASSERT(g_SysCache.m_CurMem >= pTexture->m_AllocSize);
+		g_SysCache.m_CurMem -= pTexture->m_AllocSize;
+	}
 
 	delete[] pTexture->m_pDataBuffer; 
 	pTexture->m_pDataBuffer = NULL; 
@@ -68,7 +82,8 @@ void r_UnloadSystemTexture(TextureData *pTexture)
 	if (pTexture->m_pSharedTexture) 
 		pTexture->m_pSharedTexture->m_pEngineData = LTNULL; 
 
-	dl_RemoveAt(&g_SysCache.m_List, &pTexture->m_Link);
+	if (bInCache)
+		dl_RemoveAt(&g_SysCache.m_List, &pTexture->m_Link);
 	delete pTexture;
 }
 

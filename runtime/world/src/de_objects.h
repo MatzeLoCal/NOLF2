@@ -364,7 +364,19 @@ public:
 
 public:
     int         m_Left, m_Top, m_Right, m_Bottom;
+    // m_xFov is the ASPECT-CORRECTED horizontal fov the renderer draws with
+    // (derived from m_yFov and the camera rect -- see ci_SetCameraFOV).
+    // m_xFovAuthored is what the GAME last asked for, and is what
+    // ci_GetCameraFOV hands back.
+    //
+    // ⚠️ THE TWO MUST STAY SEPARATE. CPlayerMgr::UpdateCameraZoom is a
+    // READ-MODIFY-WRITE loop -- it reads the fov back, steps it toward
+    // FOVX_ZOOMED, and writes it again every frame. If the getter returned the
+    // DERIVED value, the loop would read a number it never wrote, inflated by
+    // the aspect correction, and step from there: the scope zoom then converges
+    // to the wrong place (and CDamageFXMgr's shake has the same shape).
     float       m_xFov, m_yFov;
+    float       m_xFovAuthored;
     int         m_bFullScreen;
     LTVector    m_LightAdd;     // Brighten everything up (values 0-1).  Does nothing when
                                 // this is 0,0,0.  This just draws a poly over

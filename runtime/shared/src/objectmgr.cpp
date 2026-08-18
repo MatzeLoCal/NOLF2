@@ -1548,6 +1548,7 @@ CameraInstance::CameraInstance()
 {
     m_bFullScreen = LTTRUE;
     m_xFov = m_yFov = MATH_HALFPI;
+    m_xFovAuthored = MATH_HALFPI;   // see de_objects.h: the getter returns this
     m_LightAdd.Init();
 
 }

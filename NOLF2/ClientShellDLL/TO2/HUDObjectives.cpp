@@ -96,10 +96,14 @@ void CHUDObjectives::Update()
 {
 	if (!m_bShow) return;
 
+	// §67's convention: x by XRatio, vertical position by YRatio, authored SIZE
+	// by GetFontRatio(). This is an ICON, not a bar, so BOTH extents take the
+	// same ratio -- mixing an XRatio width with a YRatio height stretched the
+	// authored 64x32 art to 2.16:1 on a non-4:3 drawable.
 	float fx = (float)(m_BasePos.x) * g_pInterfaceResMgr->GetXRatio();
-	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetXRatio();
-	float fw = (float)(m_BaseSize.x) * g_pInterfaceResMgr->GetXRatio();
-	float fh = (float)(m_BaseSize.y) * g_pInterfaceResMgr->GetYRatio();
+	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetYRatio();
+	float fw = (float)(m_BaseSize.x) * g_pInterfaceResMgr->GetFontRatio();
+	float fh = (float)(m_BaseSize.y) * g_pInterfaceResMgr->GetFontRatio();
 
 	g_pDrawPrim->SetXYWH(&m_Poly,fx,fy,fw,fh);
 

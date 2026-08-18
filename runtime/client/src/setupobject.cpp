@@ -306,7 +306,7 @@ static LTRESULT ModelExtraInit(	LTObject			*pObject,
 			//
 			// So the placeholder binding stays, and the "do not draw it" decision
 			// is made where it is safe to make it — the renderer. See
-			// GLModel_DrawPlayerView / glm_IsPlaceholderModel in gl_model.cpp.
+			// RModel_DrawPlayerView / rm_IsPlaceholderModel in model_renderdata.cpp.
 			fprintf(stderr, "[model] no model file specified -> placeholder "
 			                "models\\default.ltb (not drawn in player view)\n");
 

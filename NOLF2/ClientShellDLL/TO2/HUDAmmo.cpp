@@ -183,8 +183,12 @@ void CHUDAmmo::Update()
 
 	float x = (float)(m_BasePos.x + m_IconOffset.x) * g_pInterfaceResMgr->GetXRatio();
 	float y = (float)(m_BasePos.y + m_IconOffset.y) * g_pInterfaceResMgr->GetYRatio();
-	float w = (float)m_nIconSize * g_pInterfaceResMgr->GetXRatio();
-	float h = (float)m_nIconSize * g_pInterfaceResMgr->GetYRatio();
+	// One authored scalar, so ONE ratio: m_nIconSize is a square icon's side
+	// (compare HUDHealth and HUDAir, which scale it once and draw it as w,w).
+	// Taking XRatio for width and YRatio for height stretched the ammo icon
+	// ~8% wider than tall on a non-4:3 drawable. GetFontRatio() per §67.
+	float w = (float)m_nIconSize * g_pInterfaceResMgr->GetFontRatio();
+	float h = w;
 	std::string icon = pAmmo->GetNormalIcon();
 	m_hIcon = g_pInterfaceResMgr->GetTexture(icon.c_str());
 	g_pDrawPrim->SetXYWH(&m_Poly[1],x,y,w,h);

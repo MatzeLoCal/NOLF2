@@ -345,6 +345,43 @@ static void con_SSFile( int argc, char *argv[] )
 
 
 //------------------------------------------------------------------
+// ScreenShot -- take one, into "<SSFile><n>.bmp" in the working directory.
+//
+// ⚠️ ON WINDOWS THIS IS F8, handled in client.cpp's HookedWindowProc. That file
+// is NOT part of the macOS build (macos_client.cpp replaces it), so the key
+// never reaches anything and the feature was unreachable even once
+// RenderStruct::MakeScreenShot was implemented. A console command is the
+// backend-neutral way in, and it is also what lets the shot be taken from a
+// script or a key binding.
+//------------------------------------------------------------------
+void c_TakeScreenShot(void)
+{
+	if (!r_GetRenderStruct() || !r_GetRenderStruct()->MakeScreenShot)
+		return;
+
+	// First free name, exactly as the Win32 F8 path chose one.
+	char sName[_MAX_PATH + 1];
+	for (int i = 0; i < 3000; ++i)
+	{
+		LTSNPrintF(sName, sizeof(sName), "%s%d.bmp", g_SSFile, i);
+		FILE *fp = fopen(sName, "rb");
+		if (fp)
+		{
+			fclose(fp);
+			continue;
+		}
+		r_GetRenderStruct()->MakeScreenShot(sName);
+		return;
+	}
+}
+
+static void con_ScreenShot( int argc, char *argv[] )
+{
+	c_TakeScreenShot();
+}
+
+
+//------------------------------------------------------------------
 static void con_UpdateServer(int argc, char *argv[])
 {
 	// This is a command because you never really want to save this variable in the config file.
@@ -852,6 +889,7 @@ static LTCommandStruct g_LTCommandStructs[] =
 	"RangeScale", con_RangeScale, 0,
 	"AddAction", con_AddAction, 0,
 	"SSFile", con_SSFile, 0,
+	"ScreenShot", con_ScreenShot, 0,
 	"UpdateServer", con_UpdateServer, 0,
 	"RenderCommand", con_RenderCommand, 0,
 	"RCom", con_RenderCommand, 0,

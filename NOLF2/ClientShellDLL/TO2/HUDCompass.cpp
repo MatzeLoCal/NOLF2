@@ -79,13 +79,24 @@ void CHUDCompass::Update()
 	float fWorldNorth = GetConsoleFloat("WorldNorth",0.0f);
 
 
-	float cx = (float)(m_BasePos.x + m_nSize/2);
-	float cy = (float)(m_BasePos.y + m_nSize/2);
-	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetXRatio();
+	// §67's convention: x by XRatio, vertical position by YRatio, authored SIZE
+	// by GetFontRatio(). Equal to the old XRatio form at 4:3; on a wider
+	// drawable XRatio placed this ~8% of its authored y too low.
+	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetFontRatio();
 	float r = (float)(m_nSize) / fRat;
 
 	float fx = (float)(m_BasePos.x) * g_pInterfaceResMgr->GetXRatio();
-	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetXRatio();
+	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetYRatio();
+
+	// The needle must orbit the CENTRE OF THE DRAWN ICON and stay circular, so
+	// derive both from the icon's own screen rect rather than re-scaling the
+	// 640x480 centre: fx is XRatio-based while fw is GetFontRatio()-based, so
+	// "cx * XRatio" is no longer the icon's centre once the ratios differ. The
+	// radius takes the same ratio as fw, which is what keeps the sweep circular
+	// and concentric with the round compass art.
+	float cx = fx + fw / 2.0f;
+	float cy = fy + fw / 2.0f;
+	float fRadius = r * g_pInterfaceResMgr->GetFontRatio();
 
 	g_pDrawPrim->SetXYWH(&m_Poly[1],fx,fy,fw,fw);
 	
@@ -109,8 +120,8 @@ void CHUDCompass::Update()
 
 	for (uint8 i = 0; i < 4; i++)
 	{
-		x[i] = (cx + (float)cos(fRot) * r) * g_pInterfaceResMgr->GetXRatio();
-		y[i] = (cy + (float)sin(fRot) * r) * g_pInterfaceResMgr->GetXRatio();
+		x[i] = cx + (float)cos(fRot) * fRadius;
+		y[i] = cy + (float)sin(fRot) * fRadius;
 		fRot += (MATH_PI / 2);
 	}
 

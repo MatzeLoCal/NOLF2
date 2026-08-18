@@ -2204,10 +2204,14 @@ void CBaseScreen::ScalePoly(LTPoly_GT4* pPoly, LTIntPt pos, HTEXTURE hTex)
 		return;
 	uint32 w,h;
 	g_pTexInterface->GetTextureDims(hTex,w,h);
+	// §67's convention: x by XRatio, vertical position by YRatio, size by
+	// GetFontRatio(). w and h come straight from the texture, so one shared
+	// ratio is what preserves the art's aspect; XRatio for y dropped screen art
+	// ~8% of its authored y too low on a non-4:3 drawable.
 	float x = (float)pos.x * g_pInterfaceResMgr->GetXRatio();
-	float y = (float)pos.y * g_pInterfaceResMgr->GetXRatio();
-	float fw = (float)w * g_pInterfaceResMgr->GetXRatio();
-	float fh = (float)h * g_pInterfaceResMgr->GetXRatio();
+	float y = (float)pos.y * g_pInterfaceResMgr->GetYRatio();
+	float fw = (float)w * g_pInterfaceResMgr->GetFontRatio();
+	float fh = (float)h * g_pInterfaceResMgr->GetFontRatio();
 
 	g_pDrawPrim->SetXYWH(pPoly,x,y,fw,fh);
 

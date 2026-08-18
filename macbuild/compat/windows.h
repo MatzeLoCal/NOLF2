@@ -73,7 +73,14 @@ typedef int32_t        LONG;      // 32-bit on Win32
 typedef uint32_t       ULONG;     // 32-bit on Win32
 typedef uint32_t       UINT;
 typedef int            INT;
+// ⚠️ Objective-C ALREADY DEFINES BOOL (as `bool` on arm64), and a translation
+// unit that mixes engine headers with Cocoa/Metal -- every .mm in the Metal
+// renderer does -- would hit "typedef redefinition with different types".
+// OBJC_BOOL_DEFINED can only be set in an ObjC(++) TU, so pure C++ engine code
+// is untouched and BOOL stays `int` exactly as Win32 has it.
+#ifndef OBJC_BOOL_DEFINED
 typedef int            BOOL;
+#endif
 typedef int64_t        LONGLONG;
 typedef uint64_t       ULONGLONG;
 typedef uint64_t       DWORDLONG;

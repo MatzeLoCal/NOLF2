@@ -4696,6 +4696,54 @@ void CInterfaceMgr::UpdateOverlays()
 				}
 				VEC_MULSCALAR(vTemp, vTemp, m_fOverlayScaleMult[i]);
 
+				// ★ WIDEN THE OVERLAY TO THE ACTUAL ASPECT.
+				//
+				// These masks (blood, zoom vignette, spy vision…) are fixed-size
+				// SPRITES at a fixed distance in front of the camera, carrying
+				// FLAG_REALLYCLOSE -- so they are drawn by the PLAYER-VIEW sprite
+				// pass, under its own projection: a fixed 75-degree VERTICAL fov
+				// (PVModelFOV) with the horizontal derived from the real drawable
+				// aspect (gl_model.cpp: fRight = fTop * fAspect).
+				//
+				// ⚠️ That pass has ALWAYS been aspect-correct -- it never had the
+				// main world's fixed-aspect stretch (§106) -- so this is NOT a
+				// consequence of the camera-fov fix. The sprite is simply
+				// authored to fill a 4:3 view, and on anything wider it has
+				// always left the sides uncovered.
+				//
+				// ⚠️ AN ASPECT CORRECTION WAS TRIED HERE AND REMOVED (2026-08-16).
+				// The masks in [Overlay] (Scope, Binoc, spy-vision, camera, zoom)
+				// ARE fixed-size camera-space sprites and so do not widen with the
+				// drawable -- the community WideScreenFix enlarges exactly these
+				// Scale0/1/3/6/7 entries, so there is probably something real
+				// here. But it was added while chasing the damage/blood overlay,
+				// and LT_TRACE_OVERLAY proved that overlay never reaches this code
+				// at all (no [ovl] line fires while it is on screen). Rather than
+				// leave an unverified change riding along, it is out. If the scope
+				// or binoculars are ever measured to be too narrow, the factor to
+				// use is screenW/screenH applied to vTemp.x -- and it should be
+				// judged against the scope specifically, not inferred.
+
+				// LT_TRACE_OVERLAY=1 -- WHICH mask is on screen and how big it is
+				// told to be. Two wrong diagnoses of the "hit overlay" came from
+				// reasoning about this code instead of asking it what it does:
+				// the damage effect turned out not to be an Overlay mask at all
+				// (the [Overlay] section authors Scope, Binocs, spy-vision and
+				// camera masks -- there is no blood sprite in it). Report on
+				// CHANGE so the line survives a whole play session.
+				if (getenv("LT_TRACE_OVERLAY"))
+				{
+					static int s_nLast[NUM_OVERLAY_MASKS] = { 0 };
+					int nKey = (int)(vTemp.x * 10000.0f);
+					if (s_nLast[i] != nKey)
+					{
+						s_nLast[i] = nKey;
+						fprintf(stderr, "[ovl] mask %d visible  scale %.4f x %.4f "
+						                "(authored mult %.3f)\n",
+						        i, vTemp.x, vTemp.y, m_fOverlayScaleMult[i]);
+					}
+				}
+
 				g_pLTClient->SetObjectScale(m_hOverlays[i], &vTemp);
 
 				g_pCommonLT->SetObjectFlags(m_hOverlays[i], OFT_Flags, FLAG_VISIBLE, FLAG_VISIBLE);

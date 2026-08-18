@@ -51,6 +51,18 @@ void LTMacInput_ClearMouseDelta(void);
 // Mouse buttons: 0 = left, 1 = right, 2 = middle.
 bool LTMacInput_IsMouseButtonDown(unsigned int nButton);
 
+// --- Key ENUMERATION and NAMING, for the Controls menu -------------------
+// The bind system needs three things this file is the only owner of: which
+// keys exist, what each is called on screen, and which one the player just
+// pressed while the menu is waiting for a rebind. Keeping them here means the
+// key table stays the single source of truth (input.cpp holds no key list).
+unsigned int LTMacInput_NumKeys(void);            // count of bindable keys
+unsigned int LTMacInput_KeyDIKAt(unsigned int i); // DIK scancode of key i
+const char*  LTMacInput_DIKName(unsigned int nDIK); // "W", "Space", "Left Shift"
+// First key currently held, as a DIK scancode; 0 when nothing is down.
+// This is what TrackDevice polls to capture a rebind.
+unsigned int LTMacInput_FirstDIKDown(void);
+
 // Env-gated synthetic keystrokes for headless testing (LT_TEST_KEYS).
 // Call once per frame from the event pump.
 void LTMacInput_TickInjection(void);

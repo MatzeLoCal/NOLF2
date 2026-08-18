@@ -182,9 +182,12 @@ void CHUDDoomsday::Update()
 		}
 	}
 
+	// §67's convention: x by XRatio, vertical position by YRatio, authored SIZE
+	// by GetFontRatio(). This column of icons stacks downwards by fgap, which is
+	// derived from fw, so an XRatio size compounded the drift down the list.
 	float fx = (float)(m_BasePos.x) * g_pInterfaceResMgr->GetXRatio();
-	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetXRatio();
-	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetXRatio();
+	float fy = (float)(m_BasePos.y) * g_pInterfaceResMgr->GetYRatio();
+	float fw = (float)(m_nSize) * g_pInterfaceResMgr->GetFontRatio();
 	float fgap = fw * 1.25f;
 
 	for (int i = 0; i < kNumDDIcons; i++)

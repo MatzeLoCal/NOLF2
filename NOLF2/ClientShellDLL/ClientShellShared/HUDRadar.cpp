@@ -260,9 +260,26 @@ void CHUDRadar::Update()
 
 		vDir *= fDist;
 
-		float fx = (float)(m_BasePos.x + vDir.x) * g_pInterfaceResMgr->GetXRatio();
-		float fy = (float)(m_BasePos.y - vDir.z) * g_pInterfaceResMgr->GetXRatio();
-		float fw = (float)(m_nObjectSize) * g_pInterfaceResMgr->GetXRatio();
+		// The radar plots blips over the COMPASS ICON (UpdateLayout reuses the
+		// compass position and size), so it has to land on the rect
+		// CHUDCompass::Update actually draws: corner from XRatio/YRatio, size
+		// from GetFontRatio(). The centring offset and the blip OFFSET take that
+		// SAME size ratio on both axes -- the plot is circular in 640x480 units,
+		// so scaling its two axes differently would turn it into an ellipse that
+		// no longer fits the round compass art. m_BasePos already has the
+		// centring offset folded in (UpdateLayout), so back it out to recover
+		// the icon's own corner before scaling. Reduces to the original
+		// expression exactly when the three ratios are equal, i.e. at 4:3.
+		float fRatioX = g_pInterfaceResMgr->GetXRatio();
+		float fRatioY = g_pInterfaceResMgr->GetYRatio();
+		float fSize   = g_pInterfaceResMgr->GetFontRatio();
+		float fCenterOffset = (float)(int(m_nBaseSize / 2) - int(m_nObjectSize / 2));
+
+		float fx = ((float)m_BasePos.x - fCenterOffset) * fRatioX
+		         + (fCenterOffset + vDir.x) * fSize;
+		float fy = ((float)m_BasePos.y - fCenterOffset) * fRatioY
+		         + (fCenterOffset - vDir.z) * fSize;
+		float fw = (float)(m_nObjectSize) * fSize;
 
 		g_pDrawPrim->SetXYWH( &pRadarObj->m_Poly, fx, fy, fw, fw );
 		pRadarObj->m_bDraw = true;

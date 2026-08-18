@@ -2671,8 +2671,73 @@ void ci_GetCameraFOV(HLOCALOBJ hObj, float *pX, float *pY)
 	if (!pCamera || pCamera->m_ObjectType != OT_CAMERA || !pX || !pY)
 		return;
 
-	*pX = pCamera->m_xFov;
+	// ★ Hand back what the GAME set, not the aspect-corrected value the
+	// renderer uses. CPlayerMgr::UpdateCameraZoom reads this, steps it, and
+	// writes it back every frame -- returning the derived fov would feed that
+	// loop a number it never wrote. See de_objects.h.
+	*pX = pCamera->m_xFovAuthored;
 	*pY = pCamera->m_yFov;
+}
+
+
+// ★★ ASPECT-CORRECT HORIZONTAL FOV ("Hor+").
+//
+// The game hands us a FIXED PAIR -- FovX 90, FovY 78 (CPlayerMgr's console
+// defaults) -- and nothing between here and the frustum ever reconciles it with
+// the window. The renderer builds the frustum from BOTH values (nullrender.cpp:
+// right = zNear*tan(FovX/2), top = zNear*tan(FovY/2)) and maps it onto the full
+// viewport, so the picture's aspect is LOCKED at tan(45)/tan(39) = 1.235 however
+// wide the drawable is. A circle then renders with aspect (W/H)/1.235:
+//     640x480    -> 1.080   (8% too wide)
+//     2560x1780  -> 1.165   (16.5%)
+//     2400x1200  -> 1.620
+// ⚠️ This is ORIGINAL behaviour, not a port artefact: retail's D3D path builds
+// the identical projection (d3d_InitViewBox sets m_WindowSize[0] = tan(xFov/2)
+// and common_draw scales by its reciprocal). At 8% on a 4:3 CRT nobody saw it.
+//
+// The fix keeps the caller's VERTICAL fov exactly as authored -- that is the
+// framing the level designers composed -- and derives the horizontal one from
+// the real drawable. A wider window then shows MORE to the sides instead of
+// stretching what was already there.
+//
+// ⚠️ DONE HERE, at the engine's single store, rather than at a call site: the
+// client sets the FOV from several places that do NOT go through
+// CPlayerMgr::SetCameraFOV (CDamageFXMgr calls this interface directly, and zoom
+// and cutscene cameras set their own pairs), so a call-site fix would let the
+// stretch return on zoom or damage. Culling, screen->world picking
+// (ci_GetCameraRay) and both renderers all read the stored value, so correcting
+// it once keeps every consumer consistent with what is actually drawn.
+// ⚠️ The caller's fovX is consequently DISCARDED whenever a derivation is
+// possible. CDamageFXMgr's separate horizontal shake offset is absorbed into the
+// derived value; its vertical offset still drives the effect on both axes.
+static void ci_DeriveCameraFovX(CameraInstance *pCamera)
+{
+	uint32 nW = 0, nH = 0;
+	if (r_GetRenderStruct())
+	{
+		nW = r_GetRenderStruct()->m_Width;
+		nH = r_GetRenderStruct()->m_Height;
+	}
+
+	// The renderer's viewport is the camera's own rect whenever it has one
+	// (nullrender takes nVpW/nVpH from pScene->m_Rect), so prefer that over the
+	// whole drawable -- they are the same in NOLF2, which always sets the rect
+	// full-screen and draws letterbox bars as overlays, but only the rect is
+	// guaranteed to be what the frustum is mapped onto.
+	int nRectW = pCamera->m_Right - pCamera->m_Left;
+	int nRectH = pCamera->m_Bottom - pCamera->m_Top;
+	if (nRectW > 0 && nRectH > 0)
+	{
+		nW = (uint32)nRectW;
+		nH = (uint32)nRectH;
+	}
+
+	if (nW == 0 || nH == 0)
+		return;			// nothing sane to derive from -- leave the pair as set
+
+	const float k_fPIOver100 = MATH_PI / 100.0f;
+	float fFovX = 2.0f * atanf(tanf(pCamera->m_yFov * 0.5f) * (float)nW / (float)nH);
+	pCamera->m_xFov = LTCLAMP(fFovX, k_fPIOver100, (199.0f*k_fPIOver100));
 }
 
 
@@ -2689,8 +2754,14 @@ void ci_SetCameraFOV(HLOCALOBJ hObj, float fovX, float fovY)
 	fovX = LTCLAMP(fovX, k_fPIOver100, (199.0f*k_fPIOver100));
 	fovY = LTCLAMP(fovY, k_fPIOver100, (199.0f*k_fPIOver100));
 
-	pCamera->m_xFov = fovX;
-	pCamera->m_yFov = fovY;
+	// Keep the caller's pair verbatim (m_xFovAuthored is what ci_GetCameraFOV
+	// returns, so read-modify-write loops round-trip), and let the derivation
+	// set the m_xFov the renderer actually draws with. If there is no drawable
+	// to derive from yet, the authored value stands.
+	pCamera->m_xFovAuthored = fovX;
+	pCamera->m_xFov         = fovX;
+	pCamera->m_yFov         = fovY;
+	ci_DeriveCameraFovX(pCamera);
 }
 
 
@@ -2720,6 +2791,13 @@ void ci_SetCameraRect(HLOCALOBJ hObj, bool bFullScreen,
 	pCamera->m_Top = top;
 	pCamera->m_Right = right;
 	pCamera->m_Bottom = bottom;
+
+	// The rect IS the aspect the frustum gets mapped onto, so a new rect
+	// invalidates the derived horizontal fov. Re-derive from the vertical one,
+	// which is always stored exactly as the caller authored it. Without this a
+	// resolution change would leave the camera correcting for the old shape
+	// until something happened to set the FOV again.
+	ci_DeriveCameraFovX(pCamera);
 }
 
 bool ci_GetCameraLightAdd(HLOCALOBJ hCamera, LTVector *pAdd)

@@ -230,6 +230,7 @@ extern "C" int main(int argc, char** argv)
 
     // Shutdown (mirrors END_MAINLOOP).
     fprintf(stderr, "[mac] shutting down...\n");
+
     if (g_pClientMgr)
     {
         g_pClientMgr->Term();

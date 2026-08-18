@@ -1,8 +1,8 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_renderstyle.cpp
+// MODULE  : render_style.cpp
 //
-// PURPOSE : Render styles for the GL renderer -- see gl_renderstyle.h.
+// PURPOSE : Authored render styles -- see render_style.h.
 //
 //           Port of runtime/render_a/src/sys/d3d/d3d_renderstyle.cpp +
 //           d3d_renderstyleinterface.cpp. The enum -> GL state mapping is
@@ -16,83 +16,82 @@
 // d3d9caps.h. Same include discipline as the other gl_*.cpp files.
 #include "bdefs.h"
 
-#include "gl_renderstyle.h"
+#include "render_style.h"
 
 #include "client_filemgr.h"     // FileRef, IClientFileMgr
 #include "ltb.h"                // LTB_Header, LTB_D3D_RENDERSTYLE_FILE
 #include "iltstream.h"
 #include "iltrenderstyles.h"
 
-#include <OpenGL/gl.h>
 #include <stdio.h>
 #include <string.h>
 
 static IClientFileMgr* gls_client_file_mgr;
 define_holder(IClientFileMgr, gls_client_file_mgr);
 
-static bool glrs_Trace()
+static bool rrs_Trace()
 {
     static bool s_bTrace = (getenv("LT_TRACE_RENDERSTYLE") != NULL);
     return s_bTrace;
 }
 
 // --------------------------------------------------------------------------
-// CGLRenderStyle
+// CRRenderStyle
 // --------------------------------------------------------------------------
 
-CGLRenderStyle::CGLRenderStyle()
+CRRenderStyle::CRRenderStyle()
 {
     // CRenderStyle's own ctor zeroes m_iRefCnt and m_pFilename.
     SetDefaults();
 }
 
-bool CGLRenderStyle::SetLightingMaterial(LightingMaterial& LightMaterial)
+bool CRRenderStyle::SetLightingMaterial(LightingMaterial& LightMaterial)
 {
     m_LightingMaterial = LightMaterial;
     return true;
 }
 
-bool CGLRenderStyle::GetLightingMaterial(LightingMaterial* pLightMaterial)
+bool CRRenderStyle::GetLightingMaterial(LightingMaterial* pLightMaterial)
 {
     if (!pLightMaterial) return false;
     *pLightMaterial = m_LightingMaterial;
     return true;
 }
 
-bool CGLRenderStyle::AddRenderPass(RenderPassOp& RenderPass)
+bool CRRenderStyle::AddRenderPass(RenderPassOp& RenderPass)
 {
     if (m_RenderPasses.size() >= 4) return false;   // D3D asserts the same limit
     m_RenderPasses.push_back(RenderPass);
     return true;
 }
 
-bool CGLRenderStyle::RemoveRenderPass(uint32 iPass)
+bool CRRenderStyle::RemoveRenderPass(uint32 iPass)
 {
     if (iPass >= m_RenderPasses.size()) return false;
     m_RenderPasses.erase(m_RenderPasses.begin() + iPass);
     return true;
 }
 
-bool CGLRenderStyle::SetRenderPass(uint32 iPass, RenderPassOp& RenderPass)
+bool CRRenderStyle::SetRenderPass(uint32 iPass, RenderPassOp& RenderPass)
 {
     if (iPass >= m_RenderPasses.size()) return false;
     m_RenderPasses[iPass] = RenderPass;
     return true;
 }
 
-bool CGLRenderStyle::GetRenderPass(uint32 iPass, RenderPassOp* pRenderPass)
+bool CRRenderStyle::GetRenderPass(uint32 iPass, RenderPassOp* pRenderPass)
 {
     if (!pRenderPass || iPass >= m_RenderPasses.size()) return false;
     *pRenderPass = m_RenderPasses[iPass];
     return true;
 }
 
-uint32 CGLRenderStyle::GetRenderPassCount()
+uint32 CRRenderStyle::GetRenderPassCount()
 {
     return (uint32)m_RenderPasses.size();
 }
 
-bool CGLRenderStyle::CopyRenderStyle(CRenderStyle* pSrcRenderStyle)
+bool CRRenderStyle::CopyRenderStyle(CRenderStyle* pSrcRenderStyle)
 {
     if (!pSrcRenderStyle) return false;
 
@@ -113,7 +112,7 @@ bool CGLRenderStyle::CopyRenderStyle(CRenderStyle* pSrcRenderStyle)
 
 // The state an object gets when it has no style: opaque, no alpha test,
 // z read+write. Kept identical to CD3DRenderStyle::SetDefaults().
-void CGLRenderStyle::SetDefaults()
+void CRRenderStyle::SetDefaults()
 {
     memset(&m_LightingMaterial, 0, sizeof(m_LightingMaterial));
     m_LightingMaterial.Ambient       = FourFloatColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -146,7 +145,7 @@ void CGLRenderStyle::SetDefaults()
 // stream, so not consuming them would desync every subsequent pass. Same
 // discipline as the world render-data reader (§4: "EVERY level of recursion
 // reads its own trailing worldModelCount").
-bool CGLRenderStyle::Load_LTBData(ILTStream* pFileStream)
+bool CRRenderStyle::Load_LTBData(ILTStream* pFileStream)
 {
     if (!pFileStream) return false;
 
@@ -155,7 +154,7 @@ bool CGLRenderStyle::Load_LTBData(ILTStream* pFileStream)
 
     pFileStream->Read(&Header, sizeof(Header));
     if (Header.m_iFileType != LTB_D3D_RENDERSTYLE_FILE) return false;
-    if (Header.m_iVersion  != GL_RENDERSTYLE_VERSION)   return false;
+    if (Header.m_iVersion  != R_RENDERSTYLE_VERSION)   return false;
 
     pFileStream->Read(&iTotalSize, sizeof(iTotalSize));
     if (iTotalSize > 1000000) return false;             // sanity, as D3D
@@ -212,50 +211,50 @@ bool CGLRenderStyle::Load_LTBData(ILTStream* pFileStream)
 // Enum -> GL translation
 // --------------------------------------------------------------------------
 
-static GLenum glrs_CompareFunc(ERenStyle_TestMode eMode)
+static uint32 rrs_CompareFunc(ERenStyle_TestMode eMode)
 {
     switch (eMode)
     {
-        case RENDERSTYLE_ALPHATEST_LESS:            return GL_LESS;
-        case RENDERSTYLE_ALPHATEST_LESSEQUAL:       return GL_LEQUAL;
-        case RENDERSTYLE_ALPHATEST_GREATER:         return GL_GREATER;
-        case RENDERSTYLE_ALPHATEST_GREATEREQUAL:    return GL_GEQUAL;
-        case RENDERSTYLE_ALPHATEST_EQUAL:           return GL_EQUAL;
-        case RENDERSTYLE_ALPHATEST_NOTEQUAL:        return GL_NOTEQUAL;
+        case RENDERSTYLE_ALPHATEST_LESS:            return kRAlpha_Less;
+        case RENDERSTYLE_ALPHATEST_LESSEQUAL:       return kRAlpha_LEqual;
+        case RENDERSTYLE_ALPHATEST_GREATER:         return kRAlpha_Greater;
+        case RENDERSTYLE_ALPHATEST_GREATEREQUAL:    return kRAlpha_GEqual;
+        case RENDERSTYLE_ALPHATEST_EQUAL:           return kRAlpha_Equal;
+        case RENDERSTYLE_ALPHATEST_NOTEQUAL:        return kRAlpha_NotEqual;
         case RENDERSTYLE_NOALPHATEST:
-        default:                                    return GL_ALWAYS;
+        default:                                    return kRAlpha_Always;
     }
 }
 
 // src/dst factors straight out of renderstylelookuptables.cpp.
-static void glrs_BlendFactors(ERenStyle_BlendMode eMode, GLenum* pSrc, GLenum* pDst)
+static void rrs_BlendFactors(ERenStyle_BlendMode eMode, uint32* pSrc, uint32* pDst)
 {
     switch (eMode)
     {
-        case RENDERSTYLE_BLEND_ADD:                 *pSrc = GL_ONE;                 *pDst = GL_ONE;                 break;
-        case RENDERSTYLE_BLEND_SATURATE:            *pSrc = GL_ONE_MINUS_DST_COLOR; *pDst = GL_ONE;                 break;
-        case RENDERSTYLE_BLEND_MOD_SRCALPHA:        *pSrc = GL_SRC_ALPHA;           *pDst = GL_ONE_MINUS_SRC_ALPHA; break;
-        case RENDERSTYLE_BLEND_MOD_SRCCOLOR:        *pSrc = GL_SRC_COLOR;           *pDst = GL_ONE_MINUS_SRC_COLOR; break;
-        case RENDERSTYLE_BLEND_MOD_DSTCOLOR:        *pSrc = GL_DST_COLOR;           *pDst = GL_ONE_MINUS_DST_COLOR; break;
-        case RENDERSTYLE_BLEND_MUL_SRCCOL_DSTCOL:   *pSrc = GL_SRC_COLOR;           *pDst = GL_DST_COLOR;           break;
-        case RENDERSTYLE_BLEND_MUL_SRCCOL_ONE:      *pSrc = GL_SRC_COLOR;           *pDst = GL_ONE;                 break;
-        case RENDERSTYLE_BLEND_MUL_SRCALPHA_ZERO:   *pSrc = GL_SRC_ALPHA;           *pDst = GL_ZERO;                break;
-        case RENDERSTYLE_BLEND_MUL_SRCALPHA_ONE:    *pSrc = GL_SRC_ALPHA;           *pDst = GL_ONE;                 break;
-        case RENDERSTYLE_BLEND_MUL_DSTCOL_ZERO:     *pSrc = GL_DST_COLOR;           *pDst = GL_ZERO;                break;
+        case RENDERSTYLE_BLEND_ADD:                 *pSrc = kRBlend_One;                 *pDst = kRBlend_One;                 break;
+        case RENDERSTYLE_BLEND_SATURATE:            *pSrc = kRBlend_InvDstColor; *pDst = kRBlend_One;                 break;
+        case RENDERSTYLE_BLEND_MOD_SRCALPHA:        *pSrc = kRBlend_SrcAlpha;           *pDst = kRBlend_InvSrcAlpha; break;
+        case RENDERSTYLE_BLEND_MOD_SRCCOLOR:        *pSrc = kRBlend_SrcColor;           *pDst = kRBlend_InvSrcColor; break;
+        case RENDERSTYLE_BLEND_MOD_DSTCOLOR:        *pSrc = kRBlend_DstColor;           *pDst = kRBlend_InvDstColor; break;
+        case RENDERSTYLE_BLEND_MUL_SRCCOL_DSTCOL:   *pSrc = kRBlend_SrcColor;           *pDst = kRBlend_DstColor;           break;
+        case RENDERSTYLE_BLEND_MUL_SRCCOL_ONE:      *pSrc = kRBlend_SrcColor;           *pDst = kRBlend_One;                 break;
+        case RENDERSTYLE_BLEND_MUL_SRCALPHA_ZERO:   *pSrc = kRBlend_SrcAlpha;           *pDst = kRBlend_Zero;                break;
+        case RENDERSTYLE_BLEND_MUL_SRCALPHA_ONE:    *pSrc = kRBlend_SrcAlpha;           *pDst = kRBlend_One;                 break;
+        case RENDERSTYLE_BLEND_MUL_DSTCOL_ZERO:     *pSrc = kRBlend_DstColor;           *pDst = kRBlend_Zero;                break;
         case RENDERSTYLE_NOBLEND:
-        default:                                    *pSrc = GL_ONE;                 *pDst = GL_ZERO;                break;
+        default:                                    *pSrc = kRBlend_One;                 *pDst = kRBlend_Zero;                break;
     }
 }
 
-void GLRenderStyle_GetDefaultState(GLRenderStyleState* pOut)
+void RRenderStyle_GetDefaultState(RRenderStyleState* pOut)
 {
     if (!pOut) return;
     pOut->bAlphaTest = false;
-    pOut->nAlphaFunc = GL_ALWAYS;
+    pOut->nAlphaFunc = kRAlpha_Always;
     pOut->fAlphaRef  = 0.0f;
     pOut->bBlend     = false;
-    pOut->nSrcBlend  = GL_ONE;
-    pOut->nDstBlend  = GL_ZERO;
+    pOut->nSrcBlend  = kRBlend_One;
+    pOut->nDstBlend  = kRBlend_Zero;
     pOut->bZRead     = true;
     pOut->bZWrite    = true;
     // The world and model draws have always run with culling OFF (the D3D-era
@@ -263,7 +262,6 @@ void GLRenderStyle_GetDefaultState(GLRenderStyleState* pOut)
     // the default so enabling render styles cannot silently change which faces
     // are drawn; the style's CullMode is resolved below but callers may ignore it.
     pOut->bCull      = false;
-    pOut->nCullFace  = GL_BACK;
     pOut->bIgnoreDiffuse = false;
     pOut->fColorScale    = 1.0f;
     // Styleless objects keep the historic behaviour: texture alpha reaches the
@@ -277,7 +275,7 @@ void GLRenderStyle_GetDefaultState(GLRenderStyleState* pOut)
 // participate?" and "is there a 2x/4x scale?". Authority: the D3D stage setup
 // in d3d_renderstatemgr.cpp, which feeds these straight to
 // D3DTSS_COLOROP/COLORARG1/COLORARG2.
-static void glrs_ResolveColorOp(const RenderPassOp& pass, GLRenderStyleState* pOut)
+static void rrs_ResolveColorOp(const RenderPassOp& pass, RRenderStyleState* pOut)
 {
     const TextureStageOps& ts = pass.TextureStages[0];
 
@@ -303,7 +301,7 @@ static void glrs_ResolveColorOp(const RenderPassOp& pass, GLRenderStyleState* pO
     }
 
     // ★ The ALPHA op is authored independently of the colour op — resolve it
-    // separately. See the comment on GLRenderStyleState::bTextureAlpha.
+    // separately. See the comment on RRenderStyleState::bTextureAlpha.
     switch (ts.AlphaOp)
     {
         case RENDERSTYLE_ALPHAOP_DISABLE:
@@ -331,12 +329,12 @@ static void glrs_ResolveColorOp(const RenderPassOp& pass, GLRenderStyleState* pO
 
 // ⚠️ MODULATE2X IS GATED OFF BY DEFAULT, DELIBERATELY.
 // RS\DEFAULT.LTB authors MODULATE2X, i.e. texture * DIFFUSE * 2 -- but our
-// diffuse is not the engine's: it is the invented key light in glm_EmitMesh
+// diffuse is not the engine's: it is the invented key light in rm_EmitMesh
 // (PHASE2_HANDOFF §25/§34a), because model lighting was never ported. Doubling
 // an invented value is not D3D parity, it is compounding a stand-in, and it
 // would blow out every model using the default style. Turn this on together
 // with real model lighting, not before. `LT_RS_COLORSCALE=1` enables it for A/B.
-static bool glrs_ColorScaleEnabled(void)
+static bool rrs_ColorScaleEnabled(void)
 {
     static int s_nOn = -1;
     if (s_nOn < 0)
@@ -344,88 +342,15 @@ static bool glrs_ColorScaleEnabled(void)
     return s_nOn != 0;
 }
 
-void GLRenderStyle_ApplyColorOp(const GLRenderStyleState* pState)
+bool RRenderStyle_ColorScaleEnabled(void)
 {
-    if (!pState)
-        return;
-
-    const float fScale = glrs_ColorScaleEnabled() ? pState->fColorScale : 1.0f;
-
-    // ★★ THE TEXTURE'S ALPHA MUST NOT REACH THE OUTPUT.
-    // Authored as SELECTARG2(DIFFUSE) (or ALPHAOP_DISABLE): the fragment's
-    // alpha is the OBJECT's, and the skin's alpha channel is a specular/env
-    // mask that happens to share the channel. RS\NinjaTranslucent.ltb blends
-    // SRC_ALPHA/INV_SRC_ALPHA, so admitting the texture's alpha here does not
-    // "add translucency" — it erases whatever the mask covers. That style is
-    // the player's RenderStyle0 and the mimes' skin.
-    //
-    // Handled before the colour branches because it has to override the alpha
-    // in ALL of them: every one below ends with texture alpha reaching the
-    // output (two set SOURCE0_ALPHA = GL_TEXTURE, the third is a plain
-    // GL_MODULATE = texture.a * primary.a).
-    if (!pState->bTextureAlpha)
-    {
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB,
-                  pState->bIgnoreDiffuse ? GL_REPLACE : GL_MODULATE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-        glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, fScale);
-        // Alpha from the vertex colour alone — glm_EmitMesh puts the object's
-        // m_ColorA there, which is exactly D3D's ALPHAARG_DIFFUSE.
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PRIMARY_COLOR);
-        glTexEnvf(GL_TEXTURE_ENV, GL_ALPHA_SCALE, 1.0f);
-        return;
-    }
-
-    if (pState->bIgnoreDiffuse && fScale <= 1.001f)
-    {
-        // Colour from the texture alone -- but NOT plain GL_REPLACE, which
-        // would take the ALPHA from the texture too. RS\TRANSLUCENT_NODIFFUSE
-        // (the C01S01 waterfall) authors colorOp=SELECTARG1(TEXTURE) with
-        // alphaOp=MODULATE(TEXTURE, DIFFUSE), i.e. the object's own alpha still
-        // scales the sheet -- and that style blends SRC_ALPHA/INV_SRC_ALPHA, so
-        // the alpha is what decides how strongly it reads. Express both halves.
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-        glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-        glTexEnvf(GL_TEXTURE_ENV, GL_ALPHA_SCALE, 1.0f);
-        return;
-    }
-
-    if (fScale > 1.001f)
-    {
-        // A scale needs the combiner (GL_RGB_SCALE only exists under GL_COMBINE).
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB,
-                  pState->bIgnoreDiffuse ? GL_REPLACE : GL_MODULATE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-        glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, fScale);
-        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-        glTexEnvf(GL_TEXTURE_ENV, GL_ALPHA_SCALE, 1.0f);
-        return;
-    }
-
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    return rrs_ColorScaleEnabled();
 }
 
-void GLRenderStyle_ResetColorOp(void)
-{
-    glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.0f);
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-}
-
-bool GLRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, GLRenderStyleState* pOut)
+bool RRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, RRenderStyleState* pOut)
 {
     if (!pOut) return false;
-    GLRenderStyle_GetDefaultState(pOut);
+    RRenderStyle_GetDefaultState(pOut);
 
     if (!pStyle) return false;
 
@@ -433,20 +358,20 @@ bool GLRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, GLRenderStyleSta
     if (!pStyle->GetRenderPass(nPass, &pass)) return false;
 
     pOut->bAlphaTest = (pass.AlphaTestMode != RENDERSTYLE_NOALPHATEST);
-    pOut->nAlphaFunc = glrs_CompareFunc(pass.AlphaTestMode);
+    pOut->nAlphaFunc = rrs_CompareFunc(pass.AlphaTestMode);
     // D3D's D3DRS_ALPHAREF is 0..255; glAlphaFunc takes 0..1.
     pOut->fAlphaRef  = (float)(pass.AlphaRef & 0xFF) / 255.0f;
 
     pOut->bBlend = (pass.BlendMode != RENDERSTYLE_NOBLEND);
-    GLenum nSrc, nDst;
-    glrs_BlendFactors(pass.BlendMode, &nSrc, &nDst);
+    uint32 nSrc, nDst;
+    rrs_BlendFactors(pass.BlendMode, &nSrc, &nDst);
     pOut->nSrcBlend = nSrc;
     pOut->nDstBlend = nDst;
 
     pOut->bZRead  = (pass.ZBufferMode != RENDERSTYLE_NOZ);
     pOut->bZWrite = (pass.ZBufferMode == RENDERSTYLE_ZRW);
 
-    glrs_ResolveColorOp(pass, pOut);
+    rrs_ResolveColorOp(pass, pOut);
 
     return true;
 }
@@ -459,10 +384,10 @@ bool GLRenderStyle_GetState(CRenderStyle* pStyle, uint32 nPass, GLRenderStyleSta
 // styles were NULL for the whole port up to now.
 // --------------------------------------------------------------------------
 
-class CGLRenderStyleInterface : public ILTRenderStyles
+class CRRenderStyleInterface : public ILTRenderStyles
 {
 public:
-    declare_interface(CGLRenderStyleInterface);
+    declare_interface(CRRenderStyleInterface);
 
     virtual CRenderStyle* DuplicateRenderStyle(CRenderStyle* pRendStyle);
     virtual CRenderStyle* CreateRenderStyle(bool bSetToDefault = true);
@@ -470,25 +395,25 @@ public:
     virtual void          FreeRenderStyle(CRenderStyle* pRendStyle);
 };
 
-define_interface(CGLRenderStyleInterface, ILTRenderStyles);
+define_interface(CRRenderStyleInterface, ILTRenderStyles);
 
-CRenderStyle* CGLRenderStyleInterface::CreateRenderStyle(bool bSetToDefault)
+CRenderStyle* CRRenderStyleInterface::CreateRenderStyle(bool bSetToDefault)
 {
-    CGLRenderStyle* pStyle = new CGLRenderStyle;
+    CRRenderStyle* pStyle = new CRRenderStyle;
     if (pStyle && bSetToDefault)
         pStyle->SetDefaults();
     return pStyle;
 }
 
-CRenderStyle* CGLRenderStyleInterface::DuplicateRenderStyle(CRenderStyle* pRendStyle)
+CRenderStyle* CRRenderStyleInterface::DuplicateRenderStyle(CRenderStyle* pRendStyle)
 {
-    CGLRenderStyle* pNew = new CGLRenderStyle;
+    CRRenderStyle* pNew = new CRRenderStyle;
     if (!pNew) return NULL;
     if (!pNew->CopyRenderStyle(pRendStyle)) { delete pNew; return NULL; }
     return pNew;
 }
 
-CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
+CRenderStyle* CRRenderStyleInterface::LoadRenderStyle(const char* szFilename)
 {
     if (!szFilename || !szFilename[0] || !gls_client_file_mgr) return NULL;
 
@@ -499,7 +424,7 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
     FileIdentifier* pIdent = gls_client_file_mgr->GetFileIdentifier(&ref, TYPECODE_RSTYLE);
     if (!pIdent)
     {
-        if (glrs_Trace())
+        if (rrs_Trace())
             fprintf(stderr, "[rs] '%s' NOT FOUND\n", szFilename);
         return NULL;
     }
@@ -508,7 +433,7 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
     // does it, so every object naming the same style shares one instance.
     if (pIdent->m_pData)
     {
-        CGLRenderStyle* pStyle = (CGLRenderStyle*)pIdent->m_pData;
+        CRRenderStyle* pStyle = (CRRenderStyle*)pIdent->m_pData;
         pStyle->IncRefCount();
         return pStyle;
     }
@@ -516,17 +441,17 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
     ILTStream* pFileStream = gls_client_file_mgr->OpenFile(&ref);
     if (!pFileStream)
     {
-        if (glrs_Trace())
+        if (rrs_Trace())
             fprintf(stderr, "[rs] '%s' could not be opened\n", szFilename);
         return NULL;
     }
 
-    CGLRenderStyle* pStyle = new CGLRenderStyle;
+    CRRenderStyle* pStyle = new CRRenderStyle;
     if (!pStyle) { pFileStream->Release(); return NULL; }
 
     if (!pStyle->Load_LTBData(pFileStream))
     {
-        if (glrs_Trace())
+        if (rrs_Trace())
             fprintf(stderr, "[rs] '%s' FAILED to parse\n", szFilename);
         delete pStyle;
         pFileStream->Release();
@@ -538,7 +463,7 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
     pIdent->m_pData = pStyle;
     pStyle->IncRefCount();      // the cache's reference
 
-    if (glrs_Trace())
+    if (rrs_Trace())
     {
         uint32 nPasses = pStyle->GetRenderPassCount();
         fprintf(stderr, "[rs] loaded '%s': %u pass(es)\n", szFilename, nPasses);
@@ -546,8 +471,8 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
         {
             RenderPassOp pass;
             if (!pStyle->GetRenderPass(i, &pass)) continue;
-            GLRenderStyleState st;
-            GLRenderStyle_GetState(pStyle, i, &st);
+            RRenderStyleState st;
+            RRenderStyle_GetState(pStyle, i, &st);
             fprintf(stderr, "[rs]   pass %u: alphaTest=%d mode=%d ref=%u (%.3f) "
                             "blend=%d mode=%d z=%d cull=%d fill=%d\n",
                     i, (int)st.bAlphaTest, (int)pass.AlphaTestMode, pass.AlphaRef, st.fAlphaRef,
@@ -575,7 +500,7 @@ CRenderStyle* CGLRenderStyleInterface::LoadRenderStyle(const char* szFilename)
     return pStyle;
 }
 
-void CGLRenderStyleInterface::FreeRenderStyle(CRenderStyle* pRendStyle)
+void CRRenderStyleInterface::FreeRenderStyle(CRenderStyle* pRendStyle)
 {
     if (!pRendStyle) return;
     pRendStyle->DecRefCount();

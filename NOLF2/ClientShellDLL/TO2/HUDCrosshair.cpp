@@ -43,6 +43,7 @@ CHUDCrosshair::CHUDCrosshair()
 	m_bArmed = false;
 	m_pStr = LTNULL;
 	m_fScale = 0.0f;
+	m_fScaleX = 0.0f;
 	m_x = 0.0f;
 	m_y = 0.0f;
 	m_dbgx = 0.0f;
@@ -245,20 +246,39 @@ void CHUDCrosshair::Update()
 	}
 
 
-	if (m_fScale != g_pInterfaceResMgr->GetXRatio())
+	// ★ THE ACTIVATION LABEL ("Search", "Welding") TAKES YRatio FOR ITS VERTICAL
+	// POSITION AND GetFontRatio() FOR ITS CHARACTER HEIGHT -- XRatio ONLY FOR x.
+	// This is §67's convention; this label was simply never converted to it.
+	//
+	// The reticle drawn above already uses YRatio for everything vertical (the
+	// dead-player dot and the scope centre), so the class disagreed with itself.
+	// Authored at (320,260) size 16, with the progress bar it labels at y=280 --
+	// a 4-unit gap in 640x480. On this port's 2560x1780 drawable (XRatio 4.000,
+	// YRatio 3.708) XRatio put the text at 1040..1104 against a bar at
+	// 1038..1068: it landed ON the bar and hid it. The convention gives
+	// 964..1023 and restores the gap. Identical at 4:3, where the ratios are
+	// equal, which is why the original never showed this.
+	//
+	// x MUST stay on XRatio: the label is centre-justified about m_StrPos.x=320,
+	// and only XRatio puts that at the true centre of the drawable.
+	if (m_fScale != g_pInterfaceResMgr->GetYRatio() ||
+	    m_fScaleX != g_pInterfaceResMgr->GetXRatio())
 	{
-		m_fScale = g_pInterfaceResMgr->GetXRatio();
+		m_fScale  = g_pInterfaceResMgr->GetYRatio();
+		m_fScaleX = g_pInterfaceResMgr->GetXRatio();
 
 		ScalePolies();
 
-		m_x = (float)m_StrPos.x * m_fScale;
+		float fFontRatio = g_pInterfaceResMgr->GetFontRatio();
+
+		m_x = (float)m_StrPos.x * m_fScaleX;
 		m_y = (float)m_StrPos.y * m_fScale;
-		uint8 nTextSize = (uint8)((float)m_nStrSz * m_fScale);
+		uint8 nTextSize = (uint8)((float)m_nStrSz * fFontRatio);
 		m_pStr->SetCharScreenHeight(nTextSize);
 
-		m_dbgx = (float)m_DbgPos.x * m_fScale;
+		m_dbgx = (float)m_DbgPos.x * m_fScaleX;
 		m_dbgy = (float)m_DbgPos.y * m_fScale;
-		nTextSize = (uint8)((float)m_nDbgSz * m_fScale);
+		nTextSize = (uint8)((float)m_nDbgSz * fFontRatio);
 		m_pDbgStr->SetCharScreenHeight(nTextSize);
 	}
 

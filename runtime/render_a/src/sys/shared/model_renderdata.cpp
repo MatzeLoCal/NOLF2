@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------- //
 //
-// MODULE  : gl_model.cpp
+// MODULE  : model_renderdata.cpp
 //
 // PURPOSE : GL model rendering. The LTB mesh loaders below mirror
 //           CD3DRigidMesh::Load / CD3DSkelMesh::Load{_RD,_MP}
@@ -26,11 +26,13 @@
 #include "iltstream.h"
 #include "clientmgr.h"       // g_pClientMgr (object lists)
 #include "renderstruct.h"
-#include "gl_texture.h"
-#include "gl_model.h"
-#include "gl_particles.h"   // player-view particle systems draw inside the PV pass
-#include "gl_worlddata.h"   // GLWorld_IsLoaded (census timing)
-#include "gl_renderstyle.h" // authored per-piece render state
+#include "model_renderdata.h"
+#include "mtl_device.h"   // MTLDev_IsMetalBackend -- the backend branch
+#include "mtl_model.h"    // the Metal model emit
+#include "mtl_matrix.h"
+#include "render_particles.h"   // player-view particle systems draw inside the PV pass
+#include "world_renderdata.h"   // RWorld_IsLoaded (census timing)
+#include "render_style.h" // authored per-piece render state
 #include "world_shared_bsp.h"  // IWorldSharedBSP::LightTable (model ambient, §68)
 #include "world_client_bsp.h"  // IWorldClientBSP::ClientTree (static-light query)
 #include "world_tree.h"        // FindObjInfo / NOA_Lights / StaticLight
@@ -42,12 +44,14 @@
 // and it is a real player-facing option ("Dynamic lights" in Display), not an
 // internal default. ⚠️ Read the VARIABLE, never the RCONVAR default (§60).
 #include "rendererconsolevars.h"
+#include "sys/shared/render_texture.h"  // RTex_* — neutral texture queries
+#include "sys/shared/render_globals.h"  // g_pRenderStruct — the engine function table
 
-#include <OpenGL/gl.h>
 #include <string>          // LT_TRACE_PV set signature
 #include <stdio.h>
 #include <math.h>       // tanf (really-close projection)
 #include <vector>
+#include <algorithm>   // std::fill (the per-vertex colour cache stamp wrap)
 #include <set>          // LT_TRACE_MODELLIGHT distinct-value set
 #include <algorithm>         // stable_sort for the authored piece render priority
 
@@ -60,7 +64,7 @@ define_holder(IWorldSharedBSP, g_pModelWorldBSP);
 static IWorldClientBSP *g_pModelWorldClient;
 define_holder(IWorldClientBSP, g_pModelWorldClient);
 
-// The scene camera basis (GLSprite_SetCamera, below). Declared here because the
+// The scene camera basis (RSprite_SetCamera, below). Declared here because the
 // model LIGHTING needs it as well as the sprite billboards: player-view models
 // are in camera space and must be round-tripped through world space to be lit
 // (§69).
@@ -68,49 +72,49 @@ static LTVector g_vSprCamRight(1, 0, 0), g_vSprCamUp(0, 1, 0);
 static LTVector g_vSprCamFwd(0, 0, 1), g_vSprCamPos(0, 0, 0);
 
 // LT_TRACE_UI state (defined further down, next to the census flags).
-extern int  g_nGLSceneFrame;
-extern bool g_bGLTraceUIFrame;
-extern bool g_bGLInterfacePass;
+extern int  g_nRSceneFrame;
+extern bool g_bRTraceUIFrame;
+extern bool g_bRInterfacePass;
 
 // Vertex data type flags (match the LTB packer; see d3d_utils.h).
-#define GLM_VERTDATATYPE_POSITION      0x0001
-#define GLM_VERTDATATYPE_NORMAL        0x0002
-#define GLM_VERTDATATYPE_UVSETS_1      0x0010
-#define GLM_VERTDATATYPE_UVSETS_2      0x0020
-#define GLM_VERTDATATYPE_UVSETS_3      0x0040
-#define GLM_VERTDATATYPE_UVSETS_4      0x0080
-#define GLM_VERTDATATYPE_BASISVECTORS  0x0100
+#define RM_VERTDATATYPE_POSITION      0x0001
+#define RM_VERTDATATYPE_NORMAL        0x0002
+#define RM_VERTDATATYPE_UVSETS_1      0x0010
+#define RM_VERTDATATYPE_UVSETS_2      0x0020
+#define RM_VERTDATATYPE_UVSETS_3      0x0040
+#define RM_VERTDATATYPE_UVSETS_4      0x0080
+#define RM_VERTDATATYPE_BASISVECTORS  0x0100
 
 // Vertex blend types (VERTEX_BLEND_TYPE order in d3d_utils.h).
 enum
 {
-	kGLMBlend_None         = 0,   // 1 bone, no weights in the vertex
-	kGLMBlend_NonIndexed_B1 = 1,  // 2 bones, 1 weight
-	kGLMBlend_NonIndexed_B2 = 2,
-	kGLMBlend_NonIndexed_B3 = 3,
-	kGLMBlend_Indexed_B1   = 4,   // 2 bones, 1 weight + uint8 index[4]
-	kGLMBlend_Indexed_B2   = 5,
-	kGLMBlend_Indexed_B3   = 6
+	kRMBlend_None         = 0,   // 1 bone, no weights in the vertex
+	kRMBlend_NonIndexed_B1 = 1,  // 2 bones, 1 weight
+	kRMBlend_NonIndexed_B2 = 2,
+	kRMBlend_NonIndexed_B3 = 3,
+	kRMBlend_Indexed_B1   = 4,   // 2 bones, 1 weight + uint8 index[4]
+	kRMBlend_Indexed_B2   = 5,
+	kRMBlend_Indexed_B3   = 6
 };
 
 // Field offsets within one packed LTB vertex (-1 = absent). Field order is
 // the D3D FVF order: position, blend weights, [beta indices], normal, UVs,
 // [tangent+binormal appended last].
-struct GLMLayout
+struct RMLayout
 {
 	uint32 m_nStride;
 	int    m_nPos, m_nBlend, m_nIndex, m_nNormal, m_nUV;
 	uint32 m_nBlendCount;
 };
 
-static void glm_ComputeLayout(int nBlendType, uint32 nFlags, GLMLayout &cLayout)
+static void rm_ComputeLayout(int nBlendType, uint32 nFlags, RMLayout &cLayout)
 {
 	cLayout.m_nStride = 0;
 	cLayout.m_nPos = cLayout.m_nBlend = cLayout.m_nIndex = cLayout.m_nNormal = cLayout.m_nUV = -1;
 	cLayout.m_nBlendCount = 0;
 
 	uint32 nOff = 0;
-	if ((nFlags & GLM_VERTDATATYPE_POSITION) && (nFlags & GLM_VERTDATATYPE_NORMAL))
+	if ((nFlags & RM_VERTDATATYPE_POSITION) && (nFlags & RM_VERTDATATYPE_NORMAL))
 	{
 		cLayout.m_nPos = (int)nOff;
 		nOff += 3 * sizeof(float);
@@ -119,12 +123,12 @@ static void glm_ComputeLayout(int nBlendType, uint32 nFlags, GLMLayout &cLayout)
 		bool bIndexed = false;
 		switch (nBlendType)
 		{
-			case kGLMBlend_NonIndexed_B1: nBlends = 1; break;
-			case kGLMBlend_NonIndexed_B2: nBlends = 2; break;
-			case kGLMBlend_NonIndexed_B3: nBlends = 3; break;
-			case kGLMBlend_Indexed_B1:    nBlends = 1; bIndexed = true; break;
-			case kGLMBlend_Indexed_B2:    nBlends = 2; bIndexed = true; break;
-			case kGLMBlend_Indexed_B3:    nBlends = 3; bIndexed = true; break;
+			case kRMBlend_NonIndexed_B1: nBlends = 1; break;
+			case kRMBlend_NonIndexed_B2: nBlends = 2; break;
+			case kRMBlend_NonIndexed_B3: nBlends = 3; break;
+			case kRMBlend_Indexed_B1:    nBlends = 1; bIndexed = true; break;
+			case kRMBlend_Indexed_B2:    nBlends = 2; bIndexed = true; break;
+			case kRMBlend_Indexed_B3:    nBlends = 3; bIndexed = true; break;
 			default: break;
 		}
 		if (nBlends)
@@ -144,31 +148,31 @@ static void glm_ComputeLayout(int nBlendType, uint32 nFlags, GLMLayout &cLayout)
 	}
 
 	uint32 nUVSets = 0;
-	if      (nFlags & GLM_VERTDATATYPE_UVSETS_1) nUVSets = 1;
-	else if (nFlags & GLM_VERTDATATYPE_UVSETS_2) nUVSets = 2;
-	else if (nFlags & GLM_VERTDATATYPE_UVSETS_3) nUVSets = 3;
-	else if (nFlags & GLM_VERTDATATYPE_UVSETS_4) nUVSets = 4;
+	if      (nFlags & RM_VERTDATATYPE_UVSETS_1) nUVSets = 1;
+	else if (nFlags & RM_VERTDATATYPE_UVSETS_2) nUVSets = 2;
+	else if (nFlags & RM_VERTDATATYPE_UVSETS_3) nUVSets = 3;
+	else if (nFlags & RM_VERTDATATYPE_UVSETS_4) nUVSets = 4;
 	if (nUVSets)
 	{
 		cLayout.m_nUV = (int)nOff;                 // first set is the base UV
 		nOff += nUVSets * 2 * sizeof(float);
 	}
 
-	if (nFlags & GLM_VERTDATATYPE_BASISVECTORS)
+	if (nFlags & RM_VERTDATATYPE_BASISVECTORS)
 		nOff += 6 * sizeof(float);                 // tangent+binormal, unused
 
 	cLayout.m_nStride = nOff;
 }
 
 // DDMatrix (transposed-LTMatrix memory order) transform helpers.
-static inline void glm_TransformPoint(const DDMatrix &m, const float *pIn, LTVector &vOut)
+static inline void rm_TransformPoint(const DDMatrix &m, const float *pIn, LTVector &vOut)
 {
 	vOut.x = m._11 * pIn[0] + m._21 * pIn[1] + m._31 * pIn[2] + m._41;
 	vOut.y = m._12 * pIn[0] + m._22 * pIn[1] + m._32 * pIn[2] + m._42;
 	vOut.z = m._13 * pIn[0] + m._23 * pIn[1] + m._33 * pIn[2] + m._43;
 }
 
-static inline void glm_RotateVector(const DDMatrix &m, const float *pIn, LTVector &vOut)
+static inline void rm_RotateVector(const DDMatrix &m, const float *pIn, LTVector &vOut)
 {
 	vOut.x = m._11 * pIn[0] + m._21 * pIn[1] + m._31 * pIn[2];
 	vOut.y = m._12 * pIn[0] + m._22 * pIn[1] + m._32 * pIn[2];
@@ -180,7 +184,7 @@ static inline void glm_RotateVector(const DDMatrix &m, const float *pIn, LTVecto
 // as CDIModelDrawable and calls Load during model load).
 // ---------------------------------------------------------------------------
 
-class GLModelMesh : public CDIModelDrawable
+class RModelMesh : public CDIModelDrawable
 {
 public:
 	uint32 m_nVertCount, m_nPolyCount;
@@ -193,7 +197,7 @@ public:
 	std::vector<uint16> m_aIndices;  // 3 per tri
 	uint32 m_nBlendPerVert;
 
-	GLModelMesh() : m_nVertCount(0), m_nPolyCount(0), m_nBlendPerVert(0) {}
+	RModelMesh() : m_nVertCount(0), m_nPolyCount(0), m_nBlendPerVert(0) {}
 
 	virtual uint32 GetVertexCount() { return m_nVertCount; }
 	virtual uint32 GetPolyCount()   { return m_nPolyCount; }
@@ -211,8 +215,8 @@ public:
 			if (!pStreamFlags[nStream])
 				continue;
 
-			GLMLayout cLayout;
-			glm_ComputeLayout(nBlendType, pStreamFlags[nStream], cLayout);
+			RMLayout cLayout;
+			rm_ComputeLayout(nBlendType, pStreamFlags[nStream], cLayout);
 			if (!cLayout.m_nStride)
 				return false;
 
@@ -251,12 +255,12 @@ public:
 	}
 };
 
-class GLRigidMesh : public GLModelMesh
+class RRigidMesh : public RModelMesh
 {
 public:
 	uint32 m_nBoneEffector;
 
-	GLRigidMesh() : m_nBoneEffector(0) { m_Type = eRigidMesh; }
+	RRigidMesh() : m_nBoneEffector(0) { m_Type = eRigidMesh; }
 
 	virtual bool Load(ILTStream &File, LTB_Header &Header)
 	{
@@ -278,7 +282,7 @@ public:
 			File.Read(&aStreamFlags[0], sizeof(aStreamFlags));
 			File.Read(&m_nBoneEffector, sizeof(m_nBoneEffector));
 
-			bOk = ReadStreams(File, aStreamFlags, kGLMBlend_None);
+			bOk = ReadStreams(File, aStreamFlags, kRMBlend_None);
 		}
 
 		File.SeekTo(nEndPos);   // objSize brackets the parse — never desync
@@ -303,7 +307,7 @@ public:
 //
 // Layout authority: CD3DVAMesh::Load (d3dmeshrendobj_vertanim.cpp:82).
 // ---------------------------------------------------------------------------
-class GLVAMesh : public GLModelMesh
+class RVAMesh : public RModelMesh
 {
 public:
 	uint32 m_nBoneEffector;      // the node this mesh rides on (as per rigid)
@@ -315,7 +319,7 @@ public:
 	struct DupMap { uint16 m_nSrcVert, m_nDstVert; };
 	std::vector<DupMap> m_aDupMap;
 
-	GLVAMesh() : m_nBoneEffector(0), m_nAnimNodeIdx(0), m_nUnDupVertCount(0)
+	RVAMesh() : m_nBoneEffector(0), m_nAnimNodeIdx(0), m_nUnDupVertCount(0)
 	{ m_Type = eVAMesh; }
 
 	// ★ WITHOUT THIS THE MESH COLLAPSES TO THE ORIGIN.
@@ -467,7 +471,7 @@ public:
 
 			m_nUnDupVertCount = nUnDupVertCount;
 
-			bOk = ReadStreams(File, aStreamFlags, kGLMBlend_None);
+			bOk = ReadStreams(File, aStreamFlags, kRMBlend_None);
 
 			// The DupMap list follows: uint32 count + count * {uint16 src, uint16 dst}.
 			if (bOk)
@@ -488,7 +492,7 @@ public:
 	}
 };
 
-class GLSkelMesh : public GLModelMesh
+class RSkelMesh : public RModelMesh
 {
 public:
 	// Render-direct (non-indexed) data: contiguous vertex ranges that share a
@@ -505,7 +509,7 @@ public:
 	uint32 m_nBonesPerVert;                  // total bones blended per vert (1..4)
 	bool   m_bMatrixPalette;
 
-	GLSkelMesh() : m_nBonesPerVert(1), m_bMatrixPalette(false) { m_Type = eSkelMesh; }
+	RSkelMesh() : m_nBonesPerVert(1), m_bMatrixPalette(false) { m_Type = eSkelMesh; }
 
 	virtual bool Load(ILTStream &File, LTB_Header &Header)
 	{
@@ -540,9 +544,9 @@ public:
 				int nBlendType;
 				switch (nMaxBonesPerVert)
 				{
-					case 2:  nBlendType = kGLMBlend_Indexed_B1; break;
-					case 3:  nBlendType = kGLMBlend_Indexed_B2; break;
-					case 4:  nBlendType = kGLMBlend_Indexed_B3; break;
+					case 2:  nBlendType = kRMBlend_Indexed_B1; break;
+					case 3:  nBlendType = kRMBlend_Indexed_B2; break;
+					case 4:  nBlendType = kRMBlend_Indexed_B3; break;
 					default: nBlendType = -1; break;
 				}
 				m_nBonesPerVert = nMaxBonesPerVert;
@@ -571,10 +575,10 @@ public:
 				int nBlendType;
 				switch (nMaxBonesPerTri)
 				{
-					case 1:  nBlendType = kGLMBlend_None; break;
-					case 2:  nBlendType = kGLMBlend_NonIndexed_B1; break;
-					case 3:  nBlendType = kGLMBlend_NonIndexed_B2; break;
-					case 4:  nBlendType = kGLMBlend_NonIndexed_B3; break;
+					case 1:  nBlendType = kRMBlend_None; break;
+					case 2:  nBlendType = kRMBlend_NonIndexed_B1; break;
+					case 3:  nBlendType = kRMBlend_NonIndexed_B2; break;
+					case 4:  nBlendType = kRMBlend_NonIndexed_B3; break;
 					default: nBlendType = -1; break;
 				}
 				m_nBonesPerVert = nMaxBonesPerTri;
@@ -608,13 +612,13 @@ public:
 // Factory (RenderStruct seam)
 // ---------------------------------------------------------------------------
 
-CRenderObject *GLModel_CreateRenderObject(CRenderObject::RENDER_OBJECT_TYPES eType)
+CRenderObject *RModel_CreateRenderObject(CRenderObject::RENDER_OBJECT_TYPES eType)
 {
 	switch (eType)
 	{
-		case CRenderObject::eRigidMesh: return new GLRigidMesh;
-		case CRenderObject::eSkelMesh:  return new GLSkelMesh;
-		case CRenderObject::eVAMesh:    return new GLVAMesh;
+		case CRenderObject::eRigidMesh: return new RRigidMesh;
+		case CRenderObject::eSkelMesh:  return new RSkelMesh;
+		case CRenderObject::eVAMesh:    return new RVAMesh;
 		default:
 			// Null/debug meshes: the base drawable's Load skips its
 			// (size-prefixed) data — safe placeholder.
@@ -622,7 +626,7 @@ CRenderObject *GLModel_CreateRenderObject(CRenderObject::RENDER_OBJECT_TYPES eTy
 	}
 }
 
-bool GLModel_DestroyRenderObject(CRenderObject *pObject)
+bool RModel_DestroyRenderObject(CRenderObject *pObject)
 {
 	delete pObject;
 	return true;
@@ -635,7 +639,7 @@ bool GLModel_DestroyRenderObject(CRenderObject *pObject)
 // Scratch buffers for CPU skinning (world-space results).
 static std::vector<LTVector> g_aSkinnedPos, g_aSkinnedNormal;
 
-static void glm_SkinVertex(const GLModelMesh *pMesh, uint32 nVert,
+static void rm_SkinVertex(const RModelMesh *pMesh, uint32 nVert,
                            const DDMatrix *const *ppBones, const float *pWeights,
                            uint32 nBoneCount)
 {
@@ -648,9 +652,9 @@ static void glm_SkinVertex(const GLModelMesh *pMesh, uint32 nVert,
 		float fWeight = pWeights[nBone];
 		if (fWeight == 0.0f)
 			continue;
-		glm_TransformPoint(*ppBones[nBone], pPos, vTmp);
+		rm_TransformPoint(*ppBones[nBone], pPos, vTmp);
 		vPos += vTmp * fWeight;
-		glm_RotateVector(*ppBones[nBone], pNormal, vTmp);
+		rm_RotateVector(*ppBones[nBone], pNormal, vTmp);
 		vNormal += vTmp * fWeight;
 	}
 	g_aSkinnedPos[nVert]    = vPos;
@@ -658,7 +662,7 @@ static void glm_SkinVertex(const GLModelMesh *pMesh, uint32 nVert,
 }
 
 // Transform the whole mesh into g_aSkinnedPos/Normal (world space).
-static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
+static bool rm_SkinMesh(const RModelMesh *pMesh, const DDMatrix *pTransforms,
                          uint32 nNumNodes)
 {
 	g_aSkinnedPos.resize(pMesh->m_nVertCount);
@@ -669,22 +673,22 @@ static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
 
 	// A VA mesh rides on a single node exactly like a rigid one — the only
 	// difference is the per-frame vertex rewrite we do not implement.
-	if (((GLModelMesh*)pMesh)->GetType() == CRenderObject::eRigidMesh ||
-	    ((GLModelMesh*)pMesh)->GetType() == CRenderObject::eVAMesh)
+	if (((RModelMesh*)pMesh)->GetType() == CRenderObject::eRigidMesh ||
+	    ((RModelMesh*)pMesh)->GetType() == CRenderObject::eVAMesh)
 	{
-		uint32 nBone = (((GLModelMesh*)pMesh)->GetType() == CRenderObject::eVAMesh)
-		             ? ((const GLVAMesh*)pMesh)->m_nBoneEffector
-		             : ((const GLRigidMesh*)pMesh)->m_nBoneEffector;
+		uint32 nBone = (((RModelMesh*)pMesh)->GetType() == CRenderObject::eVAMesh)
+		             ? ((const RVAMesh*)pMesh)->m_nBoneEffector
+		             : ((const RRigidMesh*)pMesh)->m_nBoneEffector;
 		if (nBone >= nNumNodes)
 			nBone = 0;
 		apBones[0] = &pTransforms[nBone];
 		aWeights[0] = 1.0f;
 		for (uint32 nVert = 0; nVert < pMesh->m_nVertCount; ++nVert)
-			glm_SkinVertex(pMesh, nVert, apBones, aWeights, 1);
+			rm_SkinVertex(pMesh, nVert, apBones, aWeights, 1);
 		return true;
 	}
 
-	const GLSkelMesh *pSkel = (const GLSkelMesh*)pMesh;
+	const RSkelMesh *pSkel = (const RSkelMesh*)pMesh;
 	uint32 nBoneCount = pSkel->m_nBonesPerVert;
 	if (nBoneCount < 1 || nBoneCount > 4)
 		return false;
@@ -714,7 +718,7 @@ static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
 				}
 			}
 			aWeights[nBoneCount - 1] = 1.0f - fTotal;
-			glm_SkinVertex(pMesh, nVert, apBones, aWeights, nBoneCount);
+			rm_SkinVertex(pMesh, nVert, apBones, aWeights, nBoneCount);
 		}
 		return true;
 	}
@@ -722,7 +726,7 @@ static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
 	// Render-direct: vertex ranges per bone set.
 	for (size_t nSet = 0; nSet < pSkel->m_aBoneSets.size(); ++nSet)
 	{
-		const GLSkelMesh::BoneSet &cSet = pSkel->m_aBoneSets[nSet];
+		const RSkelMesh::BoneSet &cSet = pSkel->m_aBoneSets[nSet];
 		for (uint32 nBone = 0; nBone < nBoneCount; ++nBone)
 		{
 			uint32 nNode = cSet.m_aBones[nBone];
@@ -743,7 +747,7 @@ static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
 				fTotal += aWeights[nBone];
 			}
 			aWeights[nBoneCount - 1] = 1.0f - fTotal;
-			glm_SkinVertex(pMesh, nVert, apBones, aWeights, nBoneCount);
+			rm_SkinVertex(pMesh, nVert, apBones, aWeights, nBoneCount);
 		}
 	}
 	return true;
@@ -764,7 +768,7 @@ static bool glm_SkinMesh(const GLModelMesh *pMesh, const DDMatrix *pTransforms,
 // beyond those quads showed the background SPRITE (drawn at full white) --
 // measured exactly: orange (255,190,19) * 192/255 = (192,143,14).
 // ★★★ THE AUTHORED AMBIENT FOR THIS INSTANCE (§68), or (255,255,255) when the
-// model is unlit. Set once per instance by glm_SetupInstanceLight().
+// model is unlit. Set once per instance by rm_SetupInstanceLight().
 static float g_fModelAmbient[3] = { 255.0f, 255.0f, 255.0f };
 
 // Look the instance's position up in the world's precomputed LIGHT GRID —
@@ -789,7 +793,7 @@ static float g_fModelAmbient[3] = { 255.0f, 255.0f, 255.0f };
 // bisection tool for "did model lighting cause this", not a fallback anyone
 // should ship with. `LT_MODEL_LIGHTING=1` is kept as a no-op so the many
 // commands in the handoff still work.
-static bool glm_UseAmbient()
+static bool rm_UseAmbient()
 {
 	// ⚠️ RESPECT THE VALUE, NOT JUST THE PRESENCE. This used to be
 	// `getenv(...) ? 0 : 1`, so `LT_NO_MODEL_LIGHTING=0` ALSO disabled model
@@ -834,7 +838,7 @@ static bool glm_UseAmbient()
 // vertex against g_aSkinnedPos. That matters precisely where these lights live:
 // a muzzle flash sits inside the player-view weapon's own bounds, where a
 // single sample at the root node would light the whole model uniformly.
-struct GLModelLight
+struct RModelLight
 {
 	// dir lights: the colour already sampled and attenuated at the instance
 	// position. point lights: the RAW colour — attenuation is per vertex.
@@ -851,7 +855,7 @@ struct GLModelLight
 	float    m_fRadiusSqr;
 	LTVector m_vAttCoef;  // point lights: a0, a1, a2
 
-	GLModelLight()
+	RModelLight()
 		: m_vColor(0, 0, 0), m_vSample(0, 0, 0), m_vToLight(0, 1, 0)
 		, m_fScore(0.0f), m_bPoint(false), m_vPos(0, 0, 0)
 		, m_fRadiusSqr(0.0f), m_vAttCoef(1, 0, 0) {}
@@ -859,11 +863,11 @@ struct GLModelLight
 
 // D3D caps this with `MaxModelLights` (default 4, rendererconsolevars.h:185).
 enum { kMaxModelLights = 4 };
-static GLModelLight g_aModelLights[kMaxModelLights];
+static RModelLight g_aModelLights[kMaxModelLights];
 static int          g_nModelLights = 0;
 
-// ⚠️ SET FOR THE DURATION OF ONE glm_SetupInstanceLight CALL, and the reason the
-// world->camera rotation now lives INSIDE glm_InsertLight (§71).
+// ⚠️ SET FOR THE DURATION OF ONE rm_SetupInstanceLight CALL, and the reason the
+// world->camera rotation now lives INSIDE rm_InsertLight (§71).
 //
 // §69 rotated the finished list in one loop after the static-light query. When
 // §70 added the sun — which rotates its own direction at insertion, before that
@@ -878,17 +882,17 @@ namespace
 {
 	// world -> the ENGINE's LEFT-HANDED camera space (§69: +Z forward, and NO Z
 	// flip belongs here — that happens later, in the pass's kFlipZ modelview).
-	inline LTVector glm_DirToCam(const LTVector &v)
+	inline LTVector rm_DirToCam(const LTVector &v)
 	{
 		return LTVector(v.Dot(g_vSprCamRight), v.Dot(g_vSprCamUp), v.Dot(g_vSprCamFwd));
 	}
-	inline LTVector glm_PosToCam(const LTVector &v)
+	inline LTVector rm_PosToCam(const LTVector &v)
 	{
-		return glm_DirToCam(v - g_vSprCamPos);
+		return rm_DirToCam(v - g_vSprCamPos);
 	}
 
 	// Mirrors CRenderLight::GetLightSample for a StaticLight.
-	bool glm_SampleLight(const StaticLight *pLight, const LTVector &vPos,
+	bool rm_SampleLight(const StaticLight *pLight, const LTVector &vPos,
 	                     LTVector &vOutColor, LTVector &vOutToLight)
 	{
 		// ⚠️ The light-group tint comes FIRST, and its early-out is what makes a
@@ -957,7 +961,7 @@ namespace
 	// — NOT the colour used to shade. For every dir light the two are the same
 	// value; for a term-3 point light they differ, because its shading colour is
 	// unattenuated and the attenuation happens per vertex.
-	void glm_InsertLight(GLModelLight cLight, const LTVector &vSample,
+	void rm_InsertLight(RModelLight cLight, const LTVector &vSample,
 	                     float fConvertToAmbient, float *pAmbient)
 	{
 		const float fKeep   = 1.0f - fConvertToAmbient;
@@ -977,7 +981,7 @@ namespace
 		if (g_nModelLights >= kMaxModelLights)
 		{
 			// The one being pushed out becomes ambient.
-			const GLModelLight &cOut = g_aModelLights[kMaxModelLights - 1];
+			const RModelLight &cOut = g_aModelLights[kMaxModelLights - 1];
 			pAmbient[0] += cOut.m_vSample.x;
 			pAmbient[1] += cOut.m_vSample.y;
 			pAmbient[2] += cOut.m_vSample.z;
@@ -993,9 +997,9 @@ namespace
 		// not just a direction.
 		if (g_bModelLightCamSpace)
 		{
-			cLight.m_vToLight = glm_DirToCam(cLight.m_vToLight);
+			cLight.m_vToLight = rm_DirToCam(cLight.m_vToLight);
 			if (cLight.m_bPoint)
-				cLight.m_vPos = glm_PosToCam(cLight.m_vPos);
+				cLight.m_vPos = rm_PosToCam(cLight.m_vPos);
 		}
 
 		cLight.m_vColor  *= fKeep;
@@ -1014,7 +1018,7 @@ namespace
 	// fills from the visible OT_LIGHT objects (drawlight.cpp:28). We do not build
 	// that list, so we walk the client's OT_LIGHT object list directly — the same
 	// source, and the same one the GL world's additive dynamic-light pass already
-	// uses (glw_CollectDynamicLights). ⚠️ Divergence worth knowing: D3D's list is
+	// uses (rw_CollectDynamicLights). ⚠️ Divergence worth knowing: D3D's list is
 	// the VISIBLE set, ours is every live light, so a light just off screen can
 	// still reach a model here. That is the safer direction (a muzzle flash
 	// behind the camera should still light the weapon in front of it) but it is
@@ -1022,13 +1026,13 @@ namespace
 	//
 	// ⚠️ FLAG_ONLYLIGHTWORLD is the authored "this one is scenery lighting, keep
 	// it off the characters" opt-out and is checked first, exactly as D3D does.
-	void glm_AddDynamicLights(const LTVector &vPos, float *pAmbient, bool bTrace)
+	void rm_AddDynamicLights(const LTVector &vPos, float *pAmbient, bool bTrace)
 	{
 		if (!g_CV_DynamicLight.m_Val)
 			return;
 
 		// One prepared light, filled in per source below.
-		GLModelLight cLight;
+		RModelLight cLight;
 		cLight.m_bPoint = true;
 
 		struct Src { LTVector m_vPos; float m_fRadius; LTVector m_vColor; };
@@ -1057,8 +1061,8 @@ namespace
 
 		// The headless injection set — the null shell never creates a real
 		// dynamic light, so this is how the term is exercised without playing.
-		const GLWTestDynLight *pTest = 0;
-		const uint32 nTest = GLWorld_GetTestDynLights(&pTest);
+		const RWTestDynLight *pTest = 0;
+		const uint32 nTest = RWorld_GetTestDynLights(&pTest);
 		for (uint32 n = 0; n < nTest; ++n)
 		{
 			if (pTest[n].m_fRadius <= 1.0f)
@@ -1116,7 +1120,7 @@ namespace
 			                                        : LTVector(0.0f, 1.0f, 0.0f);
 
 			// ⚠️ convertToAmbient is 0 for dynamic lights (setupmodel.cpp:409).
-			glm_InsertLight(cLight, aSrc[n].m_vColor * (1.0f / fDen), 0.0f, pAmbient);
+			rm_InsertLight(cLight, aSrc[n].m_vColor * (1.0f / fDen), 0.0f, pAmbient);
 		}
 	}
 
@@ -1129,7 +1133,7 @@ namespace
 	//
 	// Visibility is a ray toward the sun that must land on a SURF_SKY polygon
 	// (CastRayAtSky, setupmodel.cpp:171).
-	bool glm_CastRayAtSky(const LTVector &vFrom, const LTVector &vDir)
+	bool rm_CastRayAtSky(const LTVector &vFrom, const LTVector &vDir)
 	{
 		if (!g_pModelWorldClient || !g_pModelWorldClient->ClientTree())
 			return false;
@@ -1151,18 +1155,18 @@ namespace
 	LTVector g_vLightQueryPos;
 	float   *g_pLightQueryAmbient = 0;
 
-	void glm_StaticLightCB(WorldTreeObj *pObj, void * /*pUser*/)
+	void rm_StaticLightCB(WorldTreeObj *pObj, void * /*pUser*/)
 	{
 		if (!pObj || pObj->GetObjType() != WTObj_Light)
 			return;
 		const StaticLight *pLight = (const StaticLight*)pObj;
 		LTVector vColor, vToLight;
-		if (glm_SampleLight(pLight, g_vLightQueryPos, vColor, vToLight))
+		if (rm_SampleLight(pLight, g_vLightQueryPos, vColor, vToLight))
 		{
-			GLModelLight cLight;
+			RModelLight cLight;
 			cLight.m_vColor   = vColor;
 			cLight.m_vToLight = vToLight;
-			glm_InsertLight(cLight, vColor, pLight->m_fConvertToAmbient, g_pLightQueryAmbient);
+			rm_InsertLight(cLight, vColor, pLight->m_fConvertToAmbient, g_pLightQueryAmbient);
 		}
 	}
 }
@@ -1185,7 +1189,7 @@ namespace
 // one the player-view pass feeds to GL before its kFlipZ modelview. The skinned
 // normals we dot against are in that same space, so no Z flip belongs in this
 // maths — adding one would invert every player-view light.
-static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPosIn,
+static void rm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPosIn,
                                    float fRadius, bool bLit, bool bReallyClose)
 {
 	g_fModelAmbient[0] = g_fModelAmbient[1] = g_fModelAmbient[2] = 255.0f;
@@ -1195,7 +1199,7 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 		return;
 
 	// Every light that enters the list from here on is rotated (and, if it is a
-	// point light, translated) into camera space by glm_InsertLight — once.
+	// point light, translated) into camera space by rm_InsertLight — once.
 	g_bModelLightCamSpace = bReallyClose;
 
 	// camera -> world for a player-view instance
@@ -1234,10 +1238,10 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 	// casting it for every model every frame is not free — D3D caches it in
 	// ModelInstance::m_LastDirLightAmount and only recasts when the instance has
 	// moved further than `ModelSunVariance` (setupmodel.cpp:340).
-	if (g_pGLStruct && pInstance &&
-	    (g_pGLStruct->m_GlobalLightColor.x != 0.0f ||
-	     g_pGLStruct->m_GlobalLightColor.y != 0.0f ||
-	     g_pGLStruct->m_GlobalLightColor.z != 0.0f))
+	if (g_pRenderStruct && pInstance &&
+	    (g_pRenderStruct->m_GlobalLightColor.x != 0.0f ||
+	     g_pRenderStruct->m_GlobalLightColor.y != 0.0f ||
+	     g_pRenderStruct->m_GlobalLightColor.z != 0.0f))
 	{
 		float fAmount = pInstance->m_LastDirLightAmount;
 		if (fAmount < 0.0f || !vPos.NearlyEquals(pInstance->m_LastDirLightPos, 10.0f))
@@ -1246,7 +1250,7 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 			const WorldTreeNode *pRoot = (g_pModelWorldClient && g_pModelWorldClient->ClientTree())
 			                           ? g_pModelWorldClient->ClientTree()->GetRootNode() : 0;
 			const float fFar = pRoot ? (pRoot->GetBBoxMax() - pRoot->GetBBoxMin()).Mag() : 100000.0f;
-			fAmount = glm_CastRayAtSky(vPos, g_pGLStruct->m_GlobalLightDir * -fFar) ? 1.0f : 0.0f;
+			fAmount = rm_CastRayAtSky(vPos, g_pRenderStruct->m_GlobalLightDir * -fFar) ? 1.0f : 0.0f;
 			pInstance->m_LastDirLightPos    = vPos;
 			pInstance->m_LastDirLightAmount = fAmount;
 		}
@@ -1255,19 +1259,19 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 		{
 			// ⚠️ The light TRAVELS along m_GlobalLightDir, so the vector toward
 			// it is the negation — the same sign trap as the static lights.
-			LTVector vToSun = -g_pGLStruct->m_GlobalLightDir;
+			LTVector vToSun = -g_pRenderStruct->m_GlobalLightDir;
 			const float fLen = vToSun.Mag();
 			if (fLen > 0.0001f)
 			{
-				// ⚠️ NO rotation here any more — glm_InsertLight does it once,
+				// ⚠️ NO rotation here any more — rm_InsertLight does it once,
 				// for every term. Rotating it here as well is exactly the
 				// double-rotation §71 found (see g_bModelLightCamSpace).
 				vToSun /= fLen;
-				GLModelLight cSun;
-				cSun.m_vColor   = g_pGLStruct->m_GlobalLightColor * fAmount;
+				RModelLight cSun;
+				cSun.m_vColor   = g_pRenderStruct->m_GlobalLightColor * fAmount;
 				cSun.m_vToLight = vToSun;
-				glm_InsertLight(cSun, cSun.m_vColor,
-				                g_pGLStruct->m_GlobalLightConvertToAmbient, g_fModelAmbient);
+				rm_InsertLight(cSun, cSun.m_vColor,
+				                g_pRenderStruct->m_GlobalLightConvertToAmbient, g_fModelAmbient);
 			}
 		}
 	}
@@ -1280,7 +1284,7 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 	// muzzle flash and a lamp gets the other one.
 	static int s_nTraceDyn = -1;
 	if (s_nTraceDyn < 0) s_nTraceDyn = getenv("LT_TRACE_MODELLIGHT") ? 1 : 0;
-	glm_AddDynamicLights(vPos, g_fModelAmbient, s_nTraceDyn != 0);
+	rm_AddDynamicLights(vPos, g_fModelAmbient, s_nTraceDyn != 0);
 
 	// ⚠️ COUNT THE POINT LIGHTS, NOT THE LIST LENGTH. `g_nModelLights` here also
 	// holds the SUN, which term 2 inserted just above — and that is not a
@@ -1305,14 +1309,14 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 		cInfo.m_iObjArray = NOA_Lights;
 		cInfo.m_Min = vPos - LTVector(fRadius, fRadius, fRadius);
 		cInfo.m_Max = vPos + LTVector(fRadius, fRadius, fRadius);
-		cInfo.m_CB = glm_StaticLightCB;
+		cInfo.m_CB = rm_StaticLightCB;
 		cInfo.m_pCBUser = 0;
 		g_pModelWorldClient->ClientTree()->FindObjectsInBox2(&cInfo);
 
 		g_pLightQueryAmbient = 0;
 		// ⚠️ The world->camera loop that used to sit here is GONE (§71). It walked
 		// the whole list, which by then also held the sun — already rotated at its
-		// own insertion — and rotated it a second time. glm_InsertLight now does it
+		// own insertion — and rotated it a second time. rm_InsertLight now does it
 		// once, per light, as it enters.
 	}
 
@@ -1326,20 +1330,20 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 		// authors no sun at all. It authors one in 44 of 53 levels. This is the
 		// handoff's own "a diagnostic that fires once lies" rule.
 		static LTVector s_vLastSun(-1.0f, -1.0f, -1.0f);
-		if (g_pGLStruct && !g_pGLStruct->m_GlobalLightColor.NearlyEquals(s_vLastSun, 0.01f))
+		if (g_pRenderStruct && !g_pRenderStruct->m_GlobalLightColor.NearlyEquals(s_vLastSun, 0.01f))
 		{
-			s_vLastSun = g_pGLStruct->m_GlobalLightColor;
+			s_vLastSun = g_pRenderStruct->m_GlobalLightColor;
 			fprintf(stderr, "[mlight] LEVEL SUN: color=(%.0f %.0f %.0f) dir=(%.2f %.2f %.2f) toAmbient=%.2f\n",
-			        g_pGLStruct->m_GlobalLightColor.x, g_pGLStruct->m_GlobalLightColor.y,
-			        g_pGLStruct->m_GlobalLightColor.z, g_pGLStruct->m_GlobalLightDir.x,
-			        g_pGLStruct->m_GlobalLightDir.y, g_pGLStruct->m_GlobalLightDir.z,
-			        g_pGLStruct->m_GlobalLightConvertToAmbient);
+			        g_pRenderStruct->m_GlobalLightColor.x, g_pRenderStruct->m_GlobalLightColor.y,
+			        g_pRenderStruct->m_GlobalLightColor.z, g_pRenderStruct->m_GlobalLightDir.x,
+			        g_pRenderStruct->m_GlobalLightDir.y, g_pRenderStruct->m_GlobalLightDir.z,
+			        g_pRenderStruct->m_GlobalLightConvertToAmbient);
 		}
 	}
 	if (s_nTrace)
 	{
 		// ★ TERM 3's SECOND HALF: a HIGH-WATER MARK, not a per-instance report.
-		// The candidate count (glm_AddDynamicLights) says a light EXISTS; this
+		// The candidate count (rm_AddDynamicLights) says a light EXISTS; this
 		// says one actually reached a model and won a slot. Reported only when it
 		// rises, so a muzzle flash cannot spam it — and unlike a one-shot it
 		// cannot claim "term 3 never fires" from a moment before the first shot.
@@ -1380,7 +1384,13 @@ static void glm_SetupInstanceLight(ModelInstance *pInstance, const LTVector &vPo
 	}
 }
 
-static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
+// The authored render state for the mesh about to be emitted. The GL path sets
+// it as ambient GL state; Metal needs it as a description, so the state-setting
+// code below fills this in lockstep and rm_EmitMesh hands it over. One
+// description of the draw, read by both backends (§85's RWDrawParams pattern).
+static REmitState g_cEmitState;
+
+static void rm_EmitMesh(const RModelMesh *pMesh, bool bLit, uint8 nAlpha)
 {
 	// ⚠️ THE OLD KEY LIGHT IS GONE (§68). It was `140 + 115*|N.L|` against an
 	// invented direction — so every model rendered at >=55% brightness wherever
@@ -1389,8 +1399,8 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 	// loaded the whole time and simply never read.
 	//
 	// All four terms are ported and this is now the default path (§71); the
-	// branch below survives only for LT_NO_MODEL_LIGHTING=1. See glm_UseAmbient().
-	const bool bAmbient = glm_UseAmbient();
+	// branch below survives only for LT_NO_MODEL_LIGHTING=1. See rm_UseAmbient().
+	const bool bAmbient = rm_UseAmbient();
 	const float fR = g_fModelAmbient[0], fG = g_fModelAmbient[1], fB = g_fModelAmbient[2];
 	const uint8 nR = (uint8)((fR < 0.0f) ? 0.0f : (fR > 255.0f ? 255.0f : fR));
 	const uint8 nG = (uint8)((fG < 0.0f) ? 0.0f : (fG > 255.0f ? 255.0f : fG));
@@ -1399,12 +1409,65 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 	// The old stand-in key light — LT_NO_MODEL_LIGHTING=1 only.
 	static const LTVector s_vLight(0.42f, 0.78f, 0.46f);
 
-	glBegin(GL_TRIANGLES);
+	// ★ ONE LOOP, TWO CONSUMERS. The colour below is the whole of §68-§71 --
+	// four D3D lighting terms resolved per vertex -- and it must not fork.
+	// Metal collects the same values into a triangle list instead of emitting
+	// them immediately; everything above and inside this loop is shared.
+	static std::vector<MTLModelVert> s_aMetalVerts;   // static: no per-mesh alloc
+	s_aMetalVerts.clear();
+	s_aMetalVerts.reserve(pMesh->m_aIndices.size());
+
+	// ★★ THE LIGHTING IS PER *VERTEX*, BUT THIS LOOP WALKS *INDICES*.
+	// A vertex is referenced by every triangle that shares it -- around six in a
+	// closed mesh -- so the colour below (including the whole per-light loop,
+	// with its normalise, dot and attenuation divide for every point light) used
+	// to be recomputed that many times for the same answer. It depends only on
+	// nVert: g_aSkinnedNormal/g_aSkinnedPos plus per-instance globals that are
+	// constant for the duration of this call. So compute it once per vertex.
+	//
+	// A GENERATION STAMP rather than clearing: clearing would cost O(verts) per
+	// mesh even when few are used, and this way a vertex no index touches is
+	// never lit at all. s_nStamp is bumped per call, so every entry from a
+	// previous mesh is stale by construction.
+	// LT_NO_VERTCACHE=1 -- bypass the cache and light per index, the way this
+	// loop worked before. Kept as the A/B for the optimisation: it is the only
+	// way to measure the win in one binary and one scene, which matters because
+	// two real-shell runs land in different places (and, as this change proved,
+	// can even end up in different VSYNC states).
+	static int s_nNoVertCache = -1;
+	if (s_nNoVertCache < 0) s_nNoVertCache = getenv("LT_NO_VERTCACHE") ? 1 : 0;
+
+	static std::vector<uint32> s_aVertColor;   // packed 0x00BBGGRR
+	static std::vector<uint32> s_aVertStamp;
+	static uint32 s_nStamp = 0;
+	if (s_aVertColor.size() < pMesh->m_nVertCount)
+	{
+		s_aVertColor.resize(pMesh->m_nVertCount);
+		s_aVertStamp.resize(pMesh->m_nVertCount, 0);
+	}
+	if (++s_nStamp == 0)   // wrapped: every stored stamp would alias. ~4e9 meshes.
+	{
+		std::fill(s_aVertStamp.begin(), s_aVertStamp.end(), 0u);
+		s_nStamp = 1;
+	}
+
 	for (size_t nIdx = 0; nIdx < pMesh->m_aIndices.size(); ++nIdx)
 	{
 		uint32 nVert = pMesh->m_aIndices[nIdx];
 		if (nVert >= pMesh->m_nVertCount)
 			continue;
+
+		uint8 nCR = 255, nCG = 255, nCB = 255;
+
+		if (!s_nNoVertCache && s_aVertStamp[nVert] == s_nStamp)
+		{
+			const uint32 nPacked = s_aVertColor[nVert];
+			nCR = (uint8)(nPacked);
+			nCG = (uint8)(nPacked >> 8);
+			nCB = (uint8)(nPacked >> 16);
+		}
+		else
+		{
 
 		// ⚠️ glColor3ub would force alpha to 1.0. The object's own alpha is the
 		// DIFFUSE alpha the authored stage ops modulate against -- D3D feeds it
@@ -1424,7 +1487,7 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 					vN /= fLen;
 					for (int nL = 0; nL < g_nModelLights; ++nL)
 					{
-						const GLModelLight &cL = g_aModelLights[nL];
+						const RModelLight &cL = g_aModelLights[nL];
 						LTVector vToLight = cL.m_vToLight;
 						float    fAtten   = 1.0f;
 
@@ -1457,9 +1520,9 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 					}
 				}
 			}
-			glColor4ub((uint8)(fSR > 255.0f ? 255.0f : fSR),
-			           (uint8)(fSG > 255.0f ? 255.0f : fSG),
-			           (uint8)(fSB > 255.0f ? 255.0f : fSB), nAlpha);
+			nCR = (uint8)(fSR > 255.0f ? 255.0f : fSR);
+			nCG = (uint8)(fSG > 255.0f ? 255.0f : fSG);
+			nCB = (uint8)(fSB > 255.0f ? 255.0f : fSB);
 		}
 		else
 		{
@@ -1472,14 +1535,64 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 				if (fNdotL < 0.0f) fNdotL = -fNdotL;
 				nShade = (uint8)(140.0f + 115.0f * fNdotL);
 			}
-			glColor4ub(nShade, nShade, nShade, nAlpha);
+			nCR = nCG = nCB = nShade;
 		}
 
-		glTexCoord2f(pMesh->m_aUV[(size_t)nVert * 2], pMesh->m_aUV[(size_t)nVert * 2 + 1]);
+		s_aVertColor[nVert] = (uint32)nCR | ((uint32)nCG << 8) | ((uint32)nCB << 16);
+		s_aVertStamp[nVert] = s_nStamp;
+		}   // end of the per-vertex lighting (cache miss)
+
 		const LTVector &vPos = g_aSkinnedPos[nVert];
-		glVertex3f(vPos.x, vPos.y, vPos.z);
+		const float fU = pMesh->m_aUV[(size_t)nVert * 2];
+		const float fV = pMesh->m_aUV[(size_t)nVert * 2 + 1];
+
+		MTLModelVert cV = { vPos.x, vPos.y, vPos.z, fU, fV, nCR, nCG, nCB, nAlpha };
+		s_aMetalVerts.push_back(cV);
 	}
-	glEnd();
+
+	// ★ LT_TRACE_MODELEMIT=1 — one line per distinct authored state, with the
+	// FIRST vertex colour the shared lighting produced. Both backends run the
+	// same colour maths, so if these lines agree the difference is downstream
+	// (the shader or the state), and if they disagree it is upstream.
+	// ⚠️ CACHED. getenv() is a linear scan of the environment and this runs once
+	// per MESH per FRAME; every other gate in this file already uses this
+	// pattern. Uncached it showed up in the profile as real frame cost.
+	static int s_nTraceEmit = -1;
+	if (s_nTraceEmit < 0) s_nTraceEmit = getenv("LT_TRACE_MODELEMIT") ? 1 : 0;
+	if (s_nTraceEmit)
+	{
+		static std::vector<uint64> s_aSeen;
+		const uint64 nKey = (uint64)(uintptr_t)g_cEmitState.m_pTexture
+		                  ^ ((uint64)g_cEmitState.m_bIgnoreDiffuse << 1)
+		                  ^ ((uint64)(uint32)(g_cEmitState.m_fColorScale * 16.0f) << 4)
+		                  ^ ((uint64)g_cEmitState.m_bTextureAlpha << 12)
+		                  ^ ((uint64)g_cEmitState.m_bBlend << 13)
+		                  ^ ((uint64)g_cEmitState.m_nSrcBlend << 20);
+		bool bNew = true;
+		for (size_t i = 0; i < s_aSeen.size(); ++i)
+			if (s_aSeen[i] == nKey) { bNew = false; break; }
+		if (bNew && !s_aMetalVerts.empty())
+		{
+			s_aSeen.push_back(nKey);
+			uint8 r = 255, g = 255, b = 255, a = 255;
+			if (!s_aMetalVerts.empty())
+			{
+				r = s_aMetalVerts[0].r; g = s_aMetalVerts[0].g;
+				b = s_aMetalVerts[0].b; a = s_aMetalVerts[0].a;
+			}
+			fprintf(stderr, "[memit] tex=%p noDiffuse=%d scale=%.1f texAlpha=%d blend=%d "
+			                "src=0x%X dst=0x%X zw=%d aTest=%d ref=%.2f v0rgba=(%u %u %u %u)\n",
+			        (void*)g_cEmitState.m_pTexture, (int)g_cEmitState.m_bIgnoreDiffuse,
+			        g_cEmitState.m_fColorScale, (int)g_cEmitState.m_bTextureAlpha,
+			        (int)g_cEmitState.m_bBlend, g_cEmitState.m_nSrcBlend,
+			        g_cEmitState.m_nDstBlend, (int)g_cEmitState.m_bZWrite,
+			        (int)g_cEmitState.m_bAlphaTest, g_cEmitState.m_fAlphaRef,
+			        r, g, b, a);
+		}
+	}
+
+	MTLModel_DrawTris(s_aMetalVerts.empty() ? 0 : &s_aMetalVerts[0],
+	                  (uint32)s_aMetalVerts.size(), &g_cEmitState);
 }
 
 // Draws one model instance (pieces + attachments). Shared by the world-space
@@ -1488,7 +1601,7 @@ static void glm_EmitMesh(const GLModelMesh *pMesh, bool bLit, uint8 nAlpha)
 // Draws one model instance (pieces + attachments). Shared by the world-space
 // pass and the really-close (player-view) pass -- the two differ only in the
 // matrices set up around them.
-static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
+static void rm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 {
 	Model *pModel = pInstance->GetModelDB();
 	if (!pModel)
@@ -1496,7 +1609,9 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 
 	// LT_TRACE_PVMODEL: the player-view (really-close) models, every frame they
 	// change -- which model, where in camera space, and which pieces are hidden.
-	if ((pInstance->m_Flags & FLAG_REALLYCLOSE) && getenv("LT_TRACE_PVMODEL"))
+	static int s_nTracePVModel = -1;
+	if (s_nTracePVModel < 0) s_nTracePVModel = getenv("LT_TRACE_PVMODEL") ? 1 : 0;
+	if ((pInstance->m_Flags & FLAG_REALLYCLOSE) && s_nTracePVModel)
 	{
 		static const Model *s_pLastModel = 0;
 		static uint32 s_nLastHidden = 0xFFFFFFFF;
@@ -1522,20 +1637,17 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 
 	// The object-level render state D3D feeds to RenderPieceList/d3d_GetBlendStates
 	// -- none of which the GL model path currently reads (see LT_TRACE_UI).
-	if (g_bGLTraceUIFrame)
+	if (g_bRTraceUIFrame)
 	{
-		GLboolean bBlendOn = GL_FALSE;
-		glGetBooleanv(GL_BLEND, &bBlendOn);
 		fprintf(stderr, "[ui]   %s: flags=0x%x flags2=0x%x color=(%u %u %u a=%u) "
-		                "translucent=%d scale=(%.2f %.2f %.2f) GL_BLEND=%d\n",
+		                "translucent=%d scale=(%.2f %.2f %.2f)\n",
 		        pModel->GetFilename(), pInstance->m_Flags, pInstance->m_Flags2,
 		        pInstance->m_ColorR, pInstance->m_ColorG, pInstance->m_ColorB,
 		        pInstance->m_ColorA, (int)pInstance->IsTranslucent(),
-		        pInstance->m_Scale.x, pInstance->m_Scale.y, pInstance->m_Scale.z,
-		        (int)bBlendOn);
+		        pInstance->m_Scale.x, pInstance->m_Scale.y, pInstance->m_Scale.z);
 	}
 
-	// (Attachments are no longer processed here — GLModel_ProcessAttachments
+	// (Attachments are no longer processed here — RModel_ProcessAttachments
 	// does it for EVERY object type once per scene, before any draw pass. Doing
 	// it in the model draw only ever covered OT_MODEL parents, which is why a
 	// handle attached to a world-model DOOR never turned with it.)
@@ -1558,19 +1670,19 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 		return;
 	uint32 nNumNodes = pModel->NumNodes();
 
-	// The object's alpha rides the vertex colour (see glm_EmitMesh).
+	// The object's alpha rides the vertex colour (see rm_EmitMesh).
 	const uint8 nObjAlpha = pInstance->m_ColorA;
 
-	// Does this instance get the stand-in key light at all? See glm_EmitMesh --
+	// Does this instance get the stand-in key light at all? See rm_EmitMesh --
 	// D3D lights a model only from the world, and not at all under FLAG_NOLIGHT.
 	// The interface pass draws no world, so nothing there is lit either.
-	const bool bLit = !g_bGLInterfacePass && GLWorld_IsLoaded() &&
+	const bool bLit = !g_bRInterfacePass && RWorld_IsLoaded() &&
 	                  !(pInstance->m_Flags & FLAG_NOLIGHT);
 
 	// Resolve this instance's ambient from the world light grid once, here —
 	// not per vertex. D3D likewise evaluates it once per instance, at the root
 	// node position (setupmodel.cpp:305).
-	glm_SetupInstanceLight(pInstance, pInstance->GetPos(),
+	rm_SetupInstanceLight(pInstance, pInstance->GetPos(),
 	                       pModel ? pModel->m_VisRadius : 0.0f, bLit,
 	                       (pInstance->m_Flags & FLAG_REALLYCLOSE) != 0);
 
@@ -1606,9 +1718,9 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 			CRenderStyle *pSA = LTNULL, *pSB = LTNULL;
 			pInstance->GetRenderStyle((uint32)pA->m_iRenderStyle, &pSA);
 			pInstance->GetRenderStyle((uint32)pB->m_iRenderStyle, &pSB);
-			GLRenderStyleState cA, cB;
-			GLRenderStyle_GetState(pSA, 0, &cA);
-			GLRenderStyle_GetState(pSB, 0, &cB);
+			RRenderStyleState cA, cB;
+			RRenderStyle_GetState(pSA, 0, &cA);
+			RRenderStyle_GetState(pSB, 0, &cB);
 			if (cA.bBlend != cB.bBlend)
 				return !cA.bBlend;
 
@@ -1635,13 +1747,13 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 			continue;
 		}
 
-		GLModelMesh *pMesh = (GLModelMesh*)pLOD;
+		RModelMesh *pMesh = (RModelMesh*)pLOD;
 
 		// A VA mesh's positions live in the ANIMATION, not in the LTB vertex
 		// stream (which is zeroed) — refresh them from the current frame before
 		// anything reads m_aPos. Mirrors rendermodelpiecelist.cpp:98.
 		if (pLOD->GetType() == CRenderObject::eVAMesh)
-			((GLVAMesh*)pMesh)->UpdateVA(pModel, pInstance->m_AnimTracker.m_TimeRef);
+			((RVAMesh*)pMesh)->UpdateVA(pModel, pInstance->m_AnimTracker.m_TimeRef);
 
 		if (!pMesh->m_nVertCount || pMesh->m_aIndices.empty())
 		{
@@ -1651,7 +1763,7 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 			continue;
 		}
 
-		if (!glm_SkinMesh(pMesh, pTransforms, nNumNodes))
+		if (!rm_SkinMesh(pMesh, pTransforms, nNumNodes))
 		{
 			if (bLog)
 				fprintf(stderr, "[glm]   piece %u SKIPPED: skinning failed\n", nPiece);
@@ -1673,13 +1785,18 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 		}
 
 		// Base texture from the instance skins.
-		GLuint nTexName = 0;
+		unsigned nTexName = 0;
 		unsigned int nAlphaRef = 0;
 		int nSkin = pPiece->m_iTextures[0];
 		if (nSkin >= 0 && nSkin < MAX_MODEL_TEXTURES && pInstance->m_pSkins[nSkin])
 		{
-			nTexName  = GLTex_GetName(pInstance->m_pSkins[nSkin]);
-			nAlphaRef = GLTex_GetAlphaRef(pInstance->m_pSkins[nSkin]);
+			// Neutral queries -- see render_texture.h. The GL-era GLTex_GetName
+			// returns garbage that is non-zero, so `if (nTexName)` would still
+			// pass while the AUTHORED AlphaRef fallback read nonsense.
+			SharedTexture *pSkinTex = pInstance->m_pSkins[nSkin];
+			nTexName  = RTex_IsValid(pSkinTex)
+			          ? 1u : 0u;   // diagnostics only
+			nAlphaRef = RTex_GetAlphaRef(pSkinTex);
 		}
 
 		// ★ THE AUTHORED RENDER STATE FOR A MODEL PIECE IS ITS RENDER STYLE.
@@ -1693,8 +1810,8 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 		CRenderStyle *pRenderStyle = LTNULL;
 		pInstance->GetRenderStyle((uint32)pPiece->m_iRenderStyle, &pRenderStyle);
 
-		GLRenderStyleState rsState;
-		bool bHaveStyle = GLRenderStyle_GetState(pRenderStyle, 0, &rsState);
+		RRenderStyleState rsState;
+		bool bHaveStyle = RRenderStyle_GetState(pRenderStyle, 0, &rsState);
 
 		if (bLog)
 		{
@@ -1704,11 +1821,15 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 			        (int)(bHaveStyle && rsState.bBlend), nAlphaRef);
 		}
 
+		// Start each piece from the fixed-function defaults, then let the
+		// authored style overwrite exactly what it authors -- the same order
+		// the GL calls below apply in.
+		g_cEmitState = REmitState();
+		g_cEmitState.m_pTexture = (nSkin >= 0 && nSkin < MAX_MODEL_TEXTURES)
+		                        ? pInstance->m_pSkins[nSkin] : 0;
+
 		if (nTexName)
 		{
-			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, nTexName);
-
 			if (bHaveStyle)
 			{
 				// ★ Authored style -- and ALL of its passes, not just pass 0.
@@ -1722,42 +1843,37 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 
 				for (uint32 nPass = 0; nPass < nPassCount; ++nPass)
 				{
-					GLRenderStyleState cPass;
-					if (!GLRenderStyle_GetState(pRenderStyle, nPass, &cPass))
+					RRenderStyleState cPass;
+					if (!RRenderStyle_GetState(pRenderStyle, nPass, &cPass))
 						continue;
 
-					if (cPass.bAlphaTest)
-					{
-						glAlphaFunc((GLenum)cPass.nAlphaFunc, cPass.fAlphaRef);
-						glEnable(GL_ALPHA_TEST);
-					}
-					else
-						glDisable(GL_ALPHA_TEST);
-
-					if (cPass.bBlend)
-					{
-						glEnable(GL_BLEND);
-						glBlendFunc((GLenum)cPass.nSrcBlend, (GLenum)cPass.nDstBlend);
-					}
-					else
-						glDisable(GL_BLEND);
-
-					glDepthMask(cPass.bZWrite ? GL_TRUE : GL_FALSE);
+					// The pass is DESCRIBED, never applied -- everything below
+					// is read per draw out of REmitState.
+					g_cEmitState.m_bAlphaTest     = cPass.bAlphaTest;
+					g_cEmitState.m_nAlphaFunc     = cPass.nAlphaFunc;
+					g_cEmitState.m_fAlphaRef      = cPass.fAlphaRef;
+					g_cEmitState.m_bBlend         = cPass.bBlend;
+					g_cEmitState.m_nSrcBlend      = cPass.nSrcBlend;
+					g_cEmitState.m_nDstBlend      = cPass.nDstBlend;
+					g_cEmitState.m_bZTest         = cPass.bZRead;
+					g_cEmitState.m_bZWrite        = cPass.bZWrite;
+					g_cEmitState.m_bIgnoreDiffuse = cPass.bIgnoreDiffuse;
+					// ⚠️ THE EFFECTIVE SCALE, NOT THE AUTHORED ONE. MODULATE2X
+					// is parked behind LT_RS_COLORSCALE (§68/§71) and the GL
+					// path forces 1.0 when it is off; passing the authored 2.0
+					// to Metal un-parked it and made every character wearing
+					// such a style up to +48/255 too bright (§89).
+					g_cEmitState.m_fColorScale    =
+						RRenderStyle_ColorScaleEnabled() ? cPass.fColorScale : 1.0f;
+					g_cEmitState.m_bTextureAlpha  = cPass.bTextureAlpha;
 
 					// ★ The authored colour pipeline for this pass. A
 					// "NODIFFUSE" style (ColorOp SELECTARG1 / Arg1 TEXTURE)
 					// means the vertex colour must not touch the texture at
-					// all -- so our stand-in key light must not either.
-					GLRenderStyle_ApplyColorOp(&cPass);
-
-					glm_EmitMesh(pMesh, bLit, nObjAlpha);
+					// all -- carried by m_bIgnoreDiffuse / m_fColorScale above.
+					rm_EmitMesh(pMesh, bLit, nObjAlpha);
 				}
 
-				// Restore the pass-invariant state the rest of the draw
-				// assumes (opaque, depth writes on, plain modulate).
-				GLRenderStyle_ResetColorOp();
-				glDisable(GL_BLEND);
-				glDepthMask(GL_TRUE);
 				continue;
 			}
 			else if (nAlphaRef != 0)
@@ -1765,34 +1881,30 @@ static void glm_DrawModelInstance(ModelInstance *pInstance, bool bLog)
 				// No style on this model -- fall back to the texture's authored
 				// AlphaRef (§14/§15b). This is what kept the gift boxes right
 				// before render styles existed, so it stays as the fallback.
-				glAlphaFunc(GL_GEQUAL, (float)nAlphaRef / 255.0f);
-				glEnable(GL_ALPHA_TEST);
-			}
-			else
-			{
-				glDisable(GL_ALPHA_TEST);
+				g_cEmitState.m_bAlphaTest = true;
+				g_cEmitState.m_nAlphaFunc = kRAlpha_GEqual;
+				g_cEmitState.m_fAlphaRef  = (float)nAlphaRef / 255.0f;
 			}
 		}
 		else
 		{
-			glDisable(GL_TEXTURE_2D);
-			glDisable(GL_ALPHA_TEST);
+			g_cEmitState.m_pTexture = 0;
 		}
 
-		glm_EmitMesh(pMesh, bLit, nObjAlpha);
+		rm_EmitMesh(pMesh, bLit, nObjAlpha);
 	}
 }
 
 // Is this instance drawn in the player-view (camera-space) pass?
-static inline bool glm_IsDrawable(ModelInstance *pInstance)
+static inline bool rm_IsDrawable(ModelInstance *pInstance)
 {
 	if (!pInstance || !(pInstance->m_Flags & FLAG_VISIBLE))
 		return false;
 
 	// Hidden render group (d3d parity: tagnodes.cpp gates visibility on this
 	// too) -- this is how the game hides the player's own body in first person.
-	if (g_pGLStruct && g_pGLStruct->IsObjectGroupEnabled &&
-	    !g_pGLStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup))
+	if (g_pRenderStruct && g_pRenderStruct->IsObjectGroupEnabled &&
+	    !g_pRenderStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup))
 		return false;
 
 	return true;
@@ -1822,14 +1934,14 @@ static inline bool glm_IsDrawable(ModelInstance *pInstance)
 // and suppressing it would re-hide exactly the class of bug §36 was about.
 extern Model *g_pPlaceholderModel;
 
-static inline bool glm_IsPlaceholderModel(ModelInstance *pInstance)
+static inline bool rm_IsPlaceholderModel(ModelInstance *pInstance)
 {
 	return g_pPlaceholderModel &&
 	       pInstance->GetModelDB() == g_pPlaceholderModel;
 }
 
 // LT_TRACE_PV=1 -- trace the PLAYER-VIEW (FLAG_REALLYCLOSE) model set.
-static bool glm_TracePV()
+static bool rm_TracePV()
 {
 	static int s_n = -1;
 	if (s_n < 0) s_n = getenv("LT_TRACE_PV") ? 1 : 0;
@@ -1837,21 +1949,21 @@ static bool glm_TracePV()
 }
 
 static bool g_bCensusDone = false;
-void GLModel_ArmCensus(void) { g_bCensusDone = false; }
+void RModel_ArmCensus(void) { g_bCensusDone = false; }
 
 // LT_TRACE_UI=<sceneframe>: dump the per-object render state of EVERY model and
 // sprite drawn on that one scene frame. The ordinary [glm] census only fires
 // once a world is loaded, so it can never describe the menu / loading screens --
 // which is exactly where the interface objects live.
-int  g_nGLSceneFrame = 0;
-bool g_bGLTraceUIFrame = false;
-// True while GLObjectList_Draw is running (the DRAWMODE_OBJECTLIST interface pass).
-bool g_bGLInterfacePass = false;
+int  g_nRSceneFrame = 0;
+bool g_bRTraceUIFrame = false;
+// True while RObjectList_Draw is running (the DRAWMODE_OBJECTLIST interface pass).
+bool g_bRInterfacePass = false;
 // Called once per rendered scene, from nr_RenderScene -- so it counts the
 // object-list (interface) passes too, which do not go through
-// GLModel_DrawModels at all.
-void GLModel_BeginSceneFrame(void);
-static int glui_TargetFrame(void)
+// RModel_DrawModels at all.
+void RModel_BeginSceneFrame(void);
+static int rui_TargetFrame(void)
 {
 	static int s_nTarget = -2;
 	if (s_nTarget == -2)
@@ -1862,16 +1974,16 @@ static int glui_TargetFrame(void)
 	return s_nTarget;
 }
 
-void GLModel_BeginSceneFrame(void)
+void RModel_BeginSceneFrame(void)
 {
-	++g_nGLSceneFrame;
-	g_bGLTraceUIFrame = (glui_TargetFrame() > 0 && g_nGLSceneFrame == glui_TargetFrame());
-	if (g_bGLTraceUIFrame)
+	++g_nRSceneFrame;
+	g_bRTraceUIFrame = (rui_TargetFrame() > 0 && g_nRSceneFrame == rui_TargetFrame());
+	if (g_bRTraceUIFrame)
 		fprintf(stderr, "[ui] ===== scene frame %d: model + sprite render state =====\n",
-		        g_nGLSceneFrame);
+		        g_nRSceneFrame);
 }
 
-void GLModel_DrawModels(float fAspect)
+void RModel_DrawModels(float fAspect)
 {
 	if (!g_pClientMgr)
 		return;
@@ -1880,11 +1992,11 @@ void GLModel_DrawModels(float fAspect)
 	// Fire the census on the first frame WITH A WORLD LOADED. Firing it on the
 	// very first frame (the old behaviour) only ever described the main menu,
 	// which is why "what is actually in the level" was never visible here.
-	bool bLog = !g_bCensusDone && GLWorld_IsLoaded();
+	bool bLog = !g_bCensusDone && RWorld_IsLoaded();
 	if (bLog)
 		g_bCensusDone = true;
 
-	if (g_bGLTraceUIFrame)
+	if (g_bRTraceUIFrame)
 		bLog = true;
 
 	// Census of EVERY client object type vs. what this renderer actually draws.
@@ -1917,16 +2029,14 @@ void GLModel_DrawModels(float fAspect)
 				               nType == OT_SPRITE || nType == OT_POLYGRID ||
 				               nType == OT_PARTICLESYSTEM);
 				fprintf(stderr, "[glm]   %-15s %3u/%3u  %s\n", s_apTypeNames[nType],
-				        nVisible, nTotal, bDrawn ? "drawn" : "NOT DRAWN by GL renderer");
+				        nVisible, nTotal, bDrawn ? "drawn" : "NOT DRAWN by the renderer");
 			}
 		}
 	}
 
-	glEnable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glAlphaFunc(GL_GREATER, 0.5f);
-
+	// Under Metal every one of these is a per-draw parameter (REmitState /
+	// the pipeline state), applied in MTLModel_DrawTris. The scene transform was
+	// published by nr_RenderScene.
 	LTLink *pHead = &g_pClientMgr->m_ObjectMgr.m_ObjectLists[OT_MODEL].m_Head;
 
 	// --- Pass 1: ordinary world-space models (caller has set the scene matrices).
@@ -1938,21 +2048,19 @@ void GLModel_DrawModels(float fAspect)
 			continue;
 		++nTot;
 		if (!(pInstance->m_Flags & FLAG_VISIBLE)) { ++nInvisible; continue; }
-		if (g_pGLStruct && g_pGLStruct->IsObjectGroupEnabled &&
-		    !g_pGLStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup)) { ++nGroupOff; continue; }
+		if (g_pRenderStruct && g_pRenderStruct->IsObjectGroupEnabled &&
+		    !g_pRenderStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup)) { ++nGroupOff; continue; }
 		if (pInstance->m_Flags & FLAG_REALLYCLOSE)
 			continue;
 		if (!pInstance->GetModelDB()) { ++nNoDB; continue; }
 		++nDrawn;
-		glm_DrawModelInstance(pInstance, bLog);
+		rm_DrawModelInstance(pInstance, bLog);
 	}
 	if (bLog)
 		fprintf(stderr, "[glm] OT_MODEL: %u total, %u drawn | skipped: %u !VISIBLE, "
 		                "%u render-group off, %u no model DB\n",
 		        nTot, nDrawn, nInvisible, nGroupOff, nNoDB);
 
-	glDisable(GL_TEXTURE_2D);
-	glDisable(GL_ALPHA_TEST);
 }
 
 // ---------------------------------------------------------------------------
@@ -1965,7 +2073,7 @@ void GLModel_DrawModels(float fAspect)
 // everything. That is exactly what happened to the water: the translucent
 // polygrid pass ran after this one and the river floated over the entire level --
 // while cinematics, which draw no player-view weapon and so never clear, looked
-// correct. Split out of GLModel_DrawModels for that reason (2026-07-25).
+// correct. Split out of RModel_DrawModels for that reason (2026-07-25).
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // ★★ ATTACHMENT TRANSFORMS, FOR EVERY OBJECT TYPE.
@@ -1991,22 +2099,22 @@ void GLModel_DrawModels(float fAspect)
 // Recursion mirrors d3d_ProcessAttachments, including its depth cap: an
 // attachment chain can nest (parent -> child -> grandchild).
 // ---------------------------------------------------------------------------
-static void glm_ProcessAttachmentsRecurse(LTObject *pObject, uint32 nDepth)
+static void rm_ProcessAttachmentsRecurse(LTObject *pObject, uint32 nDepth)
 {
 	if (!pObject || nDepth >= 32)      // d3d asserts depth < 32; just stop.
 		return;
 
 	for (Attachment *pAtt = pObject->m_Attachments; pAtt; pAtt = pAtt->m_pNext)
 	{
-		LTObject *pChild = g_pGLStruct->ProcessAttachment(pObject, pAtt);
+		LTObject *pChild = g_pRenderStruct->ProcessAttachment(pObject, pAtt);
 		if (pChild)
-			glm_ProcessAttachmentsRecurse(pChild, nDepth + 1);
+			rm_ProcessAttachmentsRecurse(pChild, nDepth + 1);
 	}
 }
 
-void GLModel_ProcessAttachments(void)
+void RModel_ProcessAttachments(void)
 {
-	if (!g_pClientMgr || !g_pGLStruct || !g_pGLStruct->ProcessAttachment)
+	if (!g_pClientMgr || !g_pRenderStruct || !g_pRenderStruct->ProcessAttachment)
 		return;
 
 	// Every object type, not just models — that is the whole point of this pass.
@@ -2017,12 +2125,12 @@ void GLModel_ProcessAttachments(void)
 		{
 			LTObject *pObject = (LTObject*)pCur->m_pData;
 			if (pObject && pObject->m_Attachments)
-				glm_ProcessAttachmentsRecurse(pObject, 0);
+				rm_ProcessAttachmentsRecurse(pObject, 0);
 		}
 	}
 }
 
-void GLModel_DrawPlayerView(float fAspect)
+void RModel_DrawPlayerView(float fAspect)
 {
 	if (!g_pClientMgr)
 		return;
@@ -2042,13 +2150,13 @@ void GLModel_DrawPlayerView(float fAspect)
 	for (LTLink *pCur = pHead->m_pNext; pCur != pHead; pCur = pCur->m_pNext)
 	{
 		ModelInstance *pInstance = (ModelInstance*)pCur->m_pData;
-		if (!glm_IsDrawable(pInstance) || !(pInstance->m_Flags & FLAG_REALLYCLOSE))
+		if (!rm_IsDrawable(pInstance) || !(pInstance->m_Flags & FLAG_REALLYCLOSE))
 			continue;
 
 		// A holstered weapon (or any PV model that failed to load) is bound to
 		// the engine placeholder; drawing it whites out the screen. See
-		// glm_IsPlaceholderModel.
-		if (glm_IsPlaceholderModel(pInstance))
+		// rm_IsPlaceholderModel.
+		if (rm_IsPlaceholderModel(pInstance))
 		{
 			static bool s_bSaid = false;
 			if (!s_bSaid)
@@ -2071,33 +2179,26 @@ void GLModel_DrawPlayerView(float fAspect)
 			float fTop   = fNear * tanf(fFovY * 0.5f);
 			float fRight = fTop * ((fAspect > 0.01f) ? fAspect : 1.333f);
 
-			glMatrixMode(GL_PROJECTION);
-			glPushMatrix();
-			glLoadIdentity();
-			glFrustum(-fRight, fRight, -fTop, fTop, fNear, fFar);
-
-			// Camera space -> GL eye space. The engine is left-handed (+Z
-			// forward), GL looks down -Z, so the only transform needed is a Z
-			// flip -- the same LH->RH convention as the scene view matrix.
-			static const float kFlipZ[16] =
+			// ★ THE PLAYER-VIEW SETUP: its own narrow projection, the LH->RH z
+			// flip as the view (the engine is left-handed, +Z forward), a depth
+			// range squeezed into the front tenth of the buffer (d3d sets the
+			// viewport MinZ/MaxZ to 0..0.1 for exactly this), and a DEPTH-ONLY
+			// clear so the weapon can never be clipped by the world.
+			// ⚠️ Colour must NOT be cleared -- the world is already in the frame
+			// buffer.
 			{
-				1.0f, 0.0f,  0.0f, 0.0f,
-				0.0f, 1.0f,  0.0f, 0.0f,
-				0.0f, 0.0f, -1.0f, 0.0f,
-				0.0f, 0.0f,  0.0f, 1.0f
-			};
-			glMatrixMode(GL_MODELVIEW);
-			glPushMatrix();
-			glLoadMatrixf(kFlipZ);
-
-			// Keep the gun in the front tenth of the depth buffer (d3d sets the
-			// viewport MinZ/MaxZ to 0..0.1 for exactly this).
-			glDepthRange(0.0, 0.1);
-			glClear(GL_DEPTH_BUFFER_BIT);
+				float aProj[16], aFlipZ[16];
+				mtl_Frustum(aProj, fRight, fTop, fNear, fFar);
+				mtl_Identity(aFlipZ);
+				aFlipZ[10] = -1.0f;
+				MTLModel_SetTransform(aFlipZ, aProj);
+				MTLDev_SetDepthRange(0.0f, 0.1f);
+				MTLDev_Clear(false, true, 0.0f, 0.0f, 0.0f, 1.0f);
+			}
 		}
 
 		// LT_TRACE_PV=1: collect the player-view set; reported below ON CHANGE.
-		if (glm_TracePV())
+		if (rm_TracePV())
 		{
 			Model *pMD = pInstance->GetModelDB();
 			const char *pszName = (pMD && pMD->GetFilename()) ? pMD->GetFilename() : "<null>";
@@ -2121,8 +2222,8 @@ void GLModel_DrawPlayerView(float fAspect)
 				CRenderStyle *pRS = LTNULL;
 				if (pPc)
 					pInstance->GetRenderStyle((uint32)pPc->m_iRenderStyle, &pRS);
-				GLRenderStyleState cSt;
-				bool bHaveSt = GLRenderStyle_GetState(pRS, 0, &cSt);
+				RRenderStyleState cSt;
+				bool bHaveSt = RRenderStyle_GetState(pRS, 0, &cSt);
 				snprintf(szLine, sizeof(szLine),
 				         "      piece %u %-9s prio=%u style=%-24s blend=%d aTest=%d texAlpha=%d\n",
 				         nP, pInstance->IsPieceHidden(nP) ? "HIDDEN" : "shown",
@@ -2134,12 +2235,12 @@ void GLModel_DrawPlayerView(float fAspect)
 			}
 		}
 
-		glm_DrawModelInstance(pInstance, bLog);
+		rm_DrawModelInstance(pInstance, bLog);
 	}
 
 	// ⚠️ Report on CHANGE, not per frame: this runs every frame and the
 	// interesting event is the weapon SWITCHING. A per-frame dump would bury it.
-	if (glm_TracePV())
+	if (rm_TracePV())
 	{
 		static std::string s_sLastPVSet = "\x01";   // sentinel: never equal to a real set
 		if (sPVSet != s_sLastPVSet)
@@ -2162,18 +2263,12 @@ void GLModel_DrawPlayerView(float fAspect)
 		// when a player-view MODEL was drawn. Every PV effect in the retail
 		// data attaches to the PV weapon, so the model is always there — but a
 		// standalone PV particle system with no PV model would not draw.
-		GLParticle_DrawPlayerView();
-		GLSprite_DrawPlayerView();
+		RParticle_DrawPlayerView();
+		RSprite_DrawPlayerView();
 
-		glDepthRange(0.0, 1.0);
-		glMatrixMode(GL_PROJECTION);
-		glPopMatrix();
-		glMatrixMode(GL_MODELVIEW);
-		glPopMatrix();
+		MTLDev_SetDepthRange(0.0f, 1.0f);
 	}
 
-	glDisable(GL_TEXTURE_2D);
-	glDisable(GL_ALPHA_TEST);
 }
 
 // ---------------------------------------------------------------------------
@@ -2189,7 +2284,7 @@ void GLModel_DrawPlayerView(float fAspect)
 static inline double vPosCheckSafe(float f) { return (double)f; }
 
 
-void GLSprite_SetCamera(const LTVector &vRight, const LTVector &vUp,
+void RSprite_SetCamera(const LTVector &vRight, const LTVector &vUp,
                         const LTVector &vForward, const LTVector &vPos)
 {
 	g_vSprCamRight = vRight;
@@ -2198,39 +2293,42 @@ void GLSprite_SetCamera(const LTVector &vRight, const LTVector &vUp,
 	g_vSprCamPos   = vPos;
 }
 
-// Shared GL state for a run of sprites. Split out of GLSprite_DrawSprites so the
+// Shared GL state for a run of sprites. Split out of RSprite_DrawSprites so the
 // object-list (interface) pass can draw sprites through the same code.
-static void gls_BeginSprites()
+// NoZ (lamp-halo) census: how many exist, and how many survived the occlusion
+// test. ⚠️ This is the ONLY visible difference between the GL depth-buffer
+// readback and Metal's flatten-to-centre-depth equivalent, so it is the number
+// to compare between backends.
+static uint32 g_nSprNoZ = 0, g_nSprNoZDrawn = 0;
+
+static void rspr_BeginSprites()
 {
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);          // translucent: test but don't write
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_ALPHA_TEST);
-	glActiveTexture(GL_TEXTURE1);
-	glDisable(GL_TEXTURE_2D);
-	glActiveTexture(GL_TEXTURE0);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glEnable(GL_BLEND);
+	// Every one of these is a per-draw parameter carried by REmitState, so
+	// there is no ambient state left to set here.
 }
 
 // Draw ONE sprite instance. Returns true if it actually issued geometry.
-// Assumes gls_BeginSprites() has run.
-static bool gls_DrawSpriteInstance(SpriteInstance *pInstance, bool bLog, bool bPlayerView)
+// Assumes rspr_BeginSprites() has run.
+static bool rspr_DrawSpriteInstance(SpriteInstance *pInstance, bool bLog, bool bPlayerView)
 {
 	{
 		if (!pInstance)
 			return false;
 		if (!(pInstance->m_Flags & FLAG_VISIBLE))
 			return false;
-		if (g_pGLStruct && g_pGLStruct->IsObjectGroupEnabled &&
-		    !g_pGLStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup))
+		if (g_pRenderStruct && g_pRenderStruct->IsObjectGroupEnabled &&
+		    !g_pRenderStruct->IsObjectGroupEnabled(pInstance->m_nRenderGroup))
 			return false;
 
 		SpriteEntry *pFrame = pInstance->m_SpriteTracker.m_pCurFrame;
 		SharedTexture *pTex = pFrame ? pFrame->m_pTex : 0;
-		GLuint nName = pTex ? GLTex_GetName(pTex) : 0;
+		// ⚠️ Through the NEUTRAL queries: GLTex_* would reinterpret the Metal
+		// entry and hand back a garbage name with zero dimensions, which this
+		// very guard then turns into "sprite not drawn" (see render_texture.h).
+		const bool bTexOk = RTex_IsValid(pTex);
+		const unsigned nName = bTexOk ? 1u : 0u;   // diagnostics only
 		uint32 nTexW = 0, nTexH = 0;
-		if (!nName || !GLTex_GetDims(pTex, nTexW, nTexH))
+		if (!bTexOk || !RTex_GetDims(pTex, nTexW, nTexH))
 		{
 			if (bLog)
 				fprintf(stderr, "[gls] sprite @(%.0f %.0f %.0f) NOT drawn: sprite=%p anim=%p frame=%p tex=%p gl=%u\n",
@@ -2262,68 +2360,32 @@ static bool gls_DrawSpriteInstance(SpriteInstance *pInstance, bool bLog, bool bP
 			fSizeY *= fFactor;
 		}
 
-		if (pInstance->m_Flags2 & FLAG2_ADDITIVE)
-			glBlendFunc(GL_ONE, GL_ONE);
-		else
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		REmitState cSprite;
+		cSprite.m_pTexture   = pTex;
+		cSprite.m_bZWrite    = false;   // translucent: test but do not write
+		cSprite.m_bBlend     = true;
+		cSprite.m_nSrcBlend  = (pInstance->m_Flags2 & FLAG2_ADDITIVE) ? kRBlend_One : kRBlend_SrcAlpha;
+		cSprite.m_nDstBlend  = (pInstance->m_Flags2 & FLAG2_ADDITIVE) ? kRBlend_One : kRBlend_InvSrcAlpha;
+
 		// Fog for a translucent object follows its blend mode, not the scene
-		// (additive -> black fog, multiply -> white); see GLWorld_ApplyObjectFog.
-		GLWorld_ApplyObjectFog(pInstance->m_Flags, pInstance->m_Flags2);
+		// (additive -> black fog, multiply -> white); see RWorld_ApplyObjectFog.
+		RWorld_ApplyObjectFog(pInstance->m_Flags, pInstance->m_Flags2);
+		if (pInstance->m_Flags & FLAG_SPRITE_NOZ)
+			++g_nSprNoZ;
+
 		if (pInstance->m_Flags & FLAG_SPRITE_NOZ)
 		{
-			// ★ NoZ sprites (lamp halos) must still be OCCLUDED BY WALLS.
-			// D3D never z-tested them either -- but it only drew sprites the
-			// BSP VISIBILITY system had put in the visible set, so a halo
-			// behind a wall was culled before the z-question arose. We draw
-			// brute-force with no vis system, so without a substitute every
-			// lamp glow in the level shines through every building (the
-			// "lightbulbs visible through walls" playtest report). Substitute:
-			// depth-test the sprite's CENTER against the depth buffer -- if the
-			// world occludes that point, skip the sprite entirely; if not, draw
-			// it with depth OFF so it still glows over its own lamp model.
-			// (One 1x1 depth readback per NoZ sprite per frame; a handful of
-			// sprites in practice. Revisit only if a level has hundreds.)
-			GLdouble aModel[16], aProj[16];
-			GLint    aView[4];
-			glGetDoublev(GL_MODELVIEW_MATRIX, aModel);
-			glGetDoublev(GL_PROJECTION_MATRIX, aProj);
-			glGetIntegerv(GL_VIEWPORT, aView);
-
-			// Manual gluProject (GLU is deprecated on macOS).
-			double dObj[4] = { vPosCheckSafe(pInstance->m_Pos.x), (double)pInstance->m_Pos.y, (double)pInstance->m_Pos.z, 1.0 };
-			double dEye[4], dClip[4];
-			for (int r = 0; r < 4; ++r)
-				dEye[r] = aModel[0*4+r]*dObj[0] + aModel[1*4+r]*dObj[1] + aModel[2*4+r]*dObj[2] + aModel[3*4+r]*1.0;
-			for (int r = 0; r < 4; ++r)
-				dClip[r] = aProj[0*4+r]*dEye[0] + aProj[1*4+r]*dEye[1] + aProj[2*4+r]*dEye[2] + aProj[3*4+r]*dEye[3];
-			if (dClip[3] <= 0.0)
-				return false;
-			double dNdcX = dClip[0] / dClip[3], dNdcY = dClip[1] / dClip[3], dNdcZ = dClip[2] / dClip[3];
-			int nWinX = aView[0] + (int)((dNdcX * 0.5 + 0.5) * (double)aView[2]);
-			int nWinY = aView[1] + (int)((dNdcY * 0.5 + 0.5) * (double)aView[3]);
-			float fSpriteDepth = (float)(dNdcZ * 0.5 + 0.5);
-
-			if (nWinX >= aView[0] && nWinX < aView[0] + aView[2] &&
-			    nWinY >= aView[1] && nWinY < aView[1] + aView[3])
-			{
-				float fSceneDepth = 1.0f;
-				glReadPixels(nWinX, nWinY, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &fSceneDepth);
-				// Generous bias: the halo sits ON the lamp geometry, which is
-				// exactly the surface in the depth buffer at that pixel.
-				if (fSceneDepth < fSpriteDepth - 0.002f)
-					return false;                        // occluded by the world
-			}
-			glDisable(GL_DEPTH_TEST);
+			// See REmitState::m_bFlattenDepth: the depth unit performs the
+			// occlusion test the GL branch below does with a depth readback.
+			float fNDCz = 0.0f;
+			if (!MTLModel_ProjectDepth(pInstance->m_Pos.x, pInstance->m_Pos.y,
+			                           pInstance->m_Pos.z, &fNDCz))
+				return false;                       // behind the near plane
+			cSprite.m_bFlattenDepth = true;
+			cSprite.m_fFlatNDCz     = fNDCz - 0.002f;   // the GL probe's bias
+			cSprite.m_bZTest        = true;
 		}
-		else
-			glEnable(GL_DEPTH_TEST);
 
-		glEnable(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, nName);
-		glColor4f(pInstance->m_ColorR * (1.0f / 255.0f),
-		          pInstance->m_ColorG * (1.0f / 255.0f),
-		          pInstance->m_ColorB * (1.0f / 255.0f),
-		          pInstance->m_ColorA * (1.0f / 255.0f));
 
 		const LTVector &vPos = pInstance->m_Pos;
 		// ★ A player-view sprite is already in CAMERA space, so the camera's
@@ -2334,16 +2396,34 @@ static bool gls_DrawSpriteInstance(SpriteInstance *pInstance, bool bLog, bool bP
 		LTVector vRight = (bPlayerView ? LTVector(1.0f, 0.0f, 0.0f) : g_vSprCamRight) * fSizeX;
 		LTVector vUp    = (bPlayerView ? LTVector(0.0f, 1.0f, 0.0f) : g_vSprCamUp)    * fSizeY;
 
-		glBegin(GL_QUADS);
-		glTexCoord2f(0.0f, 0.0f);
-		glVertex3f(vPos.x + vUp.x - vRight.x, vPos.y + vUp.y - vRight.y, vPos.z + vUp.z - vRight.z);
-		glTexCoord2f(1.0f, 0.0f);
-		glVertex3f(vPos.x + vUp.x + vRight.x, vPos.y + vUp.y + vRight.y, vPos.z + vUp.z + vRight.z);
-		glTexCoord2f(1.0f, 1.0f);
-		glVertex3f(vPos.x - vUp.x + vRight.x, vPos.y - vUp.y + vRight.y, vPos.z - vUp.z + vRight.z);
-		glTexCoord2f(0.0f, 1.0f);
-		glVertex3f(vPos.x - vUp.x - vRight.x, vPos.y - vUp.y - vRight.y, vPos.z - vUp.z - vRight.z);
-		glEnd();
+		if (pInstance->m_Flags & FLAG_SPRITE_NOZ)
+			++g_nSprNoZDrawn;
+
+		{
+			// The same four corners, expanded to two triangles (Metal has no
+			// GL_QUADS) in the same winding -- (0,1,2)(0,2,3).
+			const float aCorner[4][2] = { { -1.0f, +1.0f }, { +1.0f, +1.0f },
+			                              { +1.0f, -1.0f }, { -1.0f, -1.0f } };
+			const float aUV[4][2] = { { 0,0 }, { 1,0 }, { 1,1 }, { 0,1 } };
+			MTLModelVert aQuad[4];
+			for (int i = 0; i < 4; ++i)
+			{
+				aQuad[i].x = vPos.x + vUp.x * aCorner[i][1] + vRight.x * aCorner[i][0];
+				aQuad[i].y = vPos.y + vUp.y * aCorner[i][1] + vRight.y * aCorner[i][0];
+				aQuad[i].z = vPos.z + vUp.z * aCorner[i][1] + vRight.z * aCorner[i][0];
+				aQuad[i].u = aUV[i][0];
+				aQuad[i].v = aUV[i][1];
+				aQuad[i].r = pInstance->m_ColorR;
+				aQuad[i].g = pInstance->m_ColorG;
+				aQuad[i].b = pInstance->m_ColorB;
+				aQuad[i].a = pInstance->m_ColorA;
+			}
+			static const int kTri[6] = { 0, 1, 2, 0, 2, 3 };
+			MTLModelVert aTris[6];
+			for (int i = 0; i < 6; ++i)
+				aTris[i] = aQuad[kTri[i]];
+			MTLModel_DrawTris(aTris, 6, &cSprite);
+		}
 
 		if (bLog)
 			fprintf(stderr, "[gls] sprite @(%.0f %.0f %.0f) scale=(%.2f %.2f) tex=%ux%u flags=0x%x"
@@ -2357,31 +2437,28 @@ static bool gls_DrawSpriteInstance(SpriteInstance *pInstance, bool bLog, bool bP
 }
 
 // Restore the state the rest of the scene assumes after a run of sprites.
-static void gls_EndSprites()
+static void rspr_EndSprites()
 {
-	GLWorld_RestoreSceneFog();   // undo the per-sprite fog colour/enable
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
-	glEnable(GL_DEPTH_TEST);
-	glDisable(GL_TEXTURE_2D);
+	RWorld_RestoreSceneFog();   // undo the per-sprite fog colour/enable
 }
 
 // Shared body. bPlayerView selects WHICH set: the world-space sprites or the
 // FLAG_REALLYCLOSE (player-view) ones. They are in different spaces under
 // different projections and cannot be drawn together.
-static void gls_DrawPass(bool bPlayerView)
+static void rspr_DrawPass(bool bPlayerView)
 {
 	if (!g_pClientMgr)
 		return;
 
 	static bool s_bLogged = false;
-	bool bLog = !s_bLogged || g_bGLTraceUIFrame;
+	bool bLog = !s_bLogged || g_bRTraceUIFrame;
 	if (!bPlayerView)
 		s_bLogged = true;
 
 	uint32 nTotal = 0, nDrawn = 0;
+	g_nSprNoZ = 0; g_nSprNoZDrawn = 0;
 
-	gls_BeginSprites();
+	rspr_BeginSprites();
 
 	LTLink *pHead = &g_pClientMgr->m_ObjectMgr.m_ObjectLists[OT_SPRITE].m_Head;
 	for (LTLink *pCur = pHead->m_pNext; pCur != pHead; pCur = pCur->m_pNext)
@@ -2393,28 +2470,47 @@ static void gls_DrawPass(bool bPlayerView)
 		if (((pInstance->m_Flags & FLAG_REALLYCLOSE) != 0) != bPlayerView)
 			continue;
 		++nTotal;
-		if (gls_DrawSpriteInstance(pInstance, bLog, bPlayerView))
+		if (rspr_DrawSpriteInstance(pInstance, bLog, bPlayerView))
 			++nDrawn;
 	}
 
-	if (bLog && (nTotal || !bPlayerView))
+	// ⚠️ REPORT ON CHANGE, not once. The one-shot version fired on the first
+	// frame -- before any world exists -- so it only ever described an empty
+	// scene, which is the §28/§70 trap ("a diagnostic that can only fire once
+	// lies"). The counts are a property of the frame, so key on them.
+	static int s_nTraceSprites = -1;
+	if (s_nTraceSprites < 0) s_nTraceSprites = getenv("LT_TRACE_SPRITES") ? 1 : 0;
+	if (s_nTraceSprites)
+	{
+		static uint32 s_aLast[2][2] = { { 0xFFFFFFFFu, 0xFFFFFFFFu },
+		                                { 0xFFFFFFFFu, 0xFFFFFFFFu } };
+		const int nSet = bPlayerView ? 1 : 0;
+		if (s_aLast[nSet][0] != nTotal || s_aLast[nSet][1] != nDrawn)
+		{
+			s_aLast[nSet][0] = nTotal; s_aLast[nSet][1] = nDrawn;
+			fprintf(stderr, "[gls] %u %s sprites (%u drawn) | NoZ %u (%u survived occlusion)\n",
+			        nTotal, bPlayerView ? "player-view" : "world", nDrawn,
+			        g_nSprNoZ, g_nSprNoZDrawn);
+		}
+	}
+	else if (bLog && (nTotal || !bPlayerView))
 		fprintf(stderr, "[gls] %u %s sprites (%u drawn)\n", nTotal,
 		        bPlayerView ? "player-view" : "world", nDrawn);
 
-	gls_EndSprites();
+	rspr_EndSprites();
 }
 
-void GLSprite_DrawSprites()
+void RSprite_DrawSprites()
 {
-	gls_DrawPass(false);
+	rspr_DrawPass(false);
 }
 
 // ⚠️ Call from INSIDE the player-view pass, while its projection/view are
 // installed. These sprites are in camera space; drawn in the world pass they
 // are culled or land nowhere — that was the welder's missing flame.
-void GLSprite_DrawPlayerView()
+void RSprite_DrawPlayerView()
 {
-	gls_DrawPass(true);
+	rspr_DrawPass(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -2433,43 +2529,25 @@ void GLSprite_DrawPlayerView()
 // environment lighting -- all of which is gated on `g_have_world`
 // (setupmodel.cpp:374/:413) -- contributes nothing to them.
 // ---------------------------------------------------------------------------
-void GLObjectList_Draw(LTObject **ppObjects, int nCount)
+void RObjectList_Draw(LTObject **ppObjects, int nCount)
 {
 	if (!ppObjects || nCount <= 0)
 		return;
 
-	const bool bLog = g_bGLTraceUIFrame;
+	const bool bLog = g_bRTraceUIFrame;
 	if (bLog)
 	{
-		GLboolean bFog = GL_FALSE, bBlend = GL_FALSE, bLight = GL_FALSE, bTex = GL_FALSE;
-		GLfloat aFogColor[4] = {0,0,0,0}, aCurColor[4] = {0,0,0,0};
-		GLfloat fFogStart = 0, fFogEnd = 0;
-		GLint nDepthFunc = 0, nTexEnv = 0;
-		glGetBooleanv(GL_FOG, &bFog);
-		glGetBooleanv(GL_BLEND, &bBlend);
-		glGetBooleanv(GL_LIGHTING, &bLight);
-		glGetBooleanv(GL_TEXTURE_2D, &bTex);
-		glGetFloatv(GL_FOG_COLOR, aFogColor);
-		glGetFloatv(GL_FOG_START, &fFogStart);
-		glGetFloatv(GL_FOG_END, &fFogEnd);
-		glGetFloatv(GL_CURRENT_COLOR, aCurColor);
-		glGetIntegerv(GL_DEPTH_FUNC, &nDepthFunc);
-		glGetIntegerv(GL_TEXTURE_ENV_MODE, &nTexEnv);
-		fprintf(stderr, "[ui] object-list pass: %d objects | GL fog=%d color=(%.2f %.2f %.2f) "
-		                "range=%.0f..%.0f | blend=%d lighting=%d tex2d=%d depthfunc=0x%x "
-		                "curcolor=(%.2f %.2f %.2f %.2f) texenv=0x%x\n",
-		        nCount, (int)bFog, aFogColor[0], aFogColor[1], aFogColor[2],
-		        fFogStart, fFogEnd, (int)bBlend, (int)bLight, (int)bTex, nDepthFunc,
-		        aCurColor[0], aCurColor[1], aCurColor[2], aCurColor[3], nTexEnv);
+		// ⚠️ This used to dump the AMBIENT GL state (fog, blend, lighting,
+		// texenv…) because under fixed-function that state was the whole
+		// answer to "why does the menu look like this". There is no ambient
+		// state to read now -- every one of those is a per-draw parameter in
+		// REmitState -- so the useful census is the object count plus the
+		// per-object [ui] lines rm_DrawModelInstance already prints.
+		fprintf(stderr, "[ui] object-list pass: %d objects\n", nCount);
 	}
 
 	// --- Models.
-	glEnable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glAlphaFunc(GL_GREATER, 0.5f);
-
-	g_bGLInterfacePass = true;
+	g_bRInterfacePass = true;
 	for (int n = 0; n < nCount; ++n)
 	{
 		LTObject *pObject = ppObjects[n];
@@ -2478,12 +2556,9 @@ void GLObjectList_Draw(LTObject **ppObjects, int nCount)
 		ModelInstance *pInstance = (ModelInstance*)pObject;
 		if (!(pInstance->m_Flags & FLAG_VISIBLE) || !pInstance->GetModelDB())
 			continue;
-		glm_DrawModelInstance(pInstance, bLog);
+		rm_DrawModelInstance(pInstance, bLog);
 	}
-	g_bGLInterfacePass = false;
-
-	glDisable(GL_TEXTURE_2D);
-	glDisable(GL_ALPHA_TEST);
+	g_bRInterfacePass = false;
 
 	// --- Sprites (the menu backdrop and the title art are OT_SPRITE).
 	bool bAnySprite = false;
@@ -2496,15 +2571,15 @@ void GLObjectList_Draw(LTObject **ppObjects, int nCount)
 		if (!bAnySprite)
 		{
 			bAnySprite = true;
-			gls_BeginSprites();
+			rspr_BeginSprites();
 		}
 		// The interface pass names its objects explicitly and renders them with
 		// the interface camera, so the world billboard basis is the right one.
-		if (gls_DrawSpriteInstance((SpriteInstance*)pObject, bLog, false))
+		if (rspr_DrawSpriteInstance((SpriteInstance*)pObject, bLog, false))
 			++nSprites;
 	}
 	if (bAnySprite)
-		gls_EndSprites();
+		rspr_EndSprites();
 
 	if (bLog)
 		fprintf(stderr, "[ui] object-list pass: %u sprites drawn\n", nSprites);
