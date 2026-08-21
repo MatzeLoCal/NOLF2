@@ -107,6 +107,14 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
                                                     defer:NO];
         [g_pWindow setTitle:[NSString stringWithUTF8String:(pTitle ? pTitle : "Lithtech")]];
         [g_pWindow setDelegate:[[LTWindowDelegate alloc] init]];
+        // ⚠️ WITHOUT THIS THE MOUSE DOES NOTHING. NSWindow defaults
+        // acceptsMouseMovedEvents to NO, so NSEventTypeMouseMoved is never
+        // delivered and LTMacInput_HandleEvent only ever sees the DRAGGED
+        // variants (motion with a button held). Look/turn and the menu cursor
+        // both run off those deltas, so the game reads as "keyboard works,
+        // mouse is dead" -- while a click-and-drag still moves the view, which
+        // is the tell.
+        [g_pWindow setAcceptsMouseMovedEvents:YES];
         if (fullscreen) {
             [g_pWindow setFrameOrigin:screenFrame.origin];
             // Deliberately NOT raised above NSMainMenuWindowLevel: a borderless
