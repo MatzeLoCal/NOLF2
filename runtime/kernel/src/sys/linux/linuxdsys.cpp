@@ -519,6 +519,31 @@ void dsi_PrintToConsole(const char *pMsg, ...) {
     va_list marker;
     char msg[1000];
 
+    // ⚠️ ORIGINAL BEHAVIOUR: this printed ONLY when a dedicated-server app handler
+    // was installed. On the CLIENT there is no app handler, so every
+    // dsi_ConsolePrint() in the engine was a SILENT NO-OP — including the entire
+    // UDPDebug family in udpdriver.cpp (levels 1-3, the driver's own packet-level
+    // tracing) and the netmgr/driver error paths.
+    //
+    // That matters because the silence is indistinguishable from "the code never
+    // ran". During the multiplayer work a run with +UDPDebug 2 produced an empty
+    // log, which reads as "no packets" but actually meant "the printer is
+    // disconnected". LT_TRACE_CONSOLE=1 mirrors console output to stdout so the
+    // engine's own diagnostics — which are extensive and cost nothing — become
+    // usable on this port. Off by default: retail prints none of this.
+    static int s_nTraceConsole = -1;
+    if (s_nTraceConsole < 0)
+        s_nTraceConsole = getenv("LT_TRACE_CONSOLE") ? 1 : 0;
+
+    if (s_nTraceConsole) {
+        va_start(marker, pMsg);
+        vsnprintf(msg, sizeof(msg), pMsg, marker);
+        va_end(marker);
+
+        printf("[con] %s\n", msg);
+        fflush(stdout);
+    }
+
     if (g_pServerMgr && g_pServerMgr->m_pServerAppHandler) {
         va_start(marker, pMsg);
         vsnprintf(msg, 999, pMsg, marker);

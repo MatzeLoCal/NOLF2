@@ -80,7 +80,7 @@ void CLTGUIWindow::Render ( )
 // Returns the height
 uint16 CLTGUIWindow::GetHeight ( )
 {
-	return (uint16) ((float)m_nHeight * m_fScale);
+	return (uint16) ((float)m_nHeight * GetYScale());   // a HEIGHT scales by YRatio
 }
 
 // Returns the width

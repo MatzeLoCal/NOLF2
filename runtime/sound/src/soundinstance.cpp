@@ -689,7 +689,11 @@ LTRESULT CSoundInstance::Acquire3DSample( )
 	{
 		m_h3DSample = GetClientILTSoundMgrImpl()->GetFree3DSample( this );
 		if( !m_h3DSample )
+		{
+			if ( getenv( "LT_TRACE_CHANNEL" ) )
+				fprintf( stderr, "[chan]   Acquire3DSample: GetFree3DSample() == NULL (pool exhausted)\n" );
 			return LT_ERROR;
+		}
 	}
 
 	// get the playback rate including any pitch-shifting
@@ -729,6 +733,11 @@ LTRESULT CSoundInstance::Acquire3DSample( )
 		{
 			if( !GetSoundSys()->Init3DSampleFromFile( m_h3DSample, m_pSoundBuffer->GetFileData( ), 0, nPlayBackRate, pFilterData ))
 			{
+				if ( getenv( "LT_TRACE_CHANNEL" ) )
+					fprintf( stderr, "[chan]   Acquire3DSample: Init3DSampleFromFile() FAILED"
+					                 " (compressed=%d decompressed=%p)\n",
+					         (int)m_pSoundBuffer->IsCompressed( ),
+					         (void *)m_pSoundBuffer->GetDecompressedSoundBuffer( ) );
 				GetClientILTSoundMgrImpl()->Release3DSample( m_h3DSample );
 				m_h3DSample = LTNULL;
 				return LT_ERROR;

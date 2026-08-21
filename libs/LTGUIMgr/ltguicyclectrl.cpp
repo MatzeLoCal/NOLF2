@@ -271,7 +271,7 @@ LTBOOL CLTGUICycleCtrl::SetFont(CUIFont *pFont, uint8 nFontSize)
 		bApply = LTTRUE;
 	}
 
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 
 	if (bApply)
 	{
@@ -371,7 +371,7 @@ void CLTGUICycleCtrl::SetBasePos ( LTIntPt pos )
 void CLTGUICycleCtrl::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 
 	if (m_pHeaderText)
 	{

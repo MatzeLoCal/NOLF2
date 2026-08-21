@@ -1290,12 +1290,55 @@ CSoundInstance *CSoundMgr::FindSoundInstance(HLTSOUND hSound, bool bClientSound)
 }
 
 
+// ★★ macOS port instrument (LT_TRACE_CHANNEL=1). See the call sites in
+// CSoundMgr::Update()'s channel-assignment loop: every reason an in-earshot
+// sound is denied a voice is a bare `continue`, and this names which one fired.
+// Deduped on (instance, reason) so a gate that re-fires every frame prints once.
+static void ChannelSkipTrace( CSoundInstance *pInst, const char *pszReason )
+{
+	static int s_nTrace = -1;
+	if ( s_nTrace < 0 )
+		s_nTrace = getenv( "LT_TRACE_CHANNEL" ) ? 1 : 0;
+	if ( !pInst )
+		return;
+
+	const FileIdentifier *pIdent = pInst->GetSoundBuffer( ) ? pInst->GetSoundBuffer( )->GetFileIdent( ) : NULL;
+	const bool bWatched = pIdent && snd_Watch( pIdent->m_Filename );
+	if ( !s_nTrace && !bWatched )
+		return;
+
+	struct Seen { CSoundInstance *m_pInst; const char *m_pszReason; };
+	static Seen  s_aSeen[64];
+	static uint32 s_nSeen = 0;
+
+	for ( uint32 n = 0; n < s_nSeen; n++ )
+	{
+		if ( s_aSeen[n].m_pInst == pInst && s_aSeen[n].m_pszReason == pszReason )
+			return;
+	}
+	if ( s_nSeen < 64 )
+	{
+		s_aSeen[s_nSeen].m_pInst    = pInst;
+		s_aSeen[s_nSeen].m_pszReason = pszReason;
+		s_nSeen++;
+	}
+
+	const char *pszName = ( pIdent && pIdent->m_Filename ) ? pIdent->m_Filename : "(no buffer)";
+
+	fprintf( stderr, "[chan] %-6s %-34s : %s  (timer=%u dur=%u type=%d flags=0x%x)\n",
+	         ( strncmp( pszReason, "GRANTED", 7 ) == 0 ) ? "ok" : "DENIED",
+	         pszName, pszReason,
+	         (unsigned)pInst->GetTimer( ), (unsigned)pInst->GetDuration( ),
+	         (int)pInst->GetType( ), (unsigned)pInst->GetPlaySoundFlags( ) );
+}
+
+
 //----------------------------------------------------------------------------------------------
 //
 //  CSoundMgr::Update()
 //
 //  Updates the sounds
-// 
+//
 //----------------------------------------------------------------------------------------------
 LTRESULT CSoundMgr::Update()
 {
@@ -1466,7 +1509,7 @@ LTRESULT CSoundMgr::Update()
 
         if (pSoundInstance->GetSoundInstanceFlags() & SOUNDINSTANCEFLAG_DONE)
             continue;
-        
+
         if (!(pSoundInstance->GetSoundInstanceFlags() & SOUNDINSTANCEFLAG_EARSHOT))
             continue;
 
@@ -1474,36 +1517,68 @@ LTRESULT CSoundMgr::Update()
         if (pSoundInstance->GetSample() || pSoundInstance->Get3DSample() || pSoundInstance->GetStream())
             continue;
 
+        // ★★ LT_TRACE_CHANNEL=1 — WHY AN IN-EARSHOT SOUND NEVER GETS A VOICE.
+        //
+        // `earshot=N with-channel=N-1` says an instance wants to be heard and is
+        // not. Every reason for that is a bare `continue` below, so from outside
+        // they are indistinguishable. This names the gate that fired, per file,
+        // deduped so a per-frame retry does not flood the log.
+        #define LT_CHTRACE(reason)  ChannelSkipTrace( pSoundInstance, (reason) )
+
         if (!pSoundInstance->GetSoundBuffer())
+        {
+            LT_CHTRACE("no sound buffer");
             continue;
+        }
 
         // Check if there's an initial delay.
         if (pSoundInstance->GetTimer() > pSoundInstance->GetDuration())
+        {
+            LT_CHTRACE("pre-delay (timer > duration)");
             continue;
+        }
 
         // Make sure there aren't other instances of the same buffer playing at the same start time.
         if (!pSoundInstance->GetSoundBuffer()->CanPlay(*pSoundInstance))
+        {
+            LT_CHTRACE("buffer CanPlay() == false");
             continue;
+        }
 
         // Handle streaming sounds
         if (pSoundInstance->GetSoundBuffer()->GetSoundBufferFlags() & SOUNDBUFFERFLAG_STREAM)
         {
             if (pSoundInstance->AcquireStream() == LT_OK)
+            {
+                LT_CHTRACE("GRANTED via AcquireStream()");
                 continue;
+            }
             else
+            {
+                LT_CHTRACE("AcquireStream() failed");
                 continue;
+            }
         }
 
         // Check if sample needs reverb or is 3d
-        if ( m_nMax3DSamples && (pSoundInstance->GetType() == SOUNDTYPE_3D) 
+        if ( m_nMax3DSamples && (pSoundInstance->GetType() == SOUNDTYPE_3D)
 			|| (m_b3DReverb && pSoundInstance->GetPlaySoundFlags() & PLAYSOUND_REVERB))
         {
             // Try to get a free 3d sample
             if (pSoundInstance->Acquire3DSample() == LT_OK)
+            {
+                LT_CHTRACE("GRANTED via Acquire3DSample()");
                 continue;
+            }
+            LT_CHTRACE("Acquire3DSample() failed -> steal");
         }
         else if (pSoundInstance->AcquireSample() == LT_OK)
+        {
+            LT_CHTRACE("GRANTED via AcquireSample()");
             continue;
+        }
+        else
+            LT_CHTRACE("AcquireSample() failed -> steal");
 
         // Find the lowest priority sound with a sample and snag it
         for (dwSearchIndex = m_dwNumSoundInstances - 1; dwSearchIndex > dwIndex; dwSearchIndex--)

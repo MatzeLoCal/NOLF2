@@ -40,7 +40,23 @@ public:
 	void	PrevModel();
 
 protected:
-	void	HandleCallback(uint32 dwParam1, uint32 dwParam2);
+	// ⚠️⚠️ uintptr_t, NOT uint32 — dwParam1 IS A char* AND THIS IS LP64.
+	//
+	// The message-box edit path hands the typed string down as a pointer:
+	//   CMessageBox::Close   m_pData = (void*)m_pEdit->GetText()
+	//     -> EditNameCallBack(LTBOOL, void* pData)
+	//       -> SendCommand(CMD_OK, (uintptr_t)pData, CMD_EDIT_NAME)
+	//         -> CScreenPlayer::OnCommand(uint32, uintptr_t, uintptr_t)
+	//           -> HandleCallback(...)          <- last hop
+	//             -> char* pName = (char*)dwParam1;
+	// Every hop above was already widened; while THIS one was still uint32 the
+	// pointer lost its top 32 bits here and the dereference segfaulted on a
+	// plausible-looking address (0x61aa3500 = the low half of a real heap
+	// pointer). Entering a multiplayer player name crashed the game every time.
+	// The same signature exists on ScreenHost/Team/Multi/Join and all of them
+	// cast dwParam1 to char* — name, password, scmd password, port, bandwidth,
+	// CD key. Do not narrow any of them back.
+	void	HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2);
 
 	void	UpdateBandwidth();
 

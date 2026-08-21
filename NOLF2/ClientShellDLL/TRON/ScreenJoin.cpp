@@ -161,7 +161,7 @@ uint32 CScreenJoin::OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dw
 	return 1;
 }
 
-uint32 CScreenJoin::HandleCallback(uint32 dwParam1, uint32 dwParam2)
+uint32 CScreenJoin::HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2)
 {
 	switch (dwParam2)
 	{

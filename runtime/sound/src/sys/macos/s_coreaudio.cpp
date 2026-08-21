@@ -120,6 +120,11 @@ struct CMacVoice
 	bool            m_bDecoded;         // PCM came from an MP3 decode: byte
 	                                    // offsets into the ORIGINAL data are
 	                                    // meaningless for this voice
+	// ★ Which file image m_pOwnedData was decoded FROM. HasOnBoardMemory() is
+	// false, so the engine re-initialises a 3D sample on every acquisition; a
+	// stolen-and-restarted dialogue line would otherwise re-decode its MP3 each
+	// time. Comparing the source pointer makes the repeat acquisition free.
+	const uint8    *m_pDecodedSrc;
 	uint32          m_nFrames;          // frames, not bytes
 	uint32          m_nSrcChannels;
 	uint32          m_nSrcBits;
@@ -329,6 +334,9 @@ private:
 	// ★★ RT-THREAD HANDSHAKE — see the note above WaitForRTQuiesce().
 	void                WaitForRTQuiesce();
 	void                ReapRetiredBuffers(bool bForce);
+	void                RetireOwnedData(CMacVoice* pVoice);
+	S32                 InitVoiceFromFileImage(void* hS, void* pFileImage, S32 siPlaybackRate,
+	                                           LTSOUNDFILTERDATA* pFilterData, const char* pszWho);
 	std::atomic<uint32> m_nRTCallbacks;   // bumped once per Render(), on the RT thread
 
 	AudioUnit           m_OutputUnit;
@@ -922,6 +930,10 @@ void CMacSoundSys::ReleaseSampleHandle(LHSAMPLE hS)
 	CMacVoice* pV = VoiceFromHandle(hS);
 	if (!pV) return;
 	pV->m_bPlaying = false;
+	// A sample initialised from a compressed file owns its decoded PCM (see
+	// InitVoiceFromFileImage). Park it, or the voice goes back in the pool
+	// holding a buffer nothing will ever free.
+	RetireOwnedData(pV);
 	pV->m_bAllocated = false;
 }
 
@@ -929,9 +941,9 @@ void CMacSoundSys::InitSample(LHSAMPLE hS)
 {
 	CMacVoice* pV = VoiceFromHandle(hS);
 	if (!pV) return;
-	// ⚠️ Reset() memsets the voice, which would strand a parked buffer (§66).
-	// AllocVoice already reaps before handing a voice out, so this should never
-	// fire — it is here so the invariant holds even if that changes.
+	// ⚠️ Reset() memsets the voice, which would strand a parked buffer (§66)
+	// or a still-owned decode buffer. Retire the owned one, then drain.
+	RetireOwnedData(pV);
 	if (pV->m_pRetiredData)
 	{
 		WaitForRTQuiesce();
@@ -1114,6 +1126,10 @@ S32 CMacSoundSys::InitSampleFromAddress(LHSAMPLE hS, void* pStart, U32 uiLen,
 	}
 
 	pV->m_bPlaying     = false;      // stop before republishing the data
+	// If this voice was previously initialised from a compressed FILE it owns a
+	// decoded buffer; m_pData is about to point somewhere else, so park it.
+	// (No-op on the InitVoiceFromFileImage path, which already retired.)
+	RetireOwnedData(pV);
 	WaitForRTQuiesce();              // ...and wait for the mixer to leave it (§66)
 	pV->m_pData        = (const uint8*)pStart;
 	pV->m_nSrcChannels = nChannels;
@@ -1127,12 +1143,32 @@ S32 CMacSoundSys::InitSampleFromAddress(LHSAMPLE hS, void* pStart, U32 uiLen,
 	return LTTRUE;
 }
 
+// ★★★★ THIS IS NOT AN UNUSED ENTRY POINT — IT IS THE ONLY PATH A COMPRESSED
+// SOUND HAS, AND RETURNING LTFALSE HERE SILENCED EVERY 3D LINE OF DIALOGUE.
+//
+// The old body was `return LTFALSE` with a comment claiming the engine "always
+// decodes first". It does not. CSoundBuffer::LoadData only decompresses when the
+// WAV carries a `lith` chunk asking for it (SOUNDBUFFERFLAG_DECOMPRESSONLOAD /
+// _ATSTART), and NOLF2's Game/Voice/*.WAV files carry no such chunk — they are
+// bare RIFF containers holding an MPEG Layer-3 bitstream (fmt tag 85). So
+// CSoundInstance::Acquire{,3D}Sample takes its `else` branch:
+//
+//     if( !IsCompressed() || GetDecompressedSoundBuffer() )
+//         Init{,3D}SampleFromAddress( ... );      // PCM: worked
+//     else
+//         Init{,3D}SampleFromFile( ... );         // MP3: this stub -> LT_ERROR
+//
+// and the acquisition failed silently, every frame, forever. The symptom was
+// `earshot=N with-channel=N-1` with both sample pools free: the line was
+// requested, accepted by the sound manager, in range, and never given a voice.
+//
+// The Windows reference driver does exactly what this now does — s_dx8.cpp:3775
+// parses the file image, decodes non-PCM to PCM through ACM, and hands the
+// result to InitSampleFromAddress. AudioToolbox replaces ACM here.
 S32 CMacSoundSys::InitSampleFromFile(LHSAMPLE hS, void* pFile_image, S32 siBlock,
                                      S32 siPlaybackRate, LTSOUNDFILTERDATA* pFilterData)
 {
-	// Unused by this engine's client path (it always decodes first).
-	// LTFALSE, not LS_ERROR: LS_ERROR is 1, which this caller reads as SUCCESS.
-	return LTFALSE;
+	return InitVoiceFromFileImage(hS, pFile_image, siPlaybackRate, pFilterData, "InitSampleFromFile");
 }
 
 void CMacSoundSys::SetSampleLoopBlock(LHSAMPLE hS, S32 siLoopStart, S32 siLoopEnd, bool bEnable)
@@ -1272,7 +1308,13 @@ S32 CMacSoundSys::Init3DSampleFromAddress(LH3DSAMPLE hS, void* pStart, U32 uiLen
 	return InitSampleFromAddress(hS, pStart, uiLen, pWaveFormat, siPlaybackRate, pFilterData);
 }
 
-S32 CMacSoundSys::Init3DSampleFromFile(LH3DSAMPLE, void*, S32, S32, LTSOUNDFILTERDATA*) { return LTFALSE; }
+// See the long note on InitSampleFromFile. This is the variant that NOLF2's
+// ambient NPC dialogue actually took, and the one whose LTFALSE silenced it.
+S32 CMacSoundSys::Init3DSampleFromFile(LH3DSAMPLE hS, void* pFile_image, S32 siBlock,
+                                       S32 siPlaybackRate, LTSOUNDFILTERDATA* pFilterData)
+{
+	return InitVoiceFromFileImage(hS, pFile_image, siPlaybackRate, pFilterData, "Init3DSampleFromFile");
+}
 
 S32 CMacSoundSys::Get3DSampleVolume(LH3DSAMPLE hS) { return GetSampleVolume(hS); }
 
@@ -1498,8 +1540,14 @@ static SInt64 snd_MemGetSize(void* inClientData)
 	return (SInt64)((SndMemFile*)inClientData)->m_nLen;
 }
 
-// Decode an MP3 bitstream to interleaved 16-bit PCM. Caller owns *ppOut (free).
-static bool snd_DecodeMP3(const uint8* pMP3, uint32 nMP3Len,
+// Decode an in-memory audio file to interleaved 16-bit PCM. Caller owns *ppOut
+// (free). nFileType is the AudioToolbox type HINT: kAudioFileMP3Type for a bare
+// MPEG bitstream (the dialogue `data` chunk), kAudioFileWAVEType for a whole
+// RIFF container — which is how IMA ADPCM sounds get decoded, by letting
+// AudioToolbox parse the container and run the codec rather than hand-writing
+// the nibble decoder.
+static bool snd_DecodeAudioFile(const uint8* pMP3, uint32 nMP3Len,
+                          AudioFileTypeID nFileType,
                           sint16** ppOut, uint32* pnFrames,
                           uint32* pnChannels, uint32* pnRate)
 {
@@ -1508,7 +1556,7 @@ static bool snd_DecodeMP3(const uint8* pMP3, uint32 nMP3Len,
 	AudioFileID af = NULL;
 	OSStatus err = AudioFileOpenWithCallbacks(&mem, snd_MemRead, NULL,
 	                                          snd_MemGetSize, NULL,
-	                                          kAudioFileMP3Type, &af);
+	                                          nFileType, &af);
 	if (err != noErr)
 	{
 		if (snd_Trace()) fprintf(stderr, "[snd] AudioFileOpenWithCallbacks failed (%d)\n", (int)err);
@@ -1602,6 +1650,16 @@ static bool snd_DecodeMP3(const uint8* pMP3, uint32 nMP3Len,
 	return true;
 }
 
+// The streaming path's original entry point, unchanged in behaviour: a bare
+// MPEG bitstream lifted out of a WAV `data` chunk.
+static bool snd_DecodeMP3(const uint8* pMP3, uint32 nMP3Len,
+                          sint16** ppOut, uint32* pnFrames,
+                          uint32* pnChannels, uint32* pnRate)
+{
+	return snd_DecodeAudioFile(pMP3, nMP3Len, kAudioFileMP3Type,
+	                           ppOut, pnFrames, pnChannels, pnRate);
+}
+
 // Minimal RIFF/WAVE parse: locate 'fmt ' and 'data' within the file image.
 static bool snd_ParseWav(const uint8* pFile, uint32 nFileLen,
                          uint32* pnDataOff, uint32* pnDataLen,
@@ -1652,6 +1710,177 @@ static bool snd_ParseWav(const uint8* pFile, uint32 nFileLen,
 	}
 
 	return bHaveFmt && bHaveData;
+}
+
+// Park a voice's owned buffer for deferred free (§66). Same two-callback rule
+// as CloseStream: the mixer re-reads m_pData per sample, so it can never be
+// freed inline. A voice can only hold one parked buffer, so if one is already
+// waiting we block and reap before parking the next.
+void CMacSoundSys::RetireOwnedData(CMacVoice* pV)
+{
+	if (!pV || !pV->m_pOwnedData)
+		return;
+
+	if (pV->m_pRetiredData)
+	{
+		WaitForRTQuiesce();
+		ReapRetiredBuffers(true);
+	}
+
+	pV->m_bPlaying     = false;
+	pV->m_pRetiredData = pV->m_pOwnedData;
+	pV->m_pOwnedData   = NULL;
+	pV->m_pDecodedSrc  = NULL;
+	pV->m_bDecoded     = false;
+	pV->m_nRetireAt    = m_nRTCallbacks.load(std::memory_order_acquire) + 2;
+}
+
+// Init a voice from a whole RIFF/WAVE file image held in memory — decoding the
+// payload to PCM first when it is not already PCM. This is the ACM-equivalent
+// half of the Windows driver (s_dx8.cpp:3775 / :4456).
+//
+// ⚠️ The length is not in the signature. It comes from the RIFF header itself
+// (size at +4, plus the 8-byte chunk header), exactly as OpenStream does.
+S32 CMacSoundSys::InitVoiceFromFileImage(void* hS, void* pFileImage, S32 siPlaybackRate,
+                                         LTSOUNDFILTERDATA* pFilterData, const char* pszWho)
+{
+	CMacVoice* pV = VoiceFromHandle(hS);
+	if (!pV || !pFileImage)
+		return LTFALSE;
+
+	const uint8* pFile = (const uint8*)pFileImage;
+
+	// ★ Free repeat acquisition. HasOnBoardMemory() is false, so the engine
+	// re-inits the sample every time it re-acquires a channel; without this a
+	// stolen-and-restarted line would re-decode its MP3 on every steal.
+	if (pV->m_pOwnedData && pV->m_pDecodedSrc == pFile)
+	{
+		pV->m_bPlaying = false;
+		pV->m_fPos     = 0.0;
+		if (siPlaybackRate > 0)
+			pV->m_nSrcRate = (uint32)siPlaybackRate;
+		pV->m_fStep = (double)pV->m_nSrcRate / (double)kOutputRate;
+		pV->ResolveGains();
+		return LTTRUE;
+	}
+
+	uint32 nRiffSize = 0;
+	if (memcmp(pFile, "RIFF", 4) || memcmp(pFile + 8, "WAVE", 4))
+	{
+		if (snd_Trace())
+			fprintf(stderr, "[snd] %s: not a RIFF/WAVE image\n", pszWho);
+		return LTFALSE;
+	}
+	memcpy(&nRiffSize, pFile + 4, 4);
+	const uint32 nFileLen = nRiffSize + 8;
+	if (nFileLen < 12 || nFileLen > 64u * 1024u * 1024u)
+		return LTFALSE;
+
+	uint32 nDataOff = 0, nDataLen = 0, nCh = 1, nBits = 0, nRate = kOutputRate, nTag = 0;
+	if (!snd_ParseWav(pFile, nFileLen, &nDataOff, &nDataLen, &nCh, &nBits, &nRate, &nTag))
+	{
+		if (snd_Trace())
+			fprintf(stderr, "[snd] %s: unparsable RIFF (%u bytes)\n", pszWho, nFileLen);
+		return LTFALSE;
+	}
+
+	// Already PCM: no decode, no ownership — point straight at the engine's
+	// image, which is what InitSampleFromAddress expects.
+	if (nTag == kWaveFormatPCM && (nBits == 8 || nBits == 16))
+	{
+		WAVEFORMATEX wf;
+		memset(&wf, 0, sizeof(wf));
+		wf.wFormatTag      = kWaveFormatPCM;
+		wf.nChannels       = (uint16)nCh;
+		wf.nSamplesPerSec  = nRate;
+		wf.wBitsPerSample  = (uint16)nBits;
+		wf.nBlockAlign     = (uint16)(nCh * (nBits / 8));
+		wf.nAvgBytesPerSec = wf.nBlockAlign * nRate;
+		return InitSampleFromAddress(hS, (void*)(pFile + nDataOff), nDataLen,
+		                             &wf, siPlaybackRate, pFilterData);
+	}
+
+	sint16* pDecoded = NULL;
+	uint32  nFrames = 0, nDecCh = 0, nDecRate = 0;
+
+	if (nTag == kWaveFormatMP3)
+	{
+		// Dialogue: the `data` chunk is a bare MPEG bitstream, so the container
+		// is skipped and the payload handed straight to the MP3 decoder.
+		if (!snd_DecodeMP3(pFile + nDataOff, nDataLen, &pDecoded, &nFrames, &nDecCh, &nDecRate))
+		{
+			fprintf(stderr, "[snd] %s: MP3 decode failed (%u bytes)\n", pszWho, nDataLen);
+			return LTFALSE;
+		}
+	}
+	else
+	{
+		// ★★ EVERYTHING ELSE — IN PRACTICE IMA ADPCM (tag 17), WHICH IS MOST OF
+		// THE 3D SOUND EFFECTS. A single c01s01 run asked for 267 of them.
+		//
+		// They were refused here in the first cut of this function, and before
+		// that they died in the Init3DSampleFromFile stub, so they have never
+		// been audible on this port — the same defect as the dialogue, one codec
+		// over. Rather than hand-write the ADPCM nibble decoder, hand the WHOLE
+		// RIFF container to AudioToolbox and let it parse and decode: it is the
+		// same call as the MP3 path with a different type hint. The Windows
+		// driver does the equivalent through ACM (s_dx8.cpp:3818).
+		if (!snd_DecodeAudioFile(pFile, nFileLen, kAudioFileWAVEType,
+		                         &pDecoded, &nFrames, &nDecCh, &nDecRate))
+		{
+			// Still loud: a sound that cannot be decoded is silent in play and
+			// has no other symptom. Once per tag so a repeated effect cannot
+			// flood the log.
+			static uint32 s_aReported[8] = { 0 };
+			static uint32 s_nReported = 0;
+			bool bSeen = false;
+			for (uint32 n = 0; n < s_nReported; ++n)
+				if (s_aReported[n] == nTag) { bSeen = true; break; }
+			if (!bSeen)
+			{
+				if (s_nReported < 8) s_aReported[s_nReported++] = nTag;
+				fprintf(stderr, "[snd] %s: cannot decode format tag %u (bits=%u) — silent\n",
+				        pszWho, nTag, nBits);
+			}
+			return LTFALSE;
+		}
+	}
+
+	WAVEFORMATEX wf;
+	memset(&wf, 0, sizeof(wf));
+	wf.wFormatTag      = kWaveFormatPCM;
+	wf.nChannels       = (uint16)nDecCh;
+	wf.nSamplesPerSec  = nDecRate;
+	wf.wBitsPerSample  = 16;
+	wf.nBlockAlign     = (uint16)(nDecCh * 2);
+	wf.nAvgBytesPerSec = wf.nBlockAlign * nDecRate;
+
+	// ⚠️ ORDER MATTERS. InitSampleFromAddress republishes m_pData, so anything
+	// this voice previously owned has to be parked first — and it must be parked
+	// before the new pointer is stored, or ReapRetiredBuffers' `m_pData ==
+	// m_pRetiredData` test would null out the buffer we just installed.
+	RetireOwnedData(pV);
+
+	const uint32 nBytes = nFrames * nDecCh * 2;
+	if (!InitSampleFromAddress(hS, pDecoded, nBytes, &wf, siPlaybackRate, pFilterData))
+	{
+		free(pDecoded);
+		return LTFALSE;
+	}
+
+	pV->m_pOwnedData  = (uint8*)pDecoded;
+	pV->m_pDecodedSrc = pFile;
+	pV->m_bDecoded    = true;
+
+	if (snd_Trace())
+		fprintf(stderr, "[snd] %s: tag %u (%s) -> %u frames @%u Hz %uch (%.2fs), voice %ld\n",
+		        pszWho, nTag,
+		        (nTag == kWaveFormatMP3) ? "MP3" : (nTag == 17 ? "IMA ADPCM" : "other"),
+		        nFrames, nDecRate, nDecCh,
+		        nDecRate ? (double)nFrames / (double)nDecRate : 0.0,
+		        (long)(pV - &m_aVoices[0]));
+
+	return LTTRUE;
 }
 
 LHSTREAM CMacSoundSys::OpenStream(char* sFilename, U32 nOffset, LHDIGDRIVER, char*, S32)

@@ -1290,7 +1290,12 @@ IMPACTFX* CFXButeMgr::GetImpactFX(int nImpactFXId)
 
 IMPACTFX* CFXButeMgr::GetImpactFX(char* pName)
 {
-	if (!pName) return LTNULL;
+	// ⚠️ An EMPTY name is not a lookup, it is "nothing authored here" — the same
+	// empty-authored-string family as the holster white-out. Every record with an
+	// empty szName is skipped below anyway, so an empty pName could only ever
+	// return LTNULL; bail out early and make that explicit rather than walking
+	// the whole list to find out.
+	if (!pName || !pName[0]) return LTNULL;
 
 	IMPACTFX** pCur  = LTNULL;
 

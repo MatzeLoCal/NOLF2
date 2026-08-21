@@ -34,7 +34,7 @@ public:
 
 protected:
     uint32  OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dwParam2);
-	uint32	HandleCallback(uint32 dwParam1, uint32 dwParam2);
+	uint32	HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2);
 
 	void FindServers();
 

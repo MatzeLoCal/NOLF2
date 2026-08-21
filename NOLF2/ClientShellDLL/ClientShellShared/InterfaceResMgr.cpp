@@ -340,6 +340,20 @@ void CInterfaceResMgr::ScreenDimsChanged()
 	m_dwScreenWidth = currentMode.m_Width;
 	m_dwScreenHeight = currentMode.m_Height;
 
+	// ★★★★ TELL THE GUI LIBRARY THAT X AND Y NO LONGER SHARE A RATIO.
+	//
+	// Every CLTGUICtrl::SetScale caller passes GetXRatio(), and the control then
+	// used that ONE number for x, y and character height. That is correct only
+	// while the display is 4:3. At 16:9 the horizontal ratio is 4/3 larger than
+	// the vertical one, so the bottom of every front-end screen — the Quit item
+	// at BackPos (32,436), the version string, the help line — was pushed off the
+	// bottom edge, and the text was a third too large.
+	//
+	// These two multipliers convert the horizontal scale each caller passes into
+	// the vertical and character-height scales the rule in this header calls for.
+	// At 4:3 both are exactly 1.0f, i.e. the shipped behaviour, unchanged.
+	CLTGUICtrl::SetLayoutRatios(m_fYRatio / m_fXRatio,
+	                            GetFontRatio() / m_fXRatio);
 }
 
 

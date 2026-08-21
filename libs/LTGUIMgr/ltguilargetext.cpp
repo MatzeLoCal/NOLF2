@@ -98,7 +98,7 @@ void CLTGUILargeText::CalculateSize()
 {
 
 	m_nWidth = (uint16)(m_fScale * (float)m_nFixedWidth);
-	m_nHeight = (uint16)(m_fScale * (float)m_nFixedHeight);
+	m_nHeight = (uint16)(GetYScale() * (float)m_nFixedHeight);   // a HEIGHT scales by YRatio
 
 	if (m_pUp)
 		m_nWidth += m_pUp->GetWidth();
@@ -307,7 +307,7 @@ void CLTGUILargeText::SetBasePos ( LTIntPt pos )
 void CLTGUILargeText::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 	uint16 nWidth = (uint16)(m_fScale * (float)(m_nFixedWidth-m_nIndent));
 	if (m_pString)
 	{

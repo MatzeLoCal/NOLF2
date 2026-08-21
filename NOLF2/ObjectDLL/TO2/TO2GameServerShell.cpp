@@ -105,9 +105,28 @@ LTRESULT CTO2GameServerShell::OnServerInitialized()
 
 	IServerDirectory *pServerDir = Factory_Create_IServerDirectory_Titan( false, *g_pLTServer, NULL );
 	if( !pServerDir )
-	{	
-		ASSERT( !"ServerDir is NULL!" );
-		return LT_ERROR;
+	{
+		// ⚠️⚠️ THIS WAS THE ENTIRE MULTIPLAYER BLOCKER ON macOS.
+		//
+		// The WON/Titan factory is stubbed to return NULL on this port
+		// (serverdir_macos_stub.cpp), so EVERY multiplayer game — LAN, direct-IP,
+		// hosting, anything — took this branch and returned LT_ERROR. That error
+		// propagates: LoadServerBinaries -> CServerMgr::LoadBinaries ->
+		// CClientShell::StartupLocal -> StartGame returns LT_SERVERERROR (49), and
+		// the host ends up with a bound UDP socket and NO WORLD, which is a very
+		// confusing symptom for "matchmaking is unavailable".
+		//
+		// ★ It also explains why SINGLE PLAYER was unaffected: the
+		// !IsMultiplayerGame() early return above happens before this call.
+		//
+		// The server directory is ONLY used to publish/advertise the server to the
+		// online master list. A server that is not advertised still works — and the
+		// rest of this class is already written for a NULL directory: Update()
+		// early-returns on !GetServerDir() (and again on m_bLANOnly), and
+		// OnServerTerm() guards with if(m_pServerDir). So carry on without it
+		// rather than failing server startup.
+		SetServerDir( 0 );
+		return nResult;
 	}
 	SetServerDir(pServerDir);
 
@@ -131,6 +150,13 @@ LTRESULT CTO2GameServerShell::OnServerInitialized()
 	startupInfo.m_sGameSpySecretKey += "o";
 	startupInfo.m_sGameSpySecretKey += "6";
 	startupInfo.m_sGameSpySecretKey += "x";
+	// ⚠️ LP64 LANDMINE, currently UNREACHABLE on macOS (the factory above returns
+	// NULL, so we never get here). This smuggles a POINTER through a uint32 —
+	// the exact bug family that bit MID_TRIGGER — and it will silently truncate
+	// &startupInfo on any 64-bit build. It also takes the address of a STACK
+	// local that dies at the end of this function. If WONAPI/Titan is ever
+	// ported, this must become Writeuint64((uint64)(uintptr_t)&startupInfo) with
+	// the reader fixed in lockstep, and the lifetime problem solved too.
 	cMsg.Writeuint32(( uint32 )&startupInfo );
 	pServerDir->SetStartupInfo( *cMsg.Read( ));
 

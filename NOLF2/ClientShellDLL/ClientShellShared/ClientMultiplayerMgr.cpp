@@ -686,14 +686,38 @@ bool ClientMultiplayerMgr::HandleMsgHandshake( ILTMessage_Read & msg )
 			uint32 nDamageFxMaskedCRC = nDamageFxCRC ^ nXORMask;
 
 			// Get the client shell file CRC
+#ifdef LT_MACOS
+			// ⚠️ CRC THE REZ-RESIDENT cshell.dll, NOT OUR NATIVE .dylib.
+			//
+			// The server side of this check is:
+			//     m_nCShellCRC = CRC32::CalcRezFileCRC("cshell.dll");
+			// (GameServerShell.cpp) — a HARDCODED Windows filename, resolved out
+			// of the rez trees (it lives in Update_v1x3.rez). The original client
+			// CRC'd its own loaded binary, which on Windows IS that same file, so
+			// the two agreed. On macOS the client shell is libCShell.dylib, so the
+			// client hashed a completely different file and the server kicked
+			// every joiner with DISCONNECTREASON_KICKED (6) after an otherwise
+			// perfect handshake — sockets, heartbeats and 110 ACKed packets.
+			//
+			// ★ Hashing the rez file is also what makes CROSS-PLATFORM play
+			// possible: a retail Windows server hashes exactly this file, so a
+			// macOS client now sends the value it expects. CRCing our own .dylib
+			// could never match a Windows server, by construction.
+			//
+			// ★ Note every other CRC in this handshake (modelbutes, surface,
+			// damagefx) already uses CalcRezFileCRC on BOTH sides — the client
+			// shell was the only one reaching for a platform-specific binary.
+			uint32 nClientCRC = CRC32::CalcRezFileCRC( "cshell.dll" );
+#else
 			char aClientShellName[MAX_PATH + 1];
 			// Just in case getting the file name fails
-			aClientShellName[0] = 0; 
+			aClientShellName[0] = 0;
 			// Get the client shell handle from the engine
 			HMODULE hClientShell;
 			g_pLTClient->GetEngineHook("cshell_hinstance", (void**)&hClientShell);
 			DWORD nResult = GetModuleFileName(hClientShell, aClientShellName, sizeof(aClientShellName));
 			uint32 nClientCRC = CRC32::CalcFileCRC(aClientShellName);
+#endif
 			
 			// Mask that up too
 			nClientCRC ^= nXORMask;
@@ -902,17 +926,27 @@ bool ClientMultiplayerMgr::SetService( )
 
 bool ClientMultiplayerMgr::StartClient( )
 {
+	// macOS port tracing (LT_TRACE_CONSOLE=1) — every exit below was silent, so a
+	// failed join looked identical to one that never sent a packet. Echo the
+	// address too: a `+join <ip>:<port>` that never reaches the wire is the tell
+	// for the address string being mangled before it gets here.
+	g_pLTClient->CPrint( "StartClient: TCPAddress='%s'", m_StartGameRequest.m_TCPAddress );
 
 	// Initialize the networking.  Always start a new server with hosted games.
     m_nLastConnectionResult = g_pLTClient->InitNetworking(NULL, 0);
 	if (m_nLastConnectionResult != LT_OK)
 	{
+		g_pLTClient->CPrint( "StartClient: FAILED — InitNetworking -> %d",
+			(int)m_nLastConnectionResult );
         return false;
 	}
 
 	// Initialize our protocol.
 	if (!SetService())
+	{
+		g_pLTClient->CPrint( "StartClient: FAILED — SetService" );
         return false;
+	}
 
 	// Hook up the netgame and clientinfo.
 	m_StartGameRequest.m_pClientData = &m_NetClientData;
@@ -923,6 +957,8 @@ bool ClientMultiplayerMgr::StartClient( )
 	{
 		// If successful, then we're done.
 		m_nLastConnectionResult = g_pLTClient->StartGame( const_cast< StartGameRequest * >( &m_StartGameRequest ));
+		g_pLTClient->CPrint( "StartClient: StartGame -> %d (LT_OK=%d LT_TIMEOUT=%d)",
+			(int)m_nLastConnectionResult, (int)LT_OK, (int)LT_TIMEOUT );
 		if( m_nLastConnectionResult == LT_OK )
 		{
 			return true;
@@ -972,15 +1008,21 @@ bool ClientMultiplayerMgr::StartServerAsHost( )
 	}
 
 	// Initialize the networking.  Always start a new server with hosted games.
+	// macOS port tracing (LT_TRACE_CONSOLE=1) — all three exits below were silent.
     m_nLastConnectionResult = g_pLTClient->InitNetworking(NULL, 0);
 	if (m_nLastConnectionResult != LT_OK)
 	{
+		g_pLTClient->CPrint( "StartServerAsHost: FAILED — InitNetworking -> %d",
+			(int)m_nLastConnectionResult );
         return false;
 	}
 
 	// Initialize our protocol.
 	if (!SetService())
+	{
+		g_pLTClient->CPrint( "StartServerAsHost: FAILED — SetService" );
         return false;
+	}
 
 	// Hook up the netgame and clientinfo.
 	ServerGameOptions* pServerGameOptions = &m_ServerGameOptions;
@@ -991,6 +1033,8 @@ bool ClientMultiplayerMgr::StartServerAsHost( )
 
 	// Start the server.
 	m_nLastConnectionResult = g_pLTClient->StartGame( const_cast< StartGameRequest * >( &m_StartGameRequest ));
+	g_pLTClient->CPrint( "StartServerAsHost: StartGame -> %d (LT_OK=%d)",
+		(int)m_nLastConnectionResult, (int)LT_OK );
 	return ( m_nLastConnectionResult == LT_OK );
 }
 
@@ -1043,6 +1087,12 @@ bool ClientMultiplayerMgr::StartClientServer( )
 	m_nTeam = INVALID_TEAM;
 	m_bHasSelectedTeam = false;
 
+	// macOS port tracing — which branch we take is itself worth knowing, since a
+	// wrong m_Type sends a host down the single-player or client path silently.
+	g_pLTClient->CPrint( "StartClientServer: m_Type=%d (NORMAL=%d HOST=%d CLIENTTCP=%d)",
+		(int)m_StartGameRequest.m_Type, (int)STARTGAME_NORMAL,
+		(int)STARTGAME_HOST, (int)STARTGAME_CLIENTTCP );
+
 	switch( m_StartGameRequest.m_Type )
 	{
 		case STARTGAME_NORMAL:
@@ -1055,6 +1105,8 @@ bool ClientMultiplayerMgr::StartClientServer( )
 			return StartClient( );
 			break;
 		default:
+			g_pLTClient->CPrint( "StartClientServer: FAILED — invalid gamerequest type %d",
+				(int)m_StartGameRequest.m_Type );
 			ASSERT( !"ClientMultiplayerMgr::StartClientServer: Invalid gamerequest type." );
 			return false;
 			break;

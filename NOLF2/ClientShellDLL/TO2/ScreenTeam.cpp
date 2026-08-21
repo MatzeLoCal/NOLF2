@@ -375,7 +375,7 @@ void CScreenTeam::UpdateChar()
 }
 
 
-void CScreenTeam::HandleCallback(uint32 dwParam1, uint32 dwParam2)
+void CScreenTeam::HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2)
 {
 	switch(dwParam2)
 	{

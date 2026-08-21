@@ -154,6 +154,11 @@ class SSBufStream;
 
 #define WAVE_FORMAT_MPEGLAYER3	85
 
+// ★★ LT_WATCH_SOUND="substr" — trace ONE sound end to end (load, buffer format,
+// channel acquisition, driver init). Case-insensitive substring match on the
+// resource filename, e.g. LT_WATCH_SOUND=11041. Defined in soundbuffer.cpp.
+bool snd_Watch( const char *pszName );
+
 #define FOURCC uint32
 
 struct WAVEHEADER_cuepoint

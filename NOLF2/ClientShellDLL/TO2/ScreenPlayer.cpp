@@ -561,7 +561,7 @@ void CScreenPlayer::UpdateBandwidth()
 	}
 }
 
-void CScreenPlayer::HandleCallback(uint32 dwParam1, uint32 dwParam2)
+void CScreenPlayer::HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2)
 {
 	switch(dwParam2)
 	{

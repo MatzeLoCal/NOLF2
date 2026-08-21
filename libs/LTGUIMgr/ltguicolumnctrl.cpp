@@ -206,7 +206,7 @@ void CLTGUIColumnCtrl::SetFont(CUIFont *pFont, uint8 nFontSize, LTBOOL bSetForAl
 	if (nFontSize)
 		m_nBaseFontSize = nFontSize;
 
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 
 	if (bSetForAll)
 	{
@@ -257,7 +257,7 @@ void CLTGUIColumnCtrl::CalculateSize()
 		if (nHt < m_nHeight)
 		{
 			LTIntPt pos = m_columnArray[i]->GetBasePos();
-			uint16 nOffset = (uint16) ( (LTFLOAT)(m_nHeight - nHt) / m_fScale );
+			uint16 nOffset = (uint16) ( (LTFLOAT)(m_nHeight - nHt) / GetYScale() );   // pixel dy -> base dy
 			pos.y = m_basePos.y + nOffset / 2;
 			m_columnArray[i]->SetBasePos(pos);
 		}
@@ -282,7 +282,7 @@ void CLTGUIColumnCtrl::SetBasePos ( LTIntPt pos )
 void CLTGUIColumnCtrl::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 	for (int i=0; i < GetNumColumns(); i++)
 	{
 		m_columnArray[i]->SetScale(fScale);

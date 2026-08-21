@@ -376,7 +376,7 @@ void CLTGUISlider::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
 	ScaleBar();
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 	if (m_pText)
 	{
 		float x = (float)m_pos.x;
@@ -419,7 +419,7 @@ void CLTGUISlider::ScaleBar()
 	uint16 nHt = m_nBaseFontSize;
 	if (m_nBarHeight > nHt) nHt = m_nBarHeight;
 	if (m_nArrowHeight > nHt) nHt = m_nArrowHeight;
-	m_nHeight = (uint16)((float)nHt * m_fScale);
+	m_nHeight = (uint16)((float)nHt * GetYScale());   // a HEIGHT scales by YRatio
 	m_nWidth = (uint16)((float)(m_nBarOffset + m_nBarWidth) * m_fScale);
 
 	float fPercent = (float)(m_nSliderPos - m_nMinSlider) / (float)(m_nMaxSlider - m_nMinSlider);
@@ -428,7 +428,7 @@ void CLTGUISlider::ScaleBar()
 	float x = (float)m_pos.x + ((float)m_nBarOffset * m_fScale);
 	float y = (float)m_pos.y;
 	float fw = (float)m_nArrowWidth * m_fScale;
-	float fh = (float)m_nArrowHeight * m_fScale;
+	float fh = (float)m_nArrowHeight * GetFontScale();
 
 	float yo = ((float)m_nHeight - fh) / 2.0f;
 	float arrowGap = fw / 4.0f;
@@ -452,7 +452,7 @@ void CLTGUISlider::ScaleBar()
 	//full part of bar
 	x += arrowSpace;
 	fw = fPercent * barWidth;
-	fh = (float)m_nBarHeight * m_fScale;
+	fh = (float)m_nBarHeight * GetFontScale();
 	yo = ((float)m_nHeight - fh) / 2.0f;
 	g_pDrawPrim->SetXYWH(&m_Bar[eFull],x,y+yo,fw,fh);
 	m_rcBar.left = (int)x;
@@ -467,7 +467,7 @@ void CLTGUISlider::ScaleBar()
 
 	//right arrow
 	fw = (float)m_nArrowWidth * m_fScale;
-	fh = (float)m_nArrowHeight * m_fScale;
+	fh = (float)m_nArrowHeight * GetFontScale();
 	x = (float)(m_pos.x + m_nWidth) - fw;
 	yo = ((float)m_nHeight - fh) / 2.0f;
 	g_pDrawPrim->SetXYWH(&m_Bar[eRight],x,y+yo,fw,fh);
@@ -534,7 +534,7 @@ LTBOOL CLTGUISlider::SetFont(CUIFont *pFont, uint8 nFontSize)
 	if (nFontSize)
 		m_nBaseFontSize = nFontSize;
 
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 
 	if (m_pText)
 	{

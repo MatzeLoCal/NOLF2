@@ -296,10 +296,17 @@ LTRESULT CClientShell::StartupLocal(StartGameRequest *pRequest,
     }
 
 
+    // ⚠️ macOS port tracing (LT_TRACE_CONSOLE=1). All three exits below collapse
+    // into a bare LT_SERVERERROR (49) at the caller, which is what a failed
+    // `+host 1` reports — with no indication of WHICH step failed. Each one
+    // already retrieves a descriptive errorString that RETURN_ERROR_PARAM then
+    // discards outside a debug build, so just print it.
+
     // Add the resources to it and listen locally by default.
     if (!g_pServerMgr->AddResources(g_pClientMgr->m_ResTrees, g_pClientMgr->m_nResTrees))
     {
         g_pServerMgr->GetErrorString(errorString, 256);
+        dsi_ConsolePrint("StartupLocal: FAILED - AddResources: %s", errorString);
         RETURN_ERROR_PARAM(1, CClientShell::StartupLocal, LT_SERVERERROR, errorString);
     }
 
@@ -307,12 +314,14 @@ LTRESULT CClientShell::StartupLocal(StartGameRequest *pRequest,
 	if( !g_pServerMgr->LoadBinaries( ))
 	{
 		g_pServerMgr->GetErrorString(errorString, 256);
+		dsi_ConsolePrint("StartupLocal: FAILED - LoadBinaries: %s", errorString);
 		RETURN_ERROR_PARAM(1, CClientShell::StartupLocal, LT_SERVERERROR, errorString);
 	}
 
     if (!g_pServerMgr->Listen("local", "LithTech Session"))
     {
         g_pServerMgr->GetErrorString(errorString, sizeof(errorString));
+        dsi_ConsolePrint("StartupLocal: FAILED - Listen(local): %s", errorString);
         RETURN_ERROR_PARAM(1, CClientShell::StartupLocal, LT_SERVERERROR, errorString);
         //GetClientMgr()->ThrowClientException(EXC_SHUTDOWN_SHELL|EXC_MODAL_MESSAGE, Cli_ServerError, errorString);
     }

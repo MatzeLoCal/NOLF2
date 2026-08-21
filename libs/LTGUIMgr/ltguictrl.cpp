@@ -62,9 +62,15 @@ LTBOOL CLTGUICtrl::IsOnMe(int x, int y)
 }
 
 
+// Widescreen layout ratios — see the long note on SetLayoutRatios in the header.
+// 1.0f is the original uniform behaviour and is what a 4:3 mode restores.
+float CLTGUICtrl::s_fYOverX   = 1.0f;
+float CLTGUICtrl::s_fFontOverX = 1.0f;
+
 void CLTGUICtrl::SetScale(float fScale)
 {
 	m_pos.x = (int)(fScale * (float)m_basePos.x);
-	m_pos.y = (int)(fScale * (float)m_basePos.y);
+	// ★ y by the VERTICAL ratio, not the horizontal one. fScale is XRatio.
+	m_pos.y = (int)(fScale * s_fYOverX * (float)m_basePos.y);
 	m_fScale = fScale;
 }

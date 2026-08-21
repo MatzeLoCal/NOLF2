@@ -128,6 +128,19 @@ bool CScreenPreload::UpdateInterfaceSFX()
 
 bool CScreenPreload::UpdateCDKeyValidation( )
 {
+	// ⚠️ Defence in depth for the NULL server directory (see FirstUpdate).
+	// FirstUpdate is the only place that enters kValidatingCDKeyState_Start and
+	// it now refuses to without a directory, so this should be unreachable — but
+	// both live states below dereference the directory unguarded, and reporting
+	// "validation complete" is the correct answer when there is nothing to
+	// validate against. Returning false here would instead wedge the preload
+	// screen forever, since Update() keeps it active while this returns false.
+	if( !g_pClientMultiplayerMgr->GetServerDir( ))
+	{
+		m_eValidatingCDKeyState = kValidatingCDKeyState_None;
+		return true;
+	}
+
 	switch( m_eValidatingCDKeyState )
 	{
 		case kValidatingCDKeyState_None:
@@ -363,8 +376,22 @@ void CScreenPreload::FirstUpdate( )
 	m_eValidatingCDKeyState = kValidatingCDKeyState_None;
 	if( !g_bLAN && g_pClientMultiplayerMgr->GetStartGameRequest( ).m_Type == STARTGAME_CLIENTTCP )
 	{
+		// ⚠️ NO SERVER DIRECTORY ON THIS PORT — DO NOT ENTER THE VALIDATION STATE.
+		//
+		// The original test is `!pServerDir || !pServerDir->IsCDKeyValid()`, i.e.
+		// "no directory yet" was treated as "not validated yet", on the assumption
+		// that kValidatingCDKeyState_Start would create one (see the
+		// CreateServerDir call in UpdateCDKeyValidation). On macOS one can never
+		// be created — serverdir_macos_stub.cpp's factory returns NULL and so does
+		// ClientMultiplayerMgr::CreateServerDir — so the state machine ran with a
+		// NULL directory and crashed on the first GetCDKey() call.
+		//
+		// With no directory there is no CD key to validate against, so the correct
+		// behaviour is to skip validation entirely rather than fail it: this path
+		// is only reached for a non-LAN STARTGAME_CLIENTTCP join, which on this
+		// port means a direct-IP connection that never consulted WON in any case.
 		IServerDirectory *pServerDir = g_pClientMultiplayerMgr->GetServerDir();
-		if( !pServerDir || !pServerDir->IsCDKeyValid( ))
+		if( pServerDir && !pServerDir->IsCDKeyValid( ))
 		{
 			m_eValidatingCDKeyState = kValidatingCDKeyState_Start;
 		}

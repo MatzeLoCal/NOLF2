@@ -496,7 +496,7 @@ uint32 CScreenJoin::OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dw
 	return 1;
 }
 
-uint32 CScreenJoin::HandleCallback(uint32 dwParam1, uint32 dwParam2)
+uint32 CScreenJoin::HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2)
 {
 	switch (dwParam2)
 	{
@@ -922,7 +922,28 @@ void CScreenJoin::Update()
 {
 	char aTempBuffer[256];
 
-	FormatString(IDS_STATUS_STRING,aTempBuffer,sizeof(aTempBuffer),g_pClientMultiplayerMgr->GetServerDir()->GetCurStatusString());
+	// ⚠️ NO SERVER DIRECTORY ON THIS PORT — BAIL OUT BEFORE DEREFERENCING IT.
+	//
+	// The WON/Titan online matchmaking stack is not ported to macOS:
+	// libs/ServerDir/serverdir_macos_stub.cpp returns NULL from the factory, so
+	// ClientMultiplayerMgr::GetServerDir() (a plain accessor) hands back NULL.
+	// The original code assumes it always exists and dereferences it inline —
+	// which crashed the moment this screen was opened, every frame.
+	//
+	// ⚠️ The stub's own comment claimed "every NOLF2 caller null-checks"; that is
+	// true of the two FACTORY call sites and false of the ACCESSOR's callers.
+	// Guarding here rather than at each deref covers the whole state machine:
+	// the Update_State_* helpers are only ever reached from this switch.
+	IServerDirectory *pDir = g_pClientMultiplayerMgr->GetServerDir();
+	if (!pDir)
+	{
+		LTStrCpy(aTempBuffer, "Online play is not available in this build.",
+		         sizeof(aTempBuffer));
+		m_pStatusCtrl->SetString(aTempBuffer);
+		return;
+	}
+
+	FormatString(IDS_STATUS_STRING,aTempBuffer,sizeof(aTempBuffer),pDir->GetCurStatusString());
 	m_pStatusCtrl->SetString(aTempBuffer);
 
 	switch (m_eCurState)

@@ -56,7 +56,43 @@ public:
 	virtual void	SetScale(float fScale);
 	virtual float	GetScale()					{return m_fScale;}
 
-	
+	// ★★★★ WIDESCREEN: THE SCALE PASSED TO SetScale IS THE *HORIZONTAL* ONE.
+	//
+	// Every caller in the game passes CInterfaceResMgr::GetXRatio() (= width/640),
+	// and SetScale used to apply that single number to x, to y AND to the font
+	// size. On a 4:3 display XRatio == YRatio so nobody ever noticed. On 16:9 the
+	// horizontal ratio is 4/3 LARGER than the vertical one, so every y position
+	// came out 33% too far down: the bottom band of every front-end screen — the
+	// Quit item, the version string, the help line — was pushed off the screen,
+	// and the fonts were a third too big as well.
+	//
+	// The rule this restores is the one InterfaceResMgr.h already documents for
+	// the HUD: x by XRatio, y by YRatio, character height by GetFontRatio(). These
+	// two statics carry the OTHER two ratios as multipliers relative to the
+	// horizontal one, so the single-scalar SetScale signature — implemented and
+	// forwarded by a dozen control classes — does not have to change.
+	//
+	// Both default to 1.0f, which is byte-for-byte the old behaviour, and that is
+	// also what a 4:3 mode sets them back to.
+	//
+	// ⚠️ Set from CInterfaceResMgr::SetupResolution ONLY. They are global because
+	// the resolution is: a per-control flag would not survive CLTGUIWindow and
+	// CLTGUIListCtrl forwarding a bare float to their children.
+	// ⚠️ Callers that pass 1.0f mean "measure me in base 640x480 space" and are
+	// always followed by a real SetScale before anything is drawn (verified in
+	// CHUDDecision::UpdateLayout and CInterfaceResMgr), so scaling their y here
+	// is harmless.
+	static  void	SetLayoutRatios(float fYOverX, float fFontOverX)
+					{ s_fYOverX = fYOverX; s_fFontOverX = fFontOverX; }
+	static  float	GetYOverX()					{return s_fYOverX;}
+	static  float	GetFontOverX()				{return s_fFontOverX;}
+
+	// The vertical and font scales that go with this control's current m_fScale.
+	// Use these instead of m_fScale for a y position or a character height.
+	float			GetYScale()					{return m_fScale * s_fYOverX;}
+	float			GetFontScale()				{return m_fScale * s_fFontOverX;}
+
+
 	// Commonly used input messages
     virtual LTBOOL  OnLeft ( ) {return LTFALSE;}
     virtual LTBOOL  OnRight ( ) {return LTFALSE;}
@@ -151,6 +187,10 @@ protected:
     uint32	        m_argbSelected;        // The selected color
     uint32	        m_argbNormal;          // The non-selected color
     uint32	        m_argbDisabled;        // The disabled color
+
+	// See SetLayoutRatios above. 1.0f == the original uniform behaviour.
+	static float	s_fYOverX;
+	static float	s_fFontOverX;
 
 };
 

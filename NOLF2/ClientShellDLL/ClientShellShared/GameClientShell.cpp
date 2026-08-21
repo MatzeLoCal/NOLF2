@@ -1212,11 +1212,40 @@ uint32 CGameClientShell::OnEngineInitialized(RMode *pMode, LTGUID *pAppGuid)
 				return LT_ERROR;
 			}
 
+			// ⚠️ THE COMMAND-LINE HOST PATH NEVER SET THE SHELL'S GAME TYPE.
+			//
+			// It reads m_eGameType out of the profile to pick the mission file
+			// above, but — unlike the +join path, which calls SetGameType in
+			// CInterfaceMgr::EndSplashScreen — it never told the game shell. So
+			// g_pGameClientShell->GetGameType() stayed at its default of
+			// eGameTypeSingle for the whole session, and the first MP screen to
+			// take focus (CScreenMulti::OnFocus) hit its switch with a game type
+			// it has no case for, left sMissionFile empty, and killed the process
+			// with "Could not load mission bute ." — a blank filename, which is
+			// the tell for exactly this.
+			//
+			// SetGameType is not bookkeeping: it also loads the correct weapon
+			// override butes (WEAPON_DEFAULT_MULTI_FILE for DM/TDM/DD), so
+			// without it a hosted deathmatch would run single-player weapons.
+			g_pGameClientShell->SetGameType( pProfile->m_ServerGameOptions.m_eGameType );
+
 			// Start the server..
 
-			bOk = bOk && g_pClientMultiplayerMgr->SetupServerHost( pProfile->m_ServerGameOptions.m_nPort , pProfile->m_ServerGameOptions.m_bLANOnly );
+			// ⚠️ macOS port tracing — see the note in CMissionMgr::StartGameNew.
+			// bOk is already false here for eGameTypeSingle, so report it too:
+			// "+host 1 with a single-player profile" is a silent no-op otherwise.
+			g_pLTClient->CPrint( "+host: gametype=%d missionFile='%s' bOk=%d port=%d LANOnly=%d",
+				(int)pProfile->m_ServerGameOptions.m_eGameType, sMissionFile.c_str( ),
+				(int)bOk, (int)pProfile->m_ServerGameOptions.m_nPort,
+				(int)pProfile->m_ServerGameOptions.m_bLANOnly );
+
+			bool bSetup = g_pClientMultiplayerMgr->SetupServerHost( pProfile->m_ServerGameOptions.m_nPort , pProfile->m_ServerGameOptions.m_bLANOnly );
+			g_pLTClient->CPrint( "+host: SetupServerHost -> %d", (int)bSetup );
+			bOk = bOk && bSetup;
+
 			bOk = bOk && g_pMissionMgr->StartGameNew();
-			
+			g_pLTClient->CPrint( "+host: after StartGameNew bOk=%d", (int)bOk );
+
 			if( !bOk )
 			{
 				// drop them into the host menu
@@ -1706,10 +1735,28 @@ void CGameClientShell::UpdatePlaying()
 					uint32 nDeltaTicks = ( nEndTicks > g_nStartTicks ) ? ( nEndTicks - g_nStartTicks ) : 
 						( nEndTicks + ~g_nStartTicks );
 
+					// ⚠️⚠️ LP64 BUG — THIS KICKED EVERY macOS CLIENT OUT OF EVERY
+					// MULTIPLAYER GAME AFTER ~30 SECONDS, AS A "SPEEDHACK".
+					//
+					// The operands are uint32, so `nDeltaTimeB - nDeltaClientTime`
+					// with 250 and 251 does NOT give -1, it wraps to 0xFFFFFFFF.
+					// On Win32 `long` is 32 bits, so the (long) cast reinterpreted
+					// that as -1 and abs() recovered 1 — the check passed. On LP64
+					// `long` is 64 bits, so 0xFFFFFFFF widens to +4294967295, abs()
+					// leaves it alone, and it always exceeds g_nTolerance. Observed
+					// exactly that: nDeltaTimeB 250, nDeltaTicks 251,
+					// nDeltaClientTime 251 — three clocks agreeing to within 1 ms
+					// and still failing.
+					//
+					// Fix: reinterpret the wrapped difference as int32 FIRST, which
+					// is what the original (long) cast did on a 32-bit long, then
+					// take the magnitude. Behaviour is identical on Win32.
+					#define LT_ABSDIFF32(a,b) ((uint32)labs((long)(int32)((a)-(b))))
+
 					// Make sure all the counters match up.
-					if( (( uint32 ) abs( (long)(nDeltaTimeB - nDeltaClientTime) ) > g_nTolerance ) || 
-						(( uint32 ) abs( (long)(nDeltaTicks - nDeltaClientTime) ) > g_nTolerance ) ||
-						(( uint32 ) abs( (long)(nDeltaTimeB - nDeltaTicks) ) > g_nTolerance ) )
+					if( ( LT_ABSDIFF32(nDeltaTimeB, nDeltaClientTime) > g_nTolerance ) ||
+						( LT_ABSDIFF32(nDeltaTicks, nDeltaClientTime) > g_nTolerance ) ||
+						( LT_ABSDIFF32(nDeltaTimeB, nDeltaTicks)      > g_nTolerance ) )
 					{
 						g_pLTClient->CPrint( "Speedhack kick" );
 						g_pLTClient->CPrint( "nDeltaTimeB %d", nDeltaTimeB );

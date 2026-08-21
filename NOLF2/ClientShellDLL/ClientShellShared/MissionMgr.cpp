@@ -116,29 +116,53 @@ bool CMissionMgr::StartGameNew( )
 
 	// If this is a multiplayer game, then get use the campaign file to determine
 	// the first mission.
+	// ⚠️ macOS port: every early return below was SILENT, so a failed multiplayer
+	// host looked identical to one that never tried — the only symptom was a
+	// server with no world. These traces are visible with LT_TRACE_CONSOLE=1
+	// (con_PrintString mirrors CPrint to stdout); they cost nothing otherwise.
 	if( IsMultiplayerGame( ))
 	{
 		// Get the first mission to play from the missions file.
 		char szMission[4];
 		CUserProfile* pUserProfile = g_pProfileMgr->GetCurrentProfile( );
 		char const* pszCampaignFile = GetCampaignFile( pUserProfile->m_ServerGameOptions );
-		if (!CWinUtil::FileExist( pszCampaignFile ))
-			return false;
+		g_pLTClient->CPrint( "StartGameNew: MP, gametype=%d campaignFile='%s'",
+			(int)pUserProfile->m_ServerGameOptions.m_eGameType,
+			pszCampaignFile ? pszCampaignFile : "(null)" );
 
-		CWinUtil::WinGetPrivateProfileString( "MissionList", "Mission0", "0", szMission, 
+		if (!CWinUtil::FileExist( pszCampaignFile ))
+		{
+			g_pLTClient->CPrint( "StartGameNew: FAILED — campaign file does not exist" );
+			return false;
+		}
+
+		CWinUtil::WinGetPrivateProfileString( "MissionList", "Mission0", "0", szMission,
 			ARRAY_LEN( szMission ), pszCampaignFile );
 		nFirstMission = atoi( szMission );
+		g_pLTClient->CPrint( "StartGameNew: Mission0='%s' -> nFirstMission=%d",
+			szMission, nFirstMission );
 	}
 
 	// Get the level name for the first mission/level.
 	char const* pszLevelFilename = GetLevelFromMission( nFirstMission, 0 );
 	if( !pszLevelFilename )
+	{
+		g_pLTClient->CPrint( "StartGameNew: FAILED — GetLevelFromMission(%d,0) returned NULL",
+			nFirstMission );
 		return false;
+	}
+
+	g_pLTClient->CPrint( "StartGameNew: level='%s'", pszLevelFilename );
 
 	// Start from the first level.
 	if( !StartGameFromLevel( pszLevelFilename ))
+	{
+		g_pLTClient->CPrint( "StartGameNew: FAILED — StartGameFromLevel('%s')",
+			pszLevelFilename );
 		return false;
+	}
 
+	g_pLTClient->CPrint( "StartGameNew: OK" );
 	return true;
 }
 
@@ -213,13 +237,20 @@ bool CMissionMgr::FinishStartGameFromLevel()
 	// Make sure we have a server started.
 	if( !g_pClientMultiplayerMgr->StartClientServer( ))
 	{
+		g_pLTClient->CPrint( "FinishStartGameFromLevel: FAILED — StartClientServer" );
 		g_pInterfaceMgr->LoadFailed( );
 		return false;
 	}
 
 	// Send the start game message.
 	if( !SendStartGameMessage( ))
+	{
+		g_pLTClient->CPrint( "FinishStartGameFromLevel: FAILED — SendStartGameMessage" );
 		return false;
+	}
+
+	g_pLTClient->CPrint( "FinishStartGameFromLevel: sending MID_START_LEVEL '%s'",
+		GetCurrentWorldName( ));
 
 	// Tell the server to start with this level.
 	CAutoMessage cMsg;
@@ -750,6 +781,10 @@ bool CMissionMgr::FinishExitLevel( )
 
 bool CMissionMgr::FinishStartGame( )
 {
+	// macOS port tracing (LT_TRACE_CONSOLE=1) — this is the step that actually
+	// loads the world; StartGameNew only sets state and hands off to here.
+	g_pLTClient->CPrint( "FinishStartGame: m_eStartGameState=%d", (int)m_eStartGameState );
+
 	g_pInterfaceMgr->ChangeState(GS_LOADINGLEVEL);
 	
 	g_pChatMsgs->ClearHistory();

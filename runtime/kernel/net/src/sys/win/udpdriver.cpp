@@ -14,6 +14,11 @@
 #include <errno.h>
 #endif
 
+#ifdef LT_MACOS
+#include <ifaddrs.h>    // getifaddrs — see CUDPDriver::GetLocalIpAddress
+#include <net/if.h>     // IFF_UP / IFF_LOOPBACK / IFF_POINTOPOINT
+#endif
+
 #ifndef DE_SERVER_COMPILE
 #include "ConsoleCommands.h"
 #endif // DE_SERVER_COMPILE
@@ -2891,6 +2896,70 @@ bool CUDPDriver::GetLocalIpAddress(char* sBuffer, uint32 dwBufferSize, uint16 &h
 		return true;
 	}
 
+#ifdef LT_MACOS
+	// ⚠️⚠️ DO NOT USE gethostname()+gethostbyname() TO FIND OUR OWN IP ON macOS.
+	// IT RETURNED A DIFFERENT MACHINE'S ADDRESS.
+	//
+	// The original code below asks the RESOLVER what our own hostname maps to.
+	// On macOS that goes out to DNS/mDNS, and a router that hands out .local /
+	// LAN names (a FRITZ!Box here) can answer with a stale or colliding record.
+	// Observed on this LAN: the host logged
+	//     UDP: ---- 1 IP device ----
+	//     UDP: 192.168.188.33
+	// while the Mac's only real address was 192.168.188.187. .33 was a wholly
+	// different device (different MAC in the arp table, 240 ms ping). The
+	// server was therefore reporting SOMEONE ELSE'S ADDRESS as its own, which
+	// is exactly what a LAN browser would then try — and fail — to connect to.
+	//
+	// ★ This does NOT affect the listen socket: udp_SetupLocalSockaddr binds
+	// INADDR_ANY ("Hosting on 0.0.0.0:27888"), so inbound packets were always
+	// received fine. It affects what we ADVERTISE and display.
+	//
+	// Ask the kernel for the interface list instead — the only authoritative
+	// source. Prefer the first up, non-loopback, non-point-to-point IPv4
+	// interface, which is the normal LAN address.
+	{
+		struct ifaddrs *pIfAddrs = LTNULL;
+		if( getifaddrs( &pIfAddrs ) == 0 )
+		{
+			const char *pBest = LTNULL;
+			char sAddr[INET_ADDRSTRLEN];
+
+			for( struct ifaddrs *p = pIfAddrs; p; p = p->ifa_next )
+			{
+				if( !p->ifa_addr || p->ifa_addr->sa_family != AF_INET )
+					continue;
+				if( !(p->ifa_flags & IFF_UP) )
+					continue;
+				if( p->ifa_flags & (IFF_LOOPBACK | IFF_POINTOPOINT) )
+					continue;
+
+				struct sockaddr_in *pIn = (struct sockaddr_in *)p->ifa_addr;
+				if( !inet_ntop( AF_INET, &pIn->sin_addr, sAddr, sizeof(sAddr) ))
+					continue;
+
+				pBest = sAddr;
+				break;
+			}
+
+			if( pBest )
+			{
+				LTStrCpy( sBuffer, pBest, dwBufferSize );
+				if( g_CV_UDPDebug > 2 )
+					dsi_ConsolePrint( "UDP: local IP via getifaddrs: %s", sBuffer );
+				freeifaddrs( pIfAddrs );
+				return true;
+			}
+
+			freeifaddrs( pIfAddrs );
+		}
+
+		// No usable interface (offline?). Fall through to the original path
+		// rather than failing outright.
+		dsi_ConsolePrint( "UDP: getifaddrs found no usable IPv4 interface, "
+		                  "falling back to gethostbyname" );
+	}
+#endif // LT_MACOS
 
 	// Setup a sockaddr_in to bind to the socket with.
 	status = gethostname(name, sizeof(name));
@@ -3331,10 +3400,24 @@ LTRESULT CUDPDriver::ConnectTCP( const char* sAddress)
 {
 	sockaddr_in addr;
 
+	// macOS port tracing: a `+join <ip>:<port>` that never puts a packet on the
+	// wire dies somewhere in here, and every exit was silent. Unconditional (not
+	// gated on UDPDebug) because this is the entry point for ALL direct joins.
+	dsi_ConsolePrint("UDP: ConnectTCP('%s')", sAddress ? sAddress : "(null)");
+
 	if(!udp_BuildSockaddrFromString(sAddress, &addr))
 	{
+		dsi_ConsolePrint("UDP: ConnectTCP FAILED - could not parse '%s'",
+		                 sAddress ? sAddress : "(null)");
 		RETURN_ERROR(1, ConnectTCP, LT_CANTBINDTOPORT);
 	}
+
+	dsi_ConsolePrint("UDP: ConnectTCP parsed -> %d.%d.%d.%d:%d",
+	                 (int)((ntohl(addr.sin_addr.s_addr) >> 24) & 0xFF),
+	                 (int)((ntohl(addr.sin_addr.s_addr) >> 16) & 0xFF),
+	                 (int)((ntohl(addr.sin_addr.s_addr) >>  8) & 0xFF),
+	                 (int)( ntohl(addr.sin_addr.s_addr)        & 0xFF),
+	                 (int)ntohs(addr.sin_port));
 
 	// always opens a new socket 
 	return(ReallyJoinSession(true, &addr));

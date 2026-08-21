@@ -40,7 +40,7 @@ public:
 	void	PrevModel();
 
 protected:
-	void	HandleCallback(uint32 dwParam1, uint32 dwParam2);
+	void	HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2);
 	void	UpdateChar();
 
     uint32  OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dwParam2);

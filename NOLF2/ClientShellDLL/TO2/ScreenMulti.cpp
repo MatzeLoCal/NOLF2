@@ -314,11 +314,27 @@ void    CScreenMulti::OnFocus(LTBOOL bFocus)
 			// Initialize to the doomsday mission bute.
 			sMissionFile = MISSION_DD_FILE;
 			break;
+
+		// ⚠️ THE ORIGINAL SWITCH HAD NO default: AND NO eGameTypeSingle CASE.
+		// sMissionFile then stayed EMPTY, Init("") failed, and the game killed
+		// itself with "Could not load mission bute ." — a fatal shutdown whose
+		// message names no file, which is worse than useless when diagnosing.
+		// Reaching this screen while the shell still thinks it is in single
+		// player is a caller bug (see the +host path in GameClientShell.cpp),
+		// but it must not take the process down.
+		case eGameTypeSingle:
+		default:
+			g_pLTClient->CPrint( "CScreenMulti::OnFocus: unexpected game type %d — "
+				"no mission bute to load, leaving the screen inert",
+				(int)g_pGameClientShell->GetGameType( ));
+			sMissionFile.clear( );
+			break;
 		}
 
-		if( !g_pMissionButeMgr->Init( sMissionFile.c_str() ))
+		if( sMissionFile.empty( ) || !g_pMissionButeMgr->Init( sMissionFile.c_str() ))
 		{
-			g_pLTClient->ShutdownWithMessage("Could not load mission bute %s.", sMissionFile.c_str() );
+			g_pLTClient->CPrint( "CScreenMulti::OnFocus: could not load mission bute '%s'",
+				sMissionFile.c_str( ));
 			return;
 		}
 
@@ -387,7 +403,7 @@ void    CScreenMulti::OnFocus(LTBOOL bFocus)
 
 
 
-uint32 CScreenMulti::HandleCallback(uint32 dwParam1, uint32 dwParam2)
+uint32 CScreenMulti::HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2)
 {
 	switch (dwParam2)
 	{
@@ -473,7 +489,27 @@ void CScreenMulti::Update()
 
 	char aTempBuffer[256];
 
-	FormatString(IDS_STATUS_STRING,aTempBuffer,sizeof(aTempBuffer),g_pClientMultiplayerMgr->GetServerDir()->GetCurStatusString());
+	// ⚠️ NO SERVER DIRECTORY ON THIS PORT — BAIL OUT BEFORE DEREFERENCING IT.
+	//
+	// The WON/Titan online matchmaking stack is not ported to macOS:
+	// libs/ServerDir/serverdir_macos_stub.cpp returns NULL from the factory, so
+	// ClientMultiplayerMgr::GetServerDir() (a plain accessor) hands back NULL.
+	// The original code assumes it always exists and dereferences it inline —
+	// which crashed the moment this screen was opened, every frame.
+	//
+	// ⚠️ The stub's own comment claimed "every NOLF2 caller null-checks"; that is
+	// true of the two FACTORY call sites and false of the ACCESSOR's callers.
+	// Guarding here rather than at each deref covers the whole state machine:
+	// the Update_State_* helpers are only ever reached from this switch.
+	if (!pServerDir)
+	{
+		LTStrCpy(aTempBuffer, "Online play is not available in this build.",
+		         sizeof(aTempBuffer));
+		m_pStatusCtrl->SetString(aTempBuffer);
+		return;
+	}
+
+	FormatString(IDS_STATUS_STRING,aTempBuffer,sizeof(aTempBuffer),pServerDir->GetCurStatusString());
 	m_pStatusCtrl->SetString(aTempBuffer);
 
 
@@ -682,7 +718,12 @@ void CScreenMulti::Update()
 
 void CScreenMulti::RequestMOTD()
 {
-	bool bResult = g_pClientMultiplayerMgr->GetServerDir()->QueueRequest(IServerDirectory::eRequest_MOTD);
+	// No server directory on this port -- see the note in Update().
+	IServerDirectory *pServerDir = g_pClientMultiplayerMgr->GetServerDir();
+	if (!pServerDir)
+		return;
+
+	bool bResult = pServerDir->QueueRequest(IServerDirectory::eRequest_MOTD);
 	if (bResult)
 	{
 		g_pLTClient->CPrint( "QueueRequest(IServerDirectory::eRequest_MOTD)");

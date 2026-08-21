@@ -123,7 +123,7 @@ void CLTGUIListCtrl::Render ( )
 // Returns the height
 uint16	CLTGUIListCtrl::GetHeight ( )
 {
-	return (uint16) ((float)m_nHeight * m_fScale);
+	return (uint16) ((float)m_nHeight * GetYScale());   // a HEIGHT scales by YRatio
 }
 
 // Returns the width
@@ -212,13 +212,13 @@ LTBOOL CLTGUIListCtrl::OnPageUp ( )
 
 	int nHeight = m_nHeight - (2 * m_indent.y);
 
-	int h = (int) ( (float)m_controlArray[nSel]->GetHeight()/m_fScale );
+	int h = (int) ( (float)m_controlArray[nSel]->GetHeight()/GetFontScale() );
 	while (nHeight >= h && nSel > 0)
 	{
 		//get the control's height (but unscale it)
 		nHeight -= h;
 		nSel--;
-		h = (int) ( (float)m_controlArray[nSel]->GetHeight()/m_fScale );
+		h = (int) ( (float)m_controlArray[nSel]->GetHeight()/GetFontScale() );
 
 		if (nHeight >= h)
 			nHeight -= m_nItemSpacing;
@@ -581,7 +581,7 @@ uint16 CLTGUIListCtrl::SetSelection( uint16 nIndex )
 		do
 		{
 			//get the control's height (but unscale it)
-			int h = (uint16) ( (float)m_controlArray[i]->GetHeight()/m_fScale );
+			int h = (uint16) ( (float)m_controlArray[i]->GetHeight()/GetFontScale() );
 
 			nBottom -= h;
 
@@ -638,7 +638,7 @@ void CLTGUIListCtrl::CalculatePositions()
 			m_nWidth = w;
 
 		//get the control's height (but unscale it)
-		h = (uint16) ( (float)m_controlArray[i]->GetHeight()/m_fScale );
+		h = (uint16) ( (float)m_controlArray[i]->GetHeight()/GetFontScale() );
 
 
 		//if we haven't identified the last shown control
@@ -850,8 +850,11 @@ void CLTGUIListCtrl::SetBasePos ( LTIntPt pos )
 
 void CLTGUIListCtrl::SetScale(float fScale)
 {
+	// ⚠️ This duplicates CLTGUICtrl::SetScale's position maths instead of calling
+	// it, so the widescreen y ratio has to be applied here too — a list that kept
+	// the uniform scale would drift away from the controls around it.
 	m_pos.x = (int)(fScale * (float)m_basePos.x);
-	m_pos.y = (int)(fScale * (float)m_basePos.y);
+	m_pos.y = (int)(fScale * s_fYOverX * (float)m_basePos.y);
 	m_fScale = fScale;
 	for (uint16 i = 0; i < m_controlArray.size(); i++ )
 	{

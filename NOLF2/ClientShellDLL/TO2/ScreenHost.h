@@ -39,7 +39,7 @@ public:
 	void	ReadyLaunch(LTBOOL bReady);
 
 protected:
-	void	HandleCallback(uint32 dwParam1, uint32 dwParam2);
+	void	HandleCallback(uintptr_t dwParam1, uintptr_t dwParam2);
 	void	CreateDefaultCampaign();
 
     LTBOOL	LaunchGame();

@@ -9,6 +9,24 @@
 
 extern int32 g_nSoundDebugLevel;
 
+// ★★ LT_WATCH_SOUND="substr" — see the declaration in wave.h.
+//
+// Companion to LT_MUTE_SOUNDS below: that one silences a candidate to find a
+// noise by ear, this one narrates a single named sound's whole journey. Both
+// match the same way — case-insensitive substring on the resource filename —
+// because the interesting identifier for dialogue is the bare numeric id
+// ("11041"), not a path anyone would type in full.
+bool snd_Watch( const char *pszName )
+{
+	static const char *s_pWatch = getenv( "LT_WATCH_SOUND" );
+	if ( !s_pWatch || !s_pWatch[0] || !pszName )
+		return false;
+
+	// strcasestr is POSIX and present on macOS/Linux; both are what this file
+	// builds for outside the DX8 path.
+	return strcasestr( pszName, s_pWatch ) != NULL;
+}
+
 //------------------------------------------------------------------
 //------------------------------------------------------------------
 // Holders and their headers.
@@ -112,7 +130,48 @@ LTRESULT CSoundBuffer::Init(FileIdentifier &fileIdent)
     m_bTouched = LTTRUE;
 
     if (LoadData() != LT_OK)
+    {
+        if (snd_Watch(fileIdent.m_Filename))
+            fprintf(stderr, "[watch] %s: LoadData() FAILED — no buffer will exist\n",
+                    fileIdent.m_Filename);
         return LT_ERROR;
+    }
+
+    // ★★ LT_WATCH_SOUND="substr" — FOLLOW ONE SOUND FROM FILE TO VOICE.
+    //
+    // Everything that decides whether a sound will be heard is decided from the
+    // numbers below, and until this existed none of them were visible together:
+    // the container's format tag (85 = MP3 inside a RIFF/WAVE, which is what all
+    // of NOLF2's Game/Voice/*.WAV are), and the `lith` chunk's buffer flags,
+    // which are what route the sound to the streaming path, the decompress-on-
+    // load path, or — when they are all zero, as they are for dialogue — to the
+    // compressed sample path that needs Init{,3D}SampleFromFile.
+    if (snd_Watch(fileIdent.m_Filename))
+    {
+        const WAVEFORMATEX *pWF = GetWaveFormat();
+        const uint32 nFlags = GetSoundBufferFlags();
+        fprintf(stderr,
+                "[watch] LOADED %s\n"
+                "[watch]   container: tag=%u %uch %uHz %ubit  data=%u bytes  dur=%ums\n"
+                "[watch]   compressed=%d  bufferflags=0x%x [%s%s%s]  decompressed=%p\n",
+                fileIdent.m_Filename,
+                pWF ? (unsigned)pWF->wFormatTag : 0u,
+                pWF ? (unsigned)pWF->nChannels : 0u,
+                pWF ? (unsigned)pWF->nSamplesPerSec : 0u,
+                pWF ? (unsigned)pWF->wBitsPerSample : 0u,
+                (unsigned)m_WaveHeader.m_dwDataSize, (unsigned)m_dwDuration,
+                (int)IsCompressed(), (unsigned)nFlags,
+                (nFlags & SOUNDBUFFERFLAG_STREAM)            ? "STREAM " : "",
+                (nFlags & SOUNDBUFFERFLAG_DECOMPRESSONLOAD)  ? "DECOMPRESSONLOAD " : "",
+                (nFlags & SOUNDBUFFERFLAG_DECOMPRESSATSTART) ? "DECOMPRESSATSTART " : "",
+                (void *)m_pDecompressedSoundBuffer);
+        if (IsCompressed() && !m_pDecompressedSoundBuffer &&
+            !(nFlags & SOUNDBUFFERFLAG_STREAM))
+        {
+            fprintf(stderr, "[watch]   -> compressed, undecompressed, not streamed:"
+                            " acquisition will go through Init{,3D}SampleFromFile\n");
+        }
+    }
 
     dl_InitList(&m_InstanceList);
 

@@ -2490,6 +2490,21 @@ HLTSOUND CCharacterFX::PlayLipSyncSound(char* szSound, LTFLOAT fRadius, LTBOOL &
 
 	bSubtitle = LTFALSE;
 
+	// ⚠️ macOS port tracing (LT_TRACE_CONSOLE=1). NPC dialogue is reported missing in
+	// parts of c01 while UpdateLipFlapControl still fires hundreds of times, which
+	// means a sound HANDLE exists with no Game/Voice/*.wav ever being opened. This
+	// is the one place that knows the requested filename, so print it here before
+	// any of the radius/cinematic filtering below can discard it.
+	{
+		static int s_nTraceDlg = -1;
+		if (s_nTraceDlg < 0)
+			s_nTraceDlg = getenv("LT_TRACE_DIALOGUE") ? 1 : 0;
+		if (s_nTraceDlg)
+			g_pLTClient->CPrint("[dlg] PlayLipSyncSound('%s') radius=%.0f isPlayer=%d cinAI=%d",
+				szSound ? szSound : "(null)", fRadius,
+				(int)m_cs.bIsPlayer, (int)m_cs.bIsCinematicAI);
+	}
+
     if (!szSound || !szSound[0] || fRadius <= 0.0f) return LTNULL;
 
     uint32 dwFlags = 0;
@@ -2578,6 +2593,23 @@ HLTSOUND CCharacterFX::PlayLipSyncSound(char* szSound, LTFLOAT fRadius, LTBOOL &
 		g_pClientSoundMgr->PlaySoundFromPos(vPos, szSound, fRadius, ePriority);
 	}
 	
+	// ⚠️ macOS port tracing — did the sound manager actually accept it? A NULL here
+	// means the request was refused (out of earshot / priority / sound class),
+	// which is invisible from the caller and looks identical to silent dialogue.
+	{
+		static int s_nTraceDlg2 = -1;
+		if (s_nTraceDlg2 < 0)
+			s_nTraceDlg2 = getenv("LT_TRACE_DIALOGUE") ? 1 : 0;
+		if (s_nTraceDlg2)
+		{
+			LTVector vListener; vListener.Init();
+			g_pLTClient->GetObjectPos(g_pLTClient->GetClientObject(), &vListener);
+			LTFLOAT fDist = (vPos - vListener).Mag();
+			g_pLTClient->CPrint("[dlg]   -> hSound=%s radius=%.0f dist=%.0f flags=0x%X",
+				hSound ? "OK" : "NULL", fRadius, fDist, (unsigned)dwFlags);
+		}
+	}
+
 	if (bSubtitle && hSound)
 	{
 		LTFLOAT fDuration = -1.0f;

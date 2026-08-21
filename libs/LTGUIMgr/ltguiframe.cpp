@@ -133,7 +133,7 @@ void CLTGUIFrame::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
 	m_nWidth = (uint16)((float)m_nBaseWidth * m_fScale);
-	m_nHeight = (uint16)((float)m_nBaseHeight * m_fScale);
+	m_nHeight = (uint16)((float)m_nBaseHeight * GetYScale());   // a HEIGHT scales by YRatio
 	ScalePolies();
 
 }
@@ -257,7 +257,7 @@ void CLTGUIFrame::SetSize(uint16 nWidth, uint16 nHeight)
 	m_nBaseWidth = nWidth;
 	m_nBaseHeight = nHeight;
 	m_nWidth = (uint16)((float)m_nBaseWidth * m_fScale);
-	m_nHeight = (uint16)((float)m_nBaseHeight * m_fScale);
+	m_nHeight = (uint16)((float)m_nBaseHeight * GetYScale());   // a HEIGHT scales by YRatio
 	ScalePolies();
 }
 

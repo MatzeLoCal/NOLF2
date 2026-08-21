@@ -69,6 +69,29 @@ void con_DrawSmall(int nLines)
 
 void con_PrintString(CONCOLOR theColor, int filterLevel, const char *pMsg)
 {
+	// ⚠️ Second half of LT_TRACE_CONSOLE (see dsi_PrintToConsole in linuxdsys.cpp).
+	// There are TWO separate console paths and mirroring only one is a trap:
+	//   dsi_ConsolePrint -> dsi_PrintToConsole   ENGINE-side diagnostics
+	//   g_pLTClient->CPrint -> con_PrintString   GAME-DLL diagnostics (this one)
+	// The game DLLs (ObjectDLL / ClientShellDLL) use CPrint exclusively, so
+	// without this every NOLF2-side diagnostic goes only to the in-game console
+	// overlay — invisible to a headless or logged run, and its absence from a log
+	// reads as "this code never ran".
+	static int s_nTraceConsole = -1;
+	if (s_nTraceConsole < 0)
+		s_nTraceConsole = getenv("LT_TRACE_CONSOLE") ? 1 : 0;
+
+	if (s_nTraceConsole && pMsg)
+	{
+		// CPrint appends its own '\n'; don't double it up.
+		size_t nLen = strlen(pMsg);
+		if (nLen && pMsg[nLen - 1] == '\n')
+			printf("[con] %.*s\n", (int)(nLen - 1), pMsg);
+		else
+			printf("[con] %s\n", pMsg);
+		fflush(stdout);
+	}
+
 	GETCONSOLE()->PrintString( theColor, filterLevel, pMsg );
 }
 

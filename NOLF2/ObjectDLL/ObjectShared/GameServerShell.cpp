@@ -1064,6 +1064,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if (nHandshakeVer != GAME_HANDSHAKE_VER)
 			{
 				// If they got here, they ignored our different version number.  Boot 'em!
+				g_pLTServer->CPrint("HANDSHAKE KICK: version mismatch (cli=%d srv=%d)",
+					nHandshakeVer, (int)GAME_HANDSHAKE_VER);
 				g_pLTServer->KickClient(hClient);
 
 				// Jump out of the handshake
@@ -1120,6 +1122,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if (nClientName != nClientPassword)
 			{
 				// They're a fake!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: password mismatch (name=0x%X pw=0x%X mask=0x%X)",
+					(unsigned)nClientName, (unsigned)nClientPassword, (unsigned)nXORMask);
 				g_pLTServer->KickClient(hClient);
 				return;
 			}
@@ -1133,6 +1137,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if (nWeaponCRC != nClientCRC)
 			{
 				// They're cheating!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: weapons CRC mismatch (srv=0x%X cli=0x%X)",
+					(unsigned)nWeaponCRC, (unsigned)nClientCRC);
 				g_pLTServer->KickClient(hClient);
 
 				return;
@@ -1147,6 +1153,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if (nCShellCRC != nClientCRC)
 			{
 				// They're cheating!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: CShell CRC mismatch (srv=0x%X cli=0x%X)",
+					(unsigned)nCShellCRC, (unsigned)nClientCRC);
 				g_pLTServer->KickClient(hClient);
 
 				return;
@@ -1161,6 +1169,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if( nClientModelButesCRC !=  nModelButesMaskedCRC )
 			{
 				// They're cheating!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: modelbutes CRC mismatch (srv=0x%X cli=0x%X)",
+					(unsigned)nModelButesMaskedCRC, (unsigned)nClientModelButesCRC);
 				g_pLTServer->KickClient(hClient);
 				return;
 			}
@@ -1174,6 +1184,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if( nClientSurfaceCRC !=  nSurfaceMaskedCRC )
 			{
 				// They're cheating!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: surface CRC mismatch (srv=0x%X cli=0x%X)",
+					(unsigned)nSurfaceMaskedCRC, (unsigned)nClientSurfaceCRC);
 				g_pLTServer->KickClient(hClient);
 				return;
 			}
@@ -1187,6 +1199,8 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 			if( nClientDamageFxCRC !=  nDamageFxMaskedCRC )
 			{
 				// They're cheating!!
+				g_pLTServer->CPrint("HANDSHAKE KICK: damagefx CRC mismatch (srv=0x%X cli=0x%X)",
+					(unsigned)nDamageFxMaskedCRC, (unsigned)nClientDamageFxCRC);
 				g_pLTServer->KickClient(hClient);
 				return;
 			}

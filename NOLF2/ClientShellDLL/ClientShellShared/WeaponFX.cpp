@@ -931,12 +931,29 @@ void CWeaponFX::CreateWeaponSpecificFX()
 		else if ( IMPACT_TYPE_RICOCHET == m_eImpactType )
 		{
 			// Create a ricochet weapon fx...
+			//
+			// ⚠️ THE ASSERT BELOW IS THE ONLY THING THAT EVER GUARDED THIS, AND
+			// NDEBUG COMPILES IT OUT (see the retail-parity note in the build) —
+			// so on a release build a NULL pProjectileFX went straight into the
+			// member access and crashed. Confirmed exactly: EXC_BAD_ACCESS at
+			// address 0x188, which is offsetof(PROJECTILEFX, szRicochetFXName)
+			// (4 + 32 + 5*64 + 32 + 4 = 392 = 0x188) — i.e. a NULL base plus the
+			// field offset. It faulted inside _stricmp in CFXButeMgr::GetImpactFX,
+			// because 0x188 is non-NULL and so survived that function's `!pName`
+			// check. Reached by firing a weapon whose ammo has no projectile FX
+			// and getting a ricochet — hit within ~20 s of co-op gameplay.
+			//
+			// ⇒ Original-code bug, not a port artefact, but only fatal because
+			// this build defines NDEBUG for retail parity.
 			ASSERT( 0 != m_pAmmo->pProjectileFX );
-			IMPACTFX *pRicochetFX =
-				g_pFXButeMgr->GetImpactFX(
-					m_pAmmo->pProjectileFX->szRicochetFXName
-				);
-			g_pFXButeMgr->CreateImpactFX(pRicochetFX, cs);
+			if( m_pAmmo->pProjectileFX )
+			{
+				IMPACTFX *pRicochetFX =
+					g_pFXButeMgr->GetImpactFX(
+						m_pAmmo->pProjectileFX->szRicochetFXName
+					);
+				g_pFXButeMgr->CreateImpactFX(pRicochetFX, cs);
+			}
 		}
 		else if ( IMPACT_TYPE_BLOCKED == m_eImpactType )
 		{

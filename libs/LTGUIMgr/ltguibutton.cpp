@@ -103,7 +103,7 @@ LTBOOL CLTGUIButton::SetFont(CUIFont *pFont, uint8 nFontSize)
 		bApply = LTTRUE;
 	}
 
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 
 	if (bApply && m_pText)
 	{
@@ -222,7 +222,7 @@ void CLTGUIButton::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
 	ScalePoly();
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);   // character height: GetFontRatio(), not XRatio
 	if (m_pText)
 	{
 		m_pText->SetCharScreenHeight(m_nFontSize);
@@ -260,9 +260,10 @@ void CLTGUIButton::ScalePoly()
 	uint32 w,h;
 	g_pTexInterface->GetTextureDims(m_hNormal,w,h);
 	float x = (float)m_basePos.x * m_fScale;
-	float y = (float)m_basePos.y * m_fScale;
-	float fw = (float)w * m_fScale * m_fTextureScale;
-	float fh = (float)h * m_fScale * m_fTextureScale;
+	float y = (float)m_basePos.y * GetYScale();          // vertical position: YRatio
+	// A bitmap must keep its aspect, so both extents take the uniform font ratio.
+	float fw = (float)w * GetFontScale() * m_fTextureScale;
+	float fh = (float)h * GetFontScale() * m_fTextureScale;
 
 	g_pDrawPrim->SetXYWH(&m_Poly,x,y,fw,fh);
 
