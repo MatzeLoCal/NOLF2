@@ -6,7 +6,7 @@
 #include "rezmgr.h"
 #include <string.h>
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(stricmp)
 inline int stricmp(const char* s1, const char* s2) { return strcasecmp(s1, s2); }
 #endif
 
