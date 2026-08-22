@@ -80,6 +80,80 @@ static void rw_ComposeVertexColors(RWBlock &cBlock)
 		cBlock.m_aComposedColor[nVert * 3 + 2] = (uint8)( nColor        & 0xFF);
 	}
 
+	// ★★★★ THE PER-VERTEX DIFFUSE ALPHA — THE TOP BYTE OF m_nColor.
+	//
+	// The loop above takes R, G and B and used to drop A on the floor. That
+	// alpha is where a WorldModel's authored `Alpha` property lives: it is baked
+	// into the vertex colours by the level PRE-PROCESSOR (WorldModel.cpp:70 —
+	// "DO NOT REMOVE THIS!!!! Pre-Processor looks at this value"; nothing reads
+	// the property at runtime), and D3D consumes it as D3DTA_DIFFUSE under
+	// ALPHAOP = MODULATE(TEXTURE, DIFFUSE) in the textured-gouraud shader
+	// (d3d_rendershader_gouraud.cpp:196).
+	//
+	// ⚠️ THIS IS THE ONLY SOURCE OF TRANSLUCENCY FOR SIBERIA'S WINDOW GLASS, and
+	// every other candidate is measurably dead: GlUW002/006.dtx are DXT1 with a
+	// 100%-opaque alpha channel, the instances are all rgba a=255, the DTX
+	// command string is plain `EnvMap` (not envmapalpha), and D3D never reads
+	// SURF_TRANSPARENT. c04s05 authors 70 blocks at alpha 127 or 153; with the
+	// byte discarded they composited at 1.0 and the panes read as solid walls.
+	//
+	// Stored only when something is actually below 255, so opaque geometry —
+	// which is nearly all of it — costs no memory and no upload work.
+	bool bAnyAlpha = false;
+	for (size_t nVert = 0; nVert < nVerts; ++nVert)
+	{
+		if (((cBlock.m_aVertices[nVert].m_nColor >> 24) & 0xFF) != 0xFF) { bAnyAlpha = true; break; }
+	}
+	if (bAnyAlpha)
+	{
+		// LT_VERTALPHA_FORCE=<0-255> — diagnostic override for every authored
+		// vertex alpha. 0 makes the glass fully transparent, which answers
+		// "is the geometry BEHIND the pane even being drawn?" independently of
+		// whether the blend value is right.
+		static int s_nForce = -2;
+		if (s_nForce == -2)
+		{
+			const char *p = getenv("LT_VERTALPHA_FORCE");
+			s_nForce = p ? atoi(p) : -1;
+		}
+		cBlock.m_aComposedAlpha.resize(nVerts);
+		for (size_t nVert = 0; nVert < nVerts; ++nVert)
+			cBlock.m_aComposedAlpha[nVert] = (s_nForce >= 0)
+			    ? (uint8)s_nForce
+			    : (uint8)((cBlock.m_aVertices[nVert].m_nColor >> 24) & 0xFF);
+
+		// LT_VERTALPHA_PAINT=1 — paint every alpha-carrying block BRIGHT RED.
+		// Separates "the alpha is not reaching the GPU" from "I am editing the
+		// wrong geometry": if the panes do not turn red, these blocks are not
+		// what is drawn in the window openings.
+		if (getenv("LT_VERTALPHA_PAINT"))
+		{
+			for (size_t nVert = 0; nVert < nVerts; ++nVert)
+			{
+				cBlock.m_aComposedColor[nVert * 3 + 0] = 255;
+				cBlock.m_aComposedColor[nVert * 3 + 1] = 0;
+				cBlock.m_aComposedColor[nVert * 3 + 2] = 0;
+			}
+		}
+	}
+	else
+	{
+		cBlock.m_aComposedAlpha.clear();
+	}
+
+	if (getenv("LT_TRACE_VERTALPHA") && bAnyAlpha)
+	{
+		uint32 nMin = 255, nMax = 0;
+		for (size_t nVert = 0; nVert < nVerts; ++nVert)
+		{
+			uint32 nA = cBlock.m_aComposedAlpha[nVert];
+			if (nA < nMin) nMin = nA;
+			if (nA > nMax) nMax = nA;
+		}
+		fprintf(stderr, "[valpha] block %zu verts: vertex alpha min=%u max=%u\n",
+		        nVerts, nMin, nMax);
+	}
+
 	for (size_t nGroup = 0; nGroup < cBlock.m_aLightGroups.size(); ++nGroup)
 	{
 		const RWLightGroup &cGroup = cBlock.m_aLightGroups[nGroup];
@@ -969,6 +1043,23 @@ static bool rw_LoadWorld(ILTStream *pStream, RWorld &cWorld)
 			return false;
 	}
 
+	// Does this world author a genuine per-vertex translucency anywhere? Decided
+	// once here rather than per frame; it selects the depth behaviour of the
+	// whole world model (see RWorld_DrawWorldModels).
+	cWorld.m_bHasVertexAlpha = false;
+	uint32 nAlphaBlocks = 0;
+	for (uint32 nBlock = 0; nBlock < nBlockCount; ++nBlock)
+	{
+		if (!cWorld.m_aBlocks[nBlock].m_aComposedAlpha.empty())
+		{
+			cWorld.m_bHasVertexAlpha = true;
+			++nAlphaBlocks;
+		}
+	}
+	if (nAlphaBlocks && getenv("LT_TRACE_VERTALPHA"))
+		fprintf(stderr, "[valpha] WORLD '%s': %u of %u blocks carry a vertex alpha\n",
+		        cWorld.m_sName[0] ? cWorld.m_sName : "(MAIN WORLD)", nAlphaBlocks, nBlockCount);
+
 	// EVERY world reads a trailing world-model count — nested world models
 	// included (CD3D_RenderWorld::Load is fully recursive; nested counts are
 	// simply 0). Skipping this read at nested levels desyncs the stream.
@@ -1854,6 +1945,16 @@ void RWorld_DrawWorldModels(bool bTranslucentPass)
 			cParams.m_bDiscardZeroAlpha = true;
 			// ⚠️ DEPTH WRITES STAY ON here -- with them off the far side of a
 			// car wheel draws through the near side and looks doubled (§15).
+			//
+			// ⚠️⚠️ DO NOT KEY THIS OFF "HAS AN AUTHORED VERTEX ALPHA". I tried
+			// exactly that, reasoning that genuine glass should stop writing
+			// depth the way D3D does for its whole translucent set — and it
+			// BROKE THE FRAME CONTRACT (0.04/0.03/0.08/0.06 against a 0.00
+			// gate), because c01s01's CAR carries a vertex alpha on its wheels
+			// and body too. "Authored a vertex alpha" does not mean "is a sheet
+			// of glass"; §15's case and this one are not separable that way.
+			// The panes composite correctly with depth writes left on, because
+			// the whole translucent set is drawn last.
 		}
 		else if (bAlphaBlended)
 		{

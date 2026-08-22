@@ -119,7 +119,21 @@ vertex WVSOut w_vertex(WVSIn in [[stage_in]],
         else                        atten  = 0.0;
         o.color = float4(u.dynColor.rgb * atten, 1.0);
     } else {
-        o.color = float4(in.color.rgb, u.objectAlpha);
+        // ★★★★ THE PER-VERTEX ALPHA MUST SURVIVE. This used to be
+        //     o.color = float4(in.color.rgb, u.objectAlpha);
+        // which read the vertex colour and then THREW ITS ALPHA AWAY, replacing
+        // it with the object-alpha uniform. Both alphas are real and they
+        // multiply, exactly as D3D's texture stages stack them:
+        //   * in.color.a  — the AUTHORED per-vertex diffuse alpha, i.e. a
+        //     WorldModel's `Alpha` property baked into the vertex colours by
+        //     the level pre-processor. This is what makes Siberia's window
+        //     glass see-through (c04s05 authors it at 127 and 153); its texture
+        //     GlUW002.dtx is a fully opaque DXT1 and cannot supply any.
+        //   * u.objectAlpha — the per-INSTANCE alpha (LTObject::m_ColorA).
+        // Dropping the first made every authored pane composite at 1.0 and read
+        // as a solid wall. ⚠️ Both are 1.0 for ordinary geometry, so this costs
+        // nothing anywhere else.
+        o.color = float4(in.color.rgb, in.color.a * u.objectAlpha);
     }
 
     // ── THE SECOND LAYER'S COORDINATES ──────────────────────────────────
@@ -199,13 +213,29 @@ fragment float4 w_fragment(WVSOut in [[stage_in]],
     const float s = (kSaturate != 0) ? 2.0 : 1.0;
     float4 c;
 
+    // ★★★★ WHICH ALPHA A WORLD SURFACE USES IS PER-SHADER, AND D3D IS NOT
+    // UNIFORM ABOUT IT. Getting this wrong in either direction is visible:
+    //   * gouraud UNTEXTURED   ALPHAOP=SELECTARG2, ARG2=DIFFUSE
+    //                          -> the vertex alpha         (gouraud.cpp:82)
+    //   * gouraud TEXTURED     ALPHAOP=MODULATE(TEXTURE, DIFFUSE)
+    //                          -> texture x vertex alpha   (gouraud.cpp:196)
+    //   * LIGHTMAP shaders     ALPHAOP=SELECTARG1, ARG1=TEXTURE
+    //                          -> texture alpha ONLY, the vertex alpha is
+    //                             IGNORED                  (lightmap.cpp:51)
+    // ⚠️ That last one is not a detail. c01s01's MAIN WORLD authors a vertex
+    // alpha on 94 of its 139 blocks, ranging down to 0; feeding those into a
+    // lightmapped surface's alpha runs them into the alpha test and discards
+    // real geometry. It broke the frame contract the moment I applied the
+    // vertex alpha everywhere (0.04/0.03/0.08/0.06 against a 0.00 gate).
+    // in.color.a carries vertexAlpha * objectAlpha from the vertex stage; the
+    // branches that must ignore the vertex part use u.objectAlpha directly.
     if (kLightMode == 3) {
         c = in.color;
     } else if (kLightMode == 2) {
         // The lightmap is the surface colour. Its own UV set, and no vertex
         // colour: a lightmapped surface carries its light in the map, exactly
         // as D3D's lightmap shader does (it does not modulate vertex diffuse).
-        c = float4(lmTex.sample(lmSmp, in.uv1).rgb, in.color.a);
+        c = float4(lmTex.sample(lmSmp, in.uv1).rgb, u.objectAlpha);   // lightmap: no vertex alpha
     } else {
         float4 t = baseTex.sample(baseSmp, in.uv0);
 
@@ -230,7 +260,7 @@ fragment float4 w_fragment(WVSOut in [[stage_in]],
 
         if (kLightMode == 1) {
             float3 l = lmTex.sample(lmSmp, in.uv1).rgb;
-            c = float4(t.rgb * l * s, t.a * in.color.a);
+            c = float4(t.rgb * l * s, t.a * u.objectAlpha);   // lightmap+texture: TEXTURE alpha only
         } else {
             c = float4(t.rgb * in.color.rgb * s, t.a * in.color.a);
         }
@@ -680,7 +710,14 @@ static void mw_FillColorBuffer(const RWBlock &cBlock, MWBlockGPU &cGPU)
 		{
 			pDst[i * 4 + 0] = pDst[i * 4 + 1] = pDst[i * 4 + 2] = 255;
 		}
-		pDst[i * 4 + 3] = 255;   // object alpha is a uniform, not per vertex
+		// ★ THE AUTHORED PER-VERTEX ALPHA (a WorldModel's `Alpha` property, baked
+		// into the vertex colours by the level pre-processor). Empty means the
+		// whole block is opaque, which is the overwhelmingly common case.
+		// ⚠️ This used to be an unconditional 255 — "object alpha is a uniform,
+		// not per vertex" — which was true of the OBJECT alpha and wrong about
+		// the VERTEX alpha, and it is what made Siberia's window glass solid.
+		pDst[i * 4 + 3] = (i < cBlock.m_aComposedAlpha.size())
+		                ? cBlock.m_aComposedAlpha[i] : 255;
 	}
 }
 

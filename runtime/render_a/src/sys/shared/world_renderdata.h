@@ -106,6 +106,21 @@ struct RWBlock
 	// (group color x RLE intensity), clamped -- CD3D_RenderBlock::
 	// UpdateLightingData's exact math. RGB triplets.
 	std::vector<uint8>         m_aComposedColor;
+	// ★★ THE PER-VERTEX DIFFUSE ALPHA, i.e. the TOP byte of m_nColor.
+	//
+	// This is where a WorldModel's authored `Alpha` property ends up: the level
+	// PRE-PROCESSOR bakes it into the vertex colours (WorldModel.cpp:70 — "DO
+	// NOT REMOVE THIS!!!! Pre-Processor looks at this value" — nothing reads
+	// that property at runtime). D3D's textured-gouraud shader consumes it as
+	// D3DTA_DIFFUSE under ALPHAOP=MODULATE(TEXTURE, DIFFUSE), which is how
+	// Siberia's window glass is see-through even though GlUW002.dtx is a fully
+	// opaque DXT1 with no alpha channel at all.
+	//
+	// Kept as its OWN array rather than widening m_aComposedColor to RGBA: the
+	// light groups below accumulate into RGB only, and alpha is never touched
+	// after load, so a parallel array keeps that math untouched.
+	// Empty == every vertex is 255 (the common case, no allocation).
+	std::vector<uint8>         m_aComposedAlpha;
 	// Opaque per-block handle for a backend that keeps GPU buffers per block
 	// (Metal: index into its vertex/index buffer table). 0 = not built yet.
 	uintptr_t                  m_hGPU;
@@ -117,8 +132,11 @@ struct RWorld
 {
 	std::vector<RWBlock> m_aBlocks;
 	char m_sName[64 + 1];   // world-model name (MAX_WORLDNAME_LEN); "" = main world
+	// True if ANY block authored a vertex alpha below 255. Drives the depth
+	// decision for this world model — see RWorld_DrawWorldModels.
+	bool m_bHasVertexAlpha;
 
-	RWorld() { m_sName[0] = 0; }
+	RWorld() : m_bHasVertexAlpha(false) { m_sName[0] = 0; }
 };
 
 // ---------------------------------------------------------------------------
