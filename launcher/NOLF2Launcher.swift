@@ -591,6 +591,15 @@ struct LauncherView: View {
         // machine that has no dev symlinks in the game folder.
         for (k, v) in GameModules.locate(enginePath: enginePath) { env[k] = v }
         if settings.muteFaultyWaterfall { env["LT_MUTE_SOUNDS"] = "waterfall_lg_dist" }
+        // Pass the pointer-state trace through when it is set on the launcher
+        // itself. It writes one line per second (wanted/applied lock, focus,
+        // cursor visibility) into the same engine.log a bug report carries, and
+        // "the mouse is visible during play" is close to undiagnosable without
+        // it -- every gate involved is invisible from the outside. Off unless
+        // asked for: this is a per-second log line.
+        if ProcessInfo.processInfo.environment["LT_TRACE_CURSOR"] != nil {
+            env["LT_TRACE_CURSOR"] = "1"
+        }
         // ⚠️ Set these only when the user asked for them. The engine's
         // disable-switches now respect their VALUE, but an unset variable is
         // still the cleanest way to say "default".
@@ -610,6 +619,28 @@ struct LauncherView: View {
             proc.standardError = h
         }
 
+        // ⚠️⚠️ DO NOT LET THIS PROCESS EXIT WHILE THE GAME RUNS. The engine is
+        // posix_spawn'd by us, so it lives in OUR coalition and is not an app
+        // LaunchServices ever opened. While we are alive it has a frontmost
+        // parent that can legitimately hand focus over; the moment we exit,
+        // nothing in the system will make that process active again -- every
+        // -[NSApp activate] it tries is refused, its window can never become
+        // key (only the ACTIVE app owns a key window), and the whole session
+        // runs with focus=0. That is what leaves the hardware pointer floating
+        // over the 3D view: both the cursor hide and the pointer lock are gated
+        // on the game having focus.
+        // ⇒ Vanish from the user's point of view (no Dock tile, no windows) but
+        //   keep the process alive, and follow the game out the door.
+        // Only follow it out once we have actually stepped aside: an engine
+        // that dies in the first two seconds must leave the launcher (and its
+        // error message) on screen, not quit silently behind it.
+        var bSteppedAside = false
+        proc.terminationHandler = { _ in
+            DispatchQueue.main.async {
+                if bSteppedAside { NSApp.terminate(nil) }
+            }
+        }
+
         do {
             try proc.run()
             settings.save()
@@ -623,7 +654,22 @@ struct LauncherView: View {
                         launchError = "The engine exited immediately (status \(status)). "
                                     + "See \(EngineLog.url.path)"
                     } else {
-                        NSApp.terminate(nil)
+                        // Hand focus over explicitly before stepping aside;
+                        // yielding is the sanctioned way for the active app to
+                        // say "give it to them".
+                        if let engine = NSRunningApplication(processIdentifier: proc.processIdentifier) {
+                            if #available(macOS 14.0, *) {
+                                NSApp.yieldActivation(to: engine)
+                            }
+                            engine.activate(options: [.activateAllWindows])
+                        }
+                        for w in NSApp.windows { w.orderOut(nil) }
+                        NSApp.setActivationPolicy(.accessory)
+                        NSApp.hide(nil)
+                        bSteppedAside = true
+                        // The engine may already have exited between the check
+                        // above and here; nothing else would notice then.
+                        if !proc.isRunning { NSApp.terminate(nil) }
                     }
                 }
             }
