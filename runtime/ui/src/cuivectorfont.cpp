@@ -292,14 +292,22 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 
 	// Integer, padded glyph boxes (a glyph can extend left of the origin, e.g.
 	// italics, so keep the box origin as well as the size).
-	std::vector<int> aGlyphW(nLen), aGlyphH(nLen), aGlyphOriginX(nLen), aGlyphTop(nLen);
+	// aGlyphW is the *padded* box the glyph is rasterised into: CoreText places
+	// glyphs at fractional origins, so antialiased ink can bleed one pixel past
+	// ceil(bounds.width). aInkW is the unpadded ink extent -- the equivalent of
+	// GDI's GLYPHMETRICS::gmBlackBoxX, and the only one of the two that belongs
+	// in the layout table. Mixing them up widened every character by a pixel.
+	std::vector<int> aGlyphW(nLen), aInkW(nLen), aGlyphH(nLen), aGlyphOriginX(nLen), aGlyphTop(nLen);
 	int nMaxGlyphW = 1, nMaxGlyphH = 1;
 	for (int i = 0; i < nLen; ++i)
 	{
-		int nW = (int)ceil(aBounds[i].size.width) + 1;
+		int nInk = (int)ceil(aBounds[i].size.width);
+		int nW = nInk + 1;
 		int nH = (int)ceil(aBounds[i].size.height) + 1;
+		if (nInk < 1) nInk = 1;
 		if (nW < 1) nW = 1;
 		if (nH < 1) nH = 1;
+		aInkW[i] = nInk;
 		aGlyphW[i] = nW;
 		aGlyphH[i] = nH;
 		aGlyphOriginX[i] = (int)floor(aBounds[i].origin.x);
@@ -403,10 +411,14 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 	int nX = 0, nY = 0;
 	for (int i = 0; i < nLen; ++i)
 	{
-		const int nCharWidthWithSpacing = aGlyphW[i] + kCharSpacing;
+		// Layout advance (goes in the table) uses the ink extent, matching the
+		// Windows build's gmBlackBoxX + kCharSpacing. Atlas packing uses the
+		// padded box so a neighbour can't overwrite this glyph's bleed pixel.
+		const int nCharWidthWithSpacing = aInkW[i] + kCharSpacing;
+		const int nCellStride           = aGlyphW[i] + kCharSpacing;
 
 		// Wrap to the next row if this glyph doesn't fit.
-		if (nX + nCharWidthWithSpacing >= nTexWidth)
+		if (nX + nCellStride >= nTexWidth)
 		{
 			nX = 0;
 			nY += nRowPitch;
@@ -454,7 +466,7 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 			}
 		}
 
-		nX += nCharWidthWithSpacing;
+		nX += nCellStride;
 	}
 
 	CGContextRelease(pCtx);

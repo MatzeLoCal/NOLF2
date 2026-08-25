@@ -322,6 +322,22 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 			}
 		}
 
+		// ⚠️ EVERY x BELOW GOES THROUGH THE 4:3 BOX, NOT GetXRatio().
+		//
+		// This screen draws the same [LoadScreenDefault] art as CLoadingScreen
+		// and replaces it in place when loading finishes. It had the identical
+		// widescreen bug: art presented as a centred 4:3 box, text laid out
+		// across the full width, so at 16:9 the title authored at x=50 landed
+		// ~82px left of where the art puts it and its first character fell onto
+		// the margin -- black text on a black margin, so each line silently lost
+		// exactly one character ("CHAPTER" -> "HAPTER"). Fixing CLoadingScreen
+		// alone left this screen wrong AND made the text jump on hand-off.
+		//
+		// fBoxScale == GetYRatio(); it is used for y as well so the two files
+		// read the same. At 4:3 fBoxLeft is 0 and this is the shipped layout.
+		float fBoxLeft = 0.0f, fBoxScale = 1.0f;
+		g_pInterfaceResMgr->GetLayoutBox(fBoxLeft, fBoxScale);
+
 		uint8 nFontSize = (uint8)((float)TitleFontSize * g_pInterfaceResMgr->GetFontRatio());
 		CUIFont *pFont = g_pInterfaceResMgr->GetFont(TitleFont);
 
@@ -332,8 +348,8 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 		m_pMissionNameStr->SetColor(TitleColor);
 		m_pMissionNameStr->SetText(m_missionname.c_str());
 		m_pMissionNameStr->SetCharScreenHeight(nFontSize);
-		float x = (float)TitlePos.x * g_pInterfaceResMgr->GetXRatio();
-		float y = (float)TitlePos.y * g_pInterfaceResMgr->GetYRatio();
+		float x = fBoxLeft + (float)TitlePos.x * fBoxScale;
+		float y = (float)TitlePos.y * fBoxScale;
 		m_pMissionNameStr->SetPosition(x,y);
 
 		nFontSize = (uint8)((float)LevelFontSize * g_pInterfaceResMgr->GetFontRatio());
@@ -346,8 +362,8 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 		m_pLevelNameStr->SetColor(LevelColor);
 		m_pLevelNameStr->SetText(m_levelname.c_str());
 		m_pLevelNameStr->SetCharScreenHeight(nFontSize);
-		x = (float)LevelPos.x * g_pInterfaceResMgr->GetXRatio();
-		y = (float)LevelPos.y * g_pInterfaceResMgr->GetYRatio();
+		x = fBoxLeft + (float)LevelPos.x * fBoxScale;
+		y = (float)LevelPos.y * fBoxScale;
 		m_pLevelNameStr->SetPosition(x,y);
 
 		//Setup briefing string
@@ -397,10 +413,10 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 		m_pBriefingStr->SetText(m_briefing.c_str());
 		m_pBriefingStr->SetColor(BriefingColor);
 		m_pBriefingStr->SetCharScreenHeight(nFontSize);
-		x = (float)BriefingPos.x * g_pInterfaceResMgr->GetXRatio();
-		y = (float)BriefingPos.y * g_pInterfaceResMgr->GetYRatio();
+		x = fBoxLeft + (float)BriefingPos.x * fBoxScale;
+		y = (float)BriefingPos.y * fBoxScale;
 		m_pBriefingStr->SetPosition(x,y);
-		m_pBriefingStr->SetWrapWidth((uint16)(g_pInterfaceResMgr->GetXRatio() * (float)BriefingWidth));
+		m_pBriefingStr->SetWrapWidth((uint16)(fBoxScale * (float)BriefingWidth));
 
 
 		//Setup briefing string
@@ -454,10 +470,25 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 			m_pHelpStr->SetText(m_help.c_str());
 			m_pHelpStr->SetColor(HelpColor);
 			m_pHelpStr->SetCharScreenHeight(nFontSize);
-			x = (float)HelpPos.x * g_pInterfaceResMgr->GetXRatio();
-			y = (float)HelpPos.y * g_pInterfaceResMgr->GetYRatio();
+			x = fBoxLeft + (float)HelpPos.x * fBoxScale;
+			y = (float)HelpPos.y * fBoxScale;
+			m_pHelpStr->SetWrapWidth((uint16)(fBoxScale * (float)HelpWidth));
+
+			// Same tip auto-fit as CLoadingScreen -- 20 of the 52 tips wrap to
+			// five lines, which from y=415 at HelpSize 14 ends past the 480-unit
+			// screen bottom (the Windows build clips them too). Measured at y=0
+			// because GetExtents spans the character quads and ApplyXYZ leaves a
+			// trailing space's quad at whatever XY it was allocated with, which
+			// would drag miny to 0 and inflate the height.
+			const float fTipHeight = 476.0f * fBoxScale - y;
+			uint8 nTipSize = nFontSize;
+			m_pHelpStr->SetPosition(x,0.0f);
+			while (nTipSize > 8 && m_pHelpStr->GetHeight() > fTipHeight)
+			{
+				--nTipSize;
+				m_pHelpStr->SetCharScreenHeight(nTipSize);
+			}
 			m_pHelpStr->SetPosition(x,y);
-			m_pHelpStr->SetWrapWidth((uint16)(g_pInterfaceResMgr->GetXRatio() * (float)HelpWidth));
 		}
 		else
 		{
@@ -530,8 +561,8 @@ void CScreenPostload::OnFocus(LTBOOL bFocus)
 
 		m_pContinueStr->SetColor(m_nContinueColor);
 		m_pContinueStr->SetCharScreenHeight(nFontSize);
-		x = (float)ContinuePos.x * g_pInterfaceResMgr->GetXRatio();
-		y = (float)ContinuePos.y * g_pInterfaceResMgr->GetYRatio();
+		x = fBoxLeft + (float)ContinuePos.x * fBoxScale;
+		y = (float)ContinuePos.y * fBoxScale;
 		m_pContinueStr->SetPosition(x,y);
 
 		s_bFlash = false;
@@ -694,6 +725,42 @@ LTBOOL CScreenPostload::Render(HSURFACE hDestSurf)
 		{
 			g_pInterfaceMgr->ChangeState(GS_PLAYING);
 			return TRUE;
+		}
+	}
+
+	// Paint the letterbox margins in the backdrop's own orange, exactly as
+	// CLoadingScreen does. Without this the margins are black here and orange
+	// there, and since this screen replaces the loading screen in place the
+	// frame flips colour the moment loading finishes. The screen's background
+	// art is drawn before Render() is called, so the bars only cover the margin.
+	{
+		float fBarLeft, fBarScale;
+		g_pInterfaceResMgr->GetLayoutBox(fBarLeft, fBarScale);
+
+		if (fBarLeft > 0.0f)
+		{
+			const float fW = (float)g_pInterfaceResMgr->GetScreenWidth();
+			const float fH = (float)g_pInterfaceResMgr->GetScreenHeight();
+			const uint32 argbLoadOrange = 0xFFFFBE13;
+
+			g_pDrawPrim->SetTransformType(DRAWPRIM_TRANSFORM_SCREEN);
+			g_pDrawPrim->SetZBufferMode(DRAWPRIM_NOZ);
+			g_pDrawPrim->SetClipMode(DRAWPRIM_NOCLIP);
+			g_pDrawPrim->SetFillMode(DRAWPRIM_FILL);
+			g_pDrawPrim->SetColorOp(DRAWPRIM_NOCOLOROP);
+			g_pDrawPrim->SetAlphaTestMode(DRAWPRIM_NOALPHATEST);
+			g_pDrawPrim->SetAlphaBlendMode(DRAWPRIM_NOBLEND);
+			g_pDrawPrim->SetTexture(LTNULL);
+
+			LTPoly_GT4 barLeft, barRight;
+			memset(&barLeft,  0, sizeof(barLeft));
+			memset(&barRight, 0, sizeof(barRight));
+			g_pDrawPrim->SetRGBA(&barLeft,  argbLoadOrange);
+			g_pDrawPrim->SetRGBA(&barRight, argbLoadOrange);
+			g_pDrawPrim->SetXYWH(&barLeft,  0.0f,           0.0f, fBarLeft, fH);
+			g_pDrawPrim->SetXYWH(&barRight, fW - fBarLeft,  0.0f, fBarLeft, fH);
+			g_pDrawPrim->DrawPrim(&barLeft);
+			g_pDrawPrim->DrawPrim(&barRight);
 		}
 	}
 

@@ -269,7 +269,7 @@ bool CUIBitmapFont::CreatePropFont(const uint8* pData, uint32 nWidth, uint32 nHe
 			green = false;			
 		}
 	}
-	
+
 
 	return true;
 }

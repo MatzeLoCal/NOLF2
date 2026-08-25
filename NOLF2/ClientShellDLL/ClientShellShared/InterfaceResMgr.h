@@ -93,6 +93,33 @@ public:
 	// inward, which is a different and worse bug.
 	LTFLOAT             GetFontRatio()                       {return (m_fXRatio < m_fYRatio) ? m_fXRatio : m_fYRatio;}
 
+	// ★★ THE 4:3 LETTERBOX FOR FULL-SCREEN AUTHORED ART (loading + postload).
+	//
+	// Screens whose backdrop is a single authored 640x480 image cannot use
+	// GetXRatio() for x positions. The art is presented as a 4:3 box centred on
+	// the display; text scaled by XRatio is laid out across the FULL width, so
+	// on 16:9 it drifts left of the art and its first character falls onto the
+	// margin. Black text on a black margin reads as "clipped and oversized" --
+	// see the note on ls_GetBox in LoadingScreen.cpp for the full diagnosis.
+	//
+	// Shared by CLoadingScreen and CScreenPostload, which draw the same
+	// [LoadScreenDefault] layout and must agree pixel-for-pixel: the postload
+	// screen replaces the loading screen in place, so any disagreement shows up
+	// as the text jumping when the level finishes loading.
+	//
+	// ★ At 4:3 this returns fLeft = 0 and fScale == GetXRatio(), i.e. exactly
+	// the shipped behaviour on the aspect these screens were authored for.
+	void                GetLayoutBox(float &fLeft, float &fScale)
+	{
+		const float fW = (float)GetScreenWidth();
+		const float fH = (float)GetScreenHeight();
+
+		fScale = (fH > 0.0f) ? (fH / 480.0f) : 1.0f;
+
+		const float fBoxW = fH * (4.0f / 3.0f);
+		fLeft = (fW > fBoxW) ? ((fW - fBoxW) * 0.5f) : 0.0f;
+	}
+
     uint32              GetScreenWidth();
     uint32              GetScreenHeight();
 

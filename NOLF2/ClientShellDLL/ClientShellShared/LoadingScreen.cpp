@@ -71,6 +71,35 @@ CLoadingScreen::~CLoadingScreen()
 
 }
 
+// ----------------------------------------------------------------------- //
+// ★★★★ THE 4:3 PRESENTATION BOX.
+//
+// The loading screen is a single 4:3 composition: 640x480 layout space, art that
+// bleeds off both edges, text placed relative to that art. It has no widescreen
+// layout, and stretching it is not an option — the photo cut-outs are circles
+// and §106 exists to keep circles round. So a wide display presents it as a 4:3
+// window, centred, with the margins painted in the backdrop's own orange so they
+// read as part of the design rather than as a broken frame.
+//
+// ⚠️ THE TEXT MUST USE THIS TOO, NOT GetXRatio(). That was the actual bug: the
+// text was laid out across the FULL screen width while the art was not, so at
+// 16:9 the title authored at x=50 was drawn at 80px when the art placed it at
+// 162px — 82px too far left, its first character past the art entirely. Black
+// text on the black margin, so every line silently lost exactly one character
+// ("CHAPTER" -> "HAPTER") and read as clipped and oversized. Nothing was clipped
+// and nothing was oversized.
+//
+// ★ At 4:3 this returns fLeft = 0 and fScale == GetXRatio(), i.e. byte-for-byte
+// the shipped behaviour on the aspect the screen was authored for.
+// ----------------------------------------------------------------------- //
+// The maths lives on CInterfaceResMgr so CScreenPostload gets the identical box
+// -- that screen draws this same layout and replaces this one in place, so the
+// two must agree exactly or the text jumps when loading finishes.
+static void ls_GetBox(float &fLeft, float &fScale)
+{
+	g_pInterfaceResMgr->GetLayoutBox(fLeft, fScale);
+}
+
 void CLoadingScreen::CreateScaleFX(char *szFXName)
 {	
 	if( m_pRenderScreen )
@@ -88,15 +117,24 @@ void CLoadingScreen::CreateScaleFX(char *szFXName)
 		m_SFXArray.Add(pSFX);
 		g_pInterfaceMgr->AddInterfaceSFX(pSFX, IFX_NORMAL);				
 
-		//adjust the object's position based on screen res
-		HOBJECT hSFX = pSFX->GetObject();
-		if (hSFX)
-		{
-			LTVector vNewPos;
-			g_pLTClient->GetObjectPos(hSFX, &vNewPos);
-			vNewPos.z;
-			g_pLTClient->SetObjectPos(hSFX, &vNewPos);
-		}
+		// ★★ THE BACKDROP IS LEFT AT ITS AUTHORED SIZE ON PURPOSE.
+		//
+		// ⚠️ The original body here was a NO-OP: it read the position and wrote the
+		// same value back — `vNewPos.z;` is a statement with no effect — under a
+		// comment promising to "adjust the object's position based on screen res".
+		//
+		// It is deliberately still not adjusted, and I tried the alternative first:
+		// scaling the sprite to COVER a wide screen. It removes the margins but it
+		// is wrong, because the loading screen is a 4:3 composition whose art BLEEDS
+		// off both edges by design — verified against retail 1600x1200 captures,
+		// where the cream briefing panel runs off the left and the photo off the
+		// right. Covering zooms that composition and pushes the bleed further out.
+		//
+		// The sprite is projected by the interface camera, whose vertical FOV is
+		// fixed (§106, Hor+), so its on-screen size follows the screen HEIGHT alone
+		// and is already correct at any aspect. A wide display only adds space
+		// BESIDE it — handled by presenting the screen as a 4:3 box (ls_GetBox) with
+		// the margins painted in the backdrop's own orange.
 	}
 }
 
@@ -460,8 +498,11 @@ LTBOOL CLoadingScreen::Init()
 	m_pMissionNameStr->SetColor(TitleColor);
 	m_pMissionNameStr->SetText(m_missionname.c_str());
 	m_pMissionNameStr->SetCharScreenHeight(nFontSize);
-	float x = (float)TitlePos.x * g_pInterfaceResMgr->GetXRatio();
-	float y = (float)TitlePos.y * g_pInterfaceResMgr->GetYRatio();
+	float fBoxLeft, fBoxScale;
+	ls_GetBox(fBoxLeft, fBoxScale);
+
+	float x = fBoxLeft + (float)TitlePos.x * fBoxScale;
+	float y = (float)TitlePos.y * fBoxScale;
 	m_pMissionNameStr->SetPosition(x,y);
 
 	nFontSize = (uint8)((float)LevelFontSize * g_pInterfaceResMgr->GetFontRatio());
@@ -474,8 +515,8 @@ LTBOOL CLoadingScreen::Init()
 	m_pLevelNameStr->SetColor(LevelColor);
 	m_pLevelNameStr->SetText(m_levelname.c_str());
 	m_pLevelNameStr->SetCharScreenHeight(nFontSize);
-	x = (float)LevelPos.x * g_pInterfaceResMgr->GetXRatio();
-	y = (float)LevelPos.y * g_pInterfaceResMgr->GetYRatio();
+	x = fBoxLeft + (float)LevelPos.x * fBoxScale;
+	y = (float)LevelPos.y * fBoxScale;
 	m_pLevelNameStr->SetPosition(x,y);
 
 
@@ -530,10 +571,10 @@ LTBOOL CLoadingScreen::Init()
 	}
 	m_pBriefingStr->SetColor(BriefingColor);
 	m_pBriefingStr->SetCharScreenHeight(nFontSize);
-	x = (float)BriefingPos.x * g_pInterfaceResMgr->GetXRatio();
-	y = (float)BriefingPos.y * g_pInterfaceResMgr->GetYRatio();
+	x = fBoxLeft + (float)BriefingPos.x * fBoxScale;
+	y = (float)BriefingPos.y * fBoxScale;
 	m_pBriefingStr->SetPosition(x,y);
-	m_pBriefingStr->SetWrapWidth((uint16)(g_pInterfaceResMgr->GetXRatio() * (float)BriefingWidth));
+	m_pBriefingStr->SetWrapWidth((uint16)(fBoxScale * (float)BriefingWidth));
 
 	//*******************************************************************************
 	// Build Mission Help String
@@ -581,10 +622,45 @@ LTBOOL CLoadingScreen::Init()
 		m_pHelpStr->SetText(m_help.c_str());
 		m_pHelpStr->SetColor(HelpColor);
 		m_pHelpStr->SetCharScreenHeight(nFontSize);
-		x = (float)HelpPos.x * g_pInterfaceResMgr->GetXRatio();
-		y = (float)HelpPos.y * g_pInterfaceResMgr->GetYRatio();
+		// ⚠️ THE WRAP WIDTH MATTERS AS MUCH AS THE POSITION. The tip text is
+		// authored the same size as the briefing (both HelpSize/BriefingSize 14),
+		// so when it read as "too big" it was not the font — it was wrapping at
+		// HelpWidth * XRatio instead of the 4:3 box scale, spreading 400 layout
+		// units across 800px instead of 600 at 1280x720 and running to the screen
+		// edge. Same glyphs, wrong measure.
+		x = fBoxLeft + (float)HelpPos.x * fBoxScale;
+		y = (float)HelpPos.y * fBoxScale;
+		m_pHelpStr->SetWrapWidth((uint16)(fBoxScale * (float)HelpWidth));
+
+		// ⚠️ THIS ONE IS NOT A PORTING BUG -- it is authored that way, and the
+		// fix is deliberately BETTER than retail. 20 of the game's 52 loading
+		// tips wrap to five lines. HelpRect is (60,415,460,460): five lines at
+		// HelpSize 14 reach y=485 against a 480-unit reference screen, so the
+		// last line is clipped by the bottom edge. That happens identically in
+		// the Windows build -- measured, by wrapping all 52 tips with both the
+		// GDI and CoreText metrics and comparing line counts (they match
+		// exactly, 0/1/9/22/20 for 1..5 lines). Do not "fix" the font metrics
+		// chasing this symptom; that was a dead end once already.
+		//
+		// Rather than reproduce a clipped line, shrink the tip until it fits.
+		// Reducing the character height also narrows the glyphs, so a smaller
+		// size can drop a line outright; re-measure each step instead of
+		// predicting.
+		//
+		// Measure at y=0. GetHeight() is maxy-miny over the character quads,
+		// and ApplyXYZ only writes quads it lays out -- a trailing space past
+		// the final word keeps whatever XY its poly was allocated with, which
+		// would drag miny to 0 and inflate the height. Anchoring the string at
+		// 0 makes miny 0 in either case, so the height is the true text height.
+		const float fTipHeight = 476.0f * fBoxScale - y;
+		uint8 nTipSize = nFontSize;
+		m_pHelpStr->SetPosition(x,0.0f);
+		while (nTipSize > 8 && m_pHelpStr->GetHeight() > fTipHeight)
+		{
+			--nTipSize;
+			m_pHelpStr->SetCharScreenHeight(nTipSize);
+		}
 		m_pHelpStr->SetPosition(x,y);
-		m_pHelpStr->SetWrapWidth((uint16)(g_pInterfaceResMgr->GetXRatio() * (float)HelpWidth));
 	}
 	else
 	{
@@ -600,8 +676,9 @@ LTBOOL CLoadingScreen::Init()
 			SetupQuadUVs(m_photoPoly, m_hFrame, 0.0f, 0.0f, 1.0f, 0.75f);
 			g_pDrawPrim->SetRGBA(&m_photoPoly,argbWhite);
 
-			float fScale = g_pInterfaceResMgr->GetXRatio();
-			float fx = (float)m_DefaultPhotoRect.left * fScale;
+			float fPhotoLeft, fScale;
+			ls_GetBox(fPhotoLeft, fScale);
+			float fx = fPhotoLeft + (float)m_DefaultPhotoRect.left * fScale;
 			float fy = (float)m_DefaultPhotoRect.top * fScale;
 
 			float fw = (float)(m_DefaultPhotoRect.right - m_DefaultPhotoRect.left) * fScale;
@@ -743,6 +820,46 @@ LTBOOL CLoadingScreen::Update()
 
 	// Go into optimized2d so the multiplayer info can draw
 	g_pLTClient->StartOptimized2D();
+
+	// ★★ THE 4:3 MARGINS, PAINTED IN THE BACKDROP'S OWN ORANGE.
+	//
+	// 0xFFBE13 = (255,190,19), sampled as the dominant colour of the retail
+	// 1600x1200 loading-screen captures — so the bars read as part of the
+	// composition instead of as a broken frame.
+	//
+	// ⚠️ Drawn FIRST, before any text, so nothing is painted over.
+	// ⚠️ They also crop the art's deliberate bleed past the 4:3 box, which is
+	// precisely what a 4:3 display shows — that is the point, not a side effect.
+	{
+		float fBarLeft, fBarScale;
+		ls_GetBox(fBarLeft, fBarScale);
+
+		if (fBarLeft > 0.0f)
+		{
+			const float fW = (float)g_pInterfaceResMgr->GetScreenWidth();
+			const float fH = (float)g_pInterfaceResMgr->GetScreenHeight();
+			const uint32 argbLoadOrange = 0xFFFFBE13;
+
+			g_pDrawPrim->SetTransformType(DRAWPRIM_TRANSFORM_SCREEN);
+			g_pDrawPrim->SetZBufferMode(DRAWPRIM_NOZ);
+			g_pDrawPrim->SetClipMode(DRAWPRIM_NOCLIP);
+			g_pDrawPrim->SetFillMode(DRAWPRIM_FILL);
+			g_pDrawPrim->SetColorOp(DRAWPRIM_NOCOLOROP);
+			g_pDrawPrim->SetAlphaTestMode(DRAWPRIM_NOALPHATEST);
+			g_pDrawPrim->SetAlphaBlendMode(DRAWPRIM_NOBLEND);
+			g_pDrawPrim->SetTexture(LTNULL);
+
+			LTPoly_GT4 barLeft, barRight;
+			memset(&barLeft,  0, sizeof(barLeft));
+			memset(&barRight, 0, sizeof(barRight));
+			g_pDrawPrim->SetRGBA(&barLeft,  argbLoadOrange);
+			g_pDrawPrim->SetRGBA(&barRight, argbLoadOrange);
+			g_pDrawPrim->SetXYWH(&barLeft,  0.0f,           0.0f, fBarLeft, fH);
+			g_pDrawPrim->SetXYWH(&barRight, fW - fBarLeft,  0.0f, fBarLeft, fH);
+			g_pDrawPrim->DrawPrim(&barLeft);
+			g_pDrawPrim->DrawPrim(&barRight);
+		}
+	}
 
 	if (m_pMissionNameStr)
 		m_pMissionNameStr->Render();
@@ -1035,8 +1152,9 @@ void CLoadingScreen::UpdateMissionInfo()
 			SetupQuadUVs(m_photoPoly, m_hFrame, 0.0f, 0.0f, 1.0f, 0.75f);
 			g_pDrawPrim->SetRGBA(&m_photoPoly,argbWhite);
 
-			float fScale = g_pInterfaceResMgr->GetXRatio();
-			float fx = (float)m_DefaultPhotoRect.left * fScale;
+			float fPhotoLeft, fScale;
+			ls_GetBox(fPhotoLeft, fScale);
+			float fx = fPhotoLeft + (float)m_DefaultPhotoRect.left * fScale;
 			float fy = (float)m_DefaultPhotoRect.top * fScale;
 
 			float fw = (float)(m_DefaultPhotoRect.right - m_DefaultPhotoRect.left) * fScale;
