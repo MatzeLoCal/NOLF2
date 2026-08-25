@@ -40,6 +40,12 @@
 - (BOOL)wantsUpdateLayer      { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
 
+// ⚠️ A CLICK ON AN INACTIVE APP IS SWALLOWED BY DEFAULT: AppKit uses the first
+// click only to activate the app and does NOT deliver it to the view. For a
+// game that is exactly wrong -- the user aims at a menu button, clicks, and
+// nothing happens until they click a second time.
+- (BOOL)acceptsFirstMouse:(NSEvent*)ev { return YES; }
+
 // Keep the drawable size in PIXELS in step with the view, including across a
 // backing-scale change (moving between displays of different density).
 - (void)viewDidChangeBackingProperties {
@@ -60,6 +66,18 @@
 
 @end
 
+// ⚠️ A BORDERLESS NSWindow ANSWERS NO TO -canBecomeKeyWindow. AppKit assumes a
+// window with no title bar is a panel or a decoration rather than somewhere the
+// user works, so -makeKeyAndOrderFront: silently leaves the FULLSCREEN window
+// non-key forever (windowed mode uses a titled style and is unaffected).
+// ⇒ Say YES. A screen-filling game window is exactly the key window.
+@interface LTGameWindow : NSWindow
+@end
+@implementation LTGameWindow
+- (BOOL)canBecomeKeyWindow  { return YES; }
+- (BOOL)canBecomeMainWindow { return YES; }
+@end
+
 // --------------------------------------------------------------------------
 // Window state (single main window; the engine is single-window).
 // --------------------------------------------------------------------------
@@ -75,6 +93,29 @@ namespace {
 - (BOOL)windowShouldClose:(id)sender { g_bShouldClose = true; return NO; }
 @end
 
+// ⚠️⚠️ NEVER LET AppKit TERMINATE THIS PROCESS. -[NSApplication terminate:]
+// ends in exit(), and exit() runs the C++ static destructors of the game
+// dylibs -- which is precisely what main() in macos_client.cpp refuses to do,
+// with a long comment explaining why: libCShell owns a static
+// CTO2GameClientShell whose destructor chain calls back into an engine that has
+// already been torn down. The engine therefore leaves through _exit(0).
+//
+// This only became reachable when the app started properly ACTIVATING (see
+// ltmac_RetryStartupActivation): an inactive app never receives Cmd-Q or the
+// Dock's Quit, so AppKit's exit path was unreachable by accident. Once it was
+// reachable, every clean quit aborted in ~CLTGUIWindow with a double free.
+// ⇒ Turn AppKit's request into OUR shutdown flag and refuse the termination.
+//   The frame loop sees LTMacWin_ShouldClose, unwinds through Term()/dsi_Term()
+//   and calls _exit itself.
+@interface LTAppDelegate : NSObject <NSApplicationDelegate>
+@end
+@implementation LTAppDelegate
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
+    g_bShouldClose = true;
+    return NSTerminateCancel;
+}
+@end
+
 // --------------------------------------------------------------------------
 // C ABI
 // --------------------------------------------------------------------------
@@ -83,7 +124,25 @@ extern "C" {
 bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen) {
     @autoreleasepool {
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        BOOL bPolicyOK = [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        if (getenv("LT_TRACE_CURSOR"))
+            fprintf(stderr, "[cur] setActivationPolicy(Regular) -> %d, pid=%d\n",
+                    (int)bPolicyOK, (int)getpid());
+        // Before -finishLaunching: the delegate has to be in place by the time
+        // AppKit can deliver a Quit AppleEvent.
+        [NSApp setDelegate:[[LTAppDelegate alloc] init]];
+        // ⚠️⚠️ WITHOUT THIS THE POINTER NEVER HIDES DURING GAMEPLAY. The engine
+        // drives its own frame loop and drains events with -nextEventMatchingMask:,
+        // so -[NSApp run] is never called and nothing else performs AppKit's
+        // one-time launch step. Until -finishLaunching has run, NSApp is not
+        // "launched" and swallows the activation request below, leaving the game
+        // inactive -- and both the cursor hide and the pointer lock are gated on
+        // focus (they have to be, or Cmd-Tabbing away would leave the mouse
+        // trapped by a window the user can no longer see). The reported symptom
+        // was exactly that: the camera turns and the arrow turns with it, and it
+        // starts behaving only after a Cmd-Tab away and back, because THAT
+        // activation comes from the window server rather than from us.
+        [NSApp finishLaunching];
 
         // Fullscreen = a BORDERLESS window covering the whole screen, with the
         // menu bar and Dock hidden. This is the "exclusive fullscreen" the game
@@ -101,7 +160,7 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
             : (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable);
 
-        g_pWindow = [[NSWindow alloc] initWithContentRect:frame
+        g_pWindow = [[LTGameWindow alloc] initWithContentRect:frame
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
@@ -157,7 +216,13 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
             [g_pWindow setContentView:g_pMetalView];
             [g_pWindow makeFirstResponder:g_pMetalView];
             [g_pWindow makeKeyAndOrderFront:nil];
-            [NSApp activateIgnoringOtherApps:YES];
+            // -activateIgnoringOtherApps: is deprecated and is increasingly
+            // ignored on macOS 14+ (the system decides who gets to steal focus);
+            // -activate is the supported spelling. Keep the old call for 12/13.
+            if (@available(macOS 14.0, *))
+                [NSApp activate];
+            else
+                [NSApp activateIgnoringOtherApps:YES];
             fprintf(stderr, "[mac] Metal view %.0fx%.0f (scale %.1f)\n",
                     l.drawableSize.width, l.drawableSize.height, (double)scale);
             return true;
@@ -196,6 +261,87 @@ static bool g_bCursorHidden     = false;   // what is applied right now
 // AppKit re-shows it under us), and always unwind the count fully on show.
 static int g_nCursorHideDepth = 0;
 
+// Does the game own input right now?
+//
+// ⚠️⚠️ ASK THE WINDOW SERVER, NOT NSApp. -[NSApp isActive] is a cached
+// in-process flag that AppKit maintains from inside -[NSApplication run] --
+// which this engine never calls, because it drives its own frame loop and
+// drains events with -nextEventMatchingMask:. -finishLaunching is enough to get
+// events flowing, but not enough to keep that flag in step: a trace of a full
+// launcher session showed frontPid == our own pid and
+// +[NSRunningApplication currentApplication].isActive == YES for the entire
+// run, while -[NSApp isActive] sat at NO from the first frame to the last. The
+// system had made us active; only our copy of AppKit had not noticed.
+//
+// The key-window half is a dead end for the same reason: ONLY THE ACTIVE APP
+// OWNS A KEY WINDOW, and "active" here means AppKit's flag -- so with that flag
+// stuck at NO, -makeKeyAndOrderFront: can never take (this is also why teaching
+// the borderless fullscreen window to answer YES to -canBecomeKeyWindow, which
+// it does need to do, changed nothing on its own).
+//
+// NSRunningApplication is the window server's own answer, and the trace proves
+// it tracks BOTH directions: it flipped to 0 with a different frontPid the
+// moment the user switched away. That is exactly the signal this gate wants.
+static bool ltmac_AppHasFocus(void) {
+    // Cached: -isActive crosses to LaunchServices, and this is called several
+    // times per pump. 50 ms is far below human reaction time and bounds the
+    // traffic at 20/s.
+    static NSRunningApplication* s_pSelf   = nil;
+    static double                s_fLast   = 0.0;
+    static bool                  s_bActive = false;
+
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    double fNow = (double)ts.tv_sec + ts.tv_nsec * 1e-9;
+    if (fNow - s_fLast >= 0.05) {
+        s_fLast = fNow;
+        if (!s_pSelf) s_pSelf = [NSRunningApplication currentApplication];
+        s_bActive = [s_pSelf isActive] ? true : false;
+    }
+
+    return s_bActive || [NSApp isActive] || (g_pWindow && [g_pWindow isKeyWindow]);
+}
+
+// Ask the system to make us the active app.
+static void ltmac_ActivateSelf(void) {
+    if (@available(macOS 14.0, *))
+        [NSApp activate];
+    else
+        [NSApp activateIgnoringOtherApps:YES];
+    if (g_pWindow && ![g_pWindow isKeyWindow])
+        [g_pWindow makeKeyAndOrderFront:nil];
+}
+
+// ⚠️ ONE ACTIVATION ATTEMPT AT STARTUP IS NOT ENOUGH. The attempt made from
+// LTMacWin_Create happens while the process that spawned us is still frontmost,
+// and macOS 14's cooperative activation can simply refuse a focus transfer
+// between two unrelated processes. A game left inactive runs with the pointer
+// lock and the cursor hide both disabled -- the desktop's arrow floats over the
+// 3D view for the whole session.
+// ⇒ Keep asking during startup, and stop the moment we have ever had focus, so
+//   a user who deliberately Cmd-Tabs away is never yanked back.
+static void ltmac_RetryStartupActivation(void) {
+    static bool   s_bEverFocused = false;
+    static double s_fFirstPump   = 0.0;
+    static double s_fLastTry     = 0.0;
+
+    if (s_bEverFocused) return;
+    if (ltmac_AppHasFocus()) { s_bEverFocused = true; return; }
+
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    double fNow = (double)ts.tv_sec + ts.tv_nsec * 1e-9;
+    if (s_fFirstPump == 0.0) s_fFirstPump = fNow;
+    if (fNow - s_fFirstPump > 10.0) return;   // startup only, never mid-game
+    if (fNow - s_fLastTry < 0.5) return;
+    s_fLastTry = fNow;
+    ltmac_ActivateSelf();
+}
+
+// ⚠️ CG COUNTERS ONLY, AND NOTHING AT THE AppKit LAYER. Adding [NSCursor hide]
+// on top of these calls gives one pointer two independent hide counters, which
+// is a state machine nobody can reason about -- and it does not fix a pointer
+// that is visible because the app lacks focus, which is the usual cause.
+// ⇒ One layer, one counter. Do not add a second without a trace proving AppKit
+//   is what re-showed the cursor.
 static void ltmac_SetCursorHidden(bool bHide) {
     if (bHide) {
         if (CGCursorIsVisible()) {
@@ -214,7 +360,7 @@ static void ltmac_ApplyCursorVisibility(void) {
     // Only ever hide while WE are frontmost -- CGDisplayHideCursor affects the
     // whole display, so hiding it while in the background would leave the user
     // with an invisible pointer in every other app.
-    bool bHide = [NSApp isActive] && (g_bCaptureActive || !g_bGameWantsCursor);
+    bool bHide = ltmac_AppHasFocus() && (g_bCaptureActive || !g_bGameWantsCursor);
     bool bChanged = (bHide != g_bCursorHidden);
     g_bCursorHidden = bHide;
 
@@ -236,19 +382,77 @@ LTMacWndProc* LTMacWin_GetWndProcSlot(void) {
     return &g_pMacWndProc;
 }
 
-// ⚠️ THE WM_MOUSEMOVE / WM_*BUTTON* PATH IS GONE, AND IT WAS ALREADY DEAD.
-// ltmac_PostMouseMessage converted Cocoa view coords to Win32 y-down pixels and
-// posted them to the game's hooked window proc. Its guard was `if
-// (!g_pMacWndProc || !g_pView) return;` and g_pView -- the NSOpenGLView -- has
-// been unconditionally nil for the whole Metal era, so it never posted a single
-// message. Its own comment claimed to be "the only path NOLF2 has for its own
-// cursor and for clicking menu items"; that comment was STALE. Mouse buttons
-// reach the game through the input device instead (macos_input.mm's
-// g_aMouseDown -> LTMacInput_IsMouseButtonDown), which is why menus, the
-// document popup and the light switch all work in play.
-// ⇒ Deleted rather than re-pointed at the Metal view: re-pointing it would
-// START delivering messages the engine has never received, which is a
-// behaviour change dressed up as a rename. ltmac_MakeLParam went with it.
+// --------------------------------------------------------------------------
+// ★ WM_MOUSEMOVE / WM_*BUTTON* -- THE GAME'S ONLY MOUSE PATH IN THE INTERFACE.
+//
+// This existed once, guarded on `g_pView` (the NSOpenGLView), and when the GL
+// backend was deleted that variable became permanently nil, so the guard turned
+// the whole thing into a no-op. It was then removed outright on the reasoning
+// that mouse buttons already reach the game through the input device
+// (macos_input.mm's g_aMouseDown -> LTMacInput_IsMouseButtonDown). That is true
+// but it is a DIFFERENT path: the input device feeds BOUND COMMANDS (fire,
+// activate), which is why the light switch and the document popup work in play.
+// It carries no cursor POSITION and reaches no GUI control.
+//
+// IClientShell has no mouse callbacks at all. CInterfaceMgr::m_CursorPos -- the
+// position the game draws its own cursor sprite at -- is written in exactly one
+// place, CInterfaceMgr::OnMouseMove, reached only from the game's hooked window
+// proc. Likewise CBaseScreen::OnLButtonDown/Up, which is what actually clicks a
+// menu item; both take the coordinates straight out of the message. With no
+// messages the menu cursor sat pinned at (0,0) and nothing in any screen could
+// be clicked, exactly as macbuild/compat/windowsx.h's own comment describes.
+//
+// So: re-pointed at the Metal view. It is a behaviour change on purpose -- the
+// menus have never had a working mouse on this port.
+// --------------------------------------------------------------------------
+static void ltmac_PostMouseMessage(NSEvent* ev, unsigned int uMsg) {
+    if (!g_pMacWndProc || !g_pMetalView) return;
+
+    NSRect bounds = [g_pMetalView bounds];
+    if (NSWidth(bounds) <= 0.0 || NSHeight(bounds) <= 0.0) return;
+
+    NSPoint pt = [g_pMetalView convertPoint:[ev locationInWindow] fromView:nil];
+
+    // ⚠️ BACKING PIXELS, NOT POINTS. Every screen dimension the game measures
+    // against -- the menu layout, GetControlUnderPoint's hit rectangles, the
+    // cursor blit -- comes from LTMacWin_GetSize, which reports the layer's
+    // drawableSize. On a 2x display the view is HALF that in points, so an
+    // unscaled position would land at half the intended spot and every control
+    // would test as "not under the cursor" in the bottom-right of the screen.
+    CAMetalLayer* layer = (CAMetalLayer*)g_pMetalView.layer;
+    CGFloat fScaleX = layer.drawableSize.width  / NSWidth(bounds);
+    CGFloat fScaleY = layer.drawableSize.height / NSHeight(bounds);
+
+    // Cocoa is y-UP from the bottom-left corner; Win32 -- and every coordinate
+    // the game computes with -- is y-DOWN from the top-left.
+    long nX = (long)(pt.x * fScaleX);
+    long nY = (long)((NSHeight(bounds) - pt.y) * fScaleY);
+
+    long nW = (long)layer.drawableSize.width;
+    long nH = (long)layer.drawableSize.height;
+    if (nX < 0) nX = 0; else if (nX > nW - 1) nX = nW - 1;
+    if (nY < 0) nY = 0; else if (nY > nH - 1) nY = nH - 1;
+
+    // MK_* key-state flags. The game's handlers take them as `UINT keyFlags`
+    // and ignore them, but the crackers in compat/windowsx.h pass wParam
+    // through, so fill them in rather than lie.
+    unsigned long wParam = 0;
+    NSUInteger nButtons = [NSEvent pressedMouseButtons];
+    if (nButtons & (1u << 0)) wParam |= 0x0001;   // MK_LBUTTON
+    if (nButtons & (1u << 1)) wParam |= 0x0002;   // MK_RBUTTON
+    NSUInteger nFlags = [NSEvent modifierFlags];
+    if (nFlags & NSEventModifierFlagShift)   wParam |= 0x0004;   // MK_SHIFT
+    if (nFlags & NSEventModifierFlagControl) wParam |= 0x0008;   // MK_CONTROL
+
+    // lParam packs the position as two 16-bit halves, y in the high word --
+    // GET_X_LPARAM / GET_Y_LPARAM unpack it on the other side.
+    long lParam = (long)(((nY & 0xFFFF) << 16) | (nX & 0xFFFF));
+
+    if (getenv("LT_TRACE_MOUSE"))
+        fprintf(stderr, "[in] msg 0x%04X at (%ld,%ld)\n", uMsg, nX, nY);
+
+    g_pMacWndProc((void*)g_pWindow, uMsg, wParam, lParam);
+}
 
 void LTMacWin_SetCursorVisible(bool bVisible) {
     g_bGameWantsCursor = bVisible;
@@ -290,7 +494,7 @@ static void ltmac_ConfinePointerToWindow(void) {
     // Only while WE are frontmost -- otherwise we would fight the user for the
     // pointer after Cmd-Tab. And never while decoupled: the pointer is already
     // pinned then, and warping it would inject bogus deltas into mouse-look.
-    if (![NSApp isActive] || g_bCaptureActive) return;
+    if (!ltmac_AppHasFocus() || g_bCaptureActive) return;
 
     NSScreen *screen = [g_pWindow screen] ?: [NSScreen mainScreen];
     if (!screen) return;
@@ -376,7 +580,7 @@ static void ltmac_ApplyMouseCapture(bool bCapture) {
 
 void LTMacWin_SetMouseCapture(bool bCapture) {
     g_bWantCapture = bCapture;
-    ltmac_ApplyMouseCapture(bCapture && [NSApp isActive]);
+    ltmac_ApplyMouseCapture(bCapture && ltmac_AppHasFocus());
 }
 
 bool LTMacWin_IsMouseCaptured(void) { return g_bCaptureActive; }
@@ -423,16 +627,37 @@ void LTMacWin_PumpEvents(void) {
         if (fNow - s_fLastBeat >= 1.0) {
             s_fLastBeat = fNow;
             NSPoint pt = [NSEvent mouseLocation];
-            fprintf(stderr, "[cur] want=%d applied=%d allowed=%d active=%d key=%d "
-                            "cgVisible=%d gameWantsCursor=%d mouse=(%.0f,%.0f)\n",
+            NSRect  fr = g_pWindow ? [g_pWindow frame] : NSZeroRect;
+            fprintf(stderr, "[cur] want=%d applied=%d allowed=%d focus=%d "
+                            "active=%d key=%d main=%d vis=%d "
+                            "cgVisible=%d gameWantsCursor=%d "
+                            "frontPid=%d selfActive=%d "
+                            "mouse=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f) inside=%d\n",
                     (int)g_bWantCapture, (int)g_bCaptureActive,
-                    (int)ltmac_MouseCaptureAllowed(), (int)[NSApp isActive],
-                    g_pWindow ? (int)[g_pWindow isKeyWindow] : -1,
+                    (int)ltmac_MouseCaptureAllowed(), (int)ltmac_AppHasFocus(),
+                    (int)[NSApp isActive],
+                    g_pWindow ? (int)[g_pWindow isKeyWindow]  : -1,
+                    g_pWindow ? (int)[g_pWindow isMainWindow] : -1,
+                    g_pWindow ? (int)[g_pWindow isVisible]    : -1,
                     (int)CGCursorIsVisible(), (int)g_bGameWantsCursor,
-                    pt.x, pt.y);
+                    // ⚠️ THE DECIDING PAIR when focus never turns on. frontPid
+                    // is what the window server considers the frontmost app: if
+                    // it is some OTHER pid we simply lost the activation race;
+                    // if it is -1 the system does not list a frontmost app at
+                    // all; and selfActive is NSRunningApplication's own opinion
+                    // of us, which differs from -[NSApp isActive] when the
+                    // process is not registered the way a LaunchServices-opened
+                    // app is (we are posix_spawn'd by the launcher).
+                    (int)([[NSWorkspace sharedWorkspace] frontmostApplication]
+                              ? [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier] : -1),
+                    (int)[[NSRunningApplication currentApplication] isActive],
+                    pt.x, pt.y,
+                    NSMinX(fr), NSMinY(fr), NSWidth(fr), NSHeight(fr),
+                    (int)NSPointInRect(pt, fr));
         }
     }
-    ltmac_ApplyMouseCapture(g_bWantCapture && [NSApp isActive]);
+    ltmac_RetryStartupActivation();
+    ltmac_ApplyMouseCapture(g_bWantCapture && ltmac_AppHasFocus());
     ltmac_ApplyCursorVisibility();   // also follows activation
     ltmac_ConfinePointerToWindow();  // the ClipCursor half, for when the lock is off
     @autoreleasepool {
@@ -482,13 +707,67 @@ void LTMacWin_PumpEvents(void) {
                         }
                     }
                     break;
+
+                // ★ MOUSE -> the game's hooked window proc. These are an
+                // ADDITIONAL delivery, exactly like WM_CHAR above: the events
+                // still fall through to LTMacInput_HandleEvent, which keeps
+                // feeding the input device the relative deltas that mouse-look
+                // and the bound fire/activate commands run on. Position and GUI
+                // clicks have no other route -- see ltmac_PostMouseMessage.
+                case NSEventTypeMouseMoved:
+                case NSEventTypeLeftMouseDragged:
+                case NSEventTypeRightMouseDragged:
+                case NSEventTypeOtherMouseDragged:
+                    ltmac_PostMouseMessage(ev, 0x0200 /*WM_MOUSEMOVE*/);
+                    break;
+
+                // Win32 sends a plain DOWN for the first click of a pair and
+                // WM_LBUTTONDBLCLK for the second, never two DOWNs; the game
+                // relies on that (CBaseScreen has separate handlers).
+                case NSEventTypeLeftMouseDown:
+                    ltmac_PostMouseMessage(ev, [ev clickCount] == 2
+                                               ? 0x0203 /*WM_LBUTTONDBLCLK*/
+                                               : 0x0201 /*WM_LBUTTONDOWN*/);
+                    break;
+                case NSEventTypeLeftMouseUp:
+                    ltmac_PostMouseMessage(ev, 0x0202 /*WM_LBUTTONUP*/);
+                    break;
+                case NSEventTypeRightMouseDown:
+                    ltmac_PostMouseMessage(ev, [ev clickCount] == 2
+                                               ? 0x0206 /*WM_RBUTTONDBLCLK*/
+                                               : 0x0204 /*WM_RBUTTONDOWN*/);
+                    break;
+                case NSEventTypeRightMouseUp:
+                    ltmac_PostMouseMessage(ev, 0x0205 /*WM_RBUTTONUP*/);
+                    break;
+
                 default: break;
             }
 
             // Capture keyboard/mouse first; input events are consumed here
             // rather than dispatched (AppKit would beep at unhandled keys).
-            if (!LTMacInput_HandleEvent((void*)ev))
+            //
+            // ⚠️⚠️ WITH ONE EXCEPTION: A CLICK IS HOW A macOS APP GETS ACTIVATED.
+            // LTMacInput_HandleEvent returns true for every mouse button, so
+            // every click is swallowed before AppKit can see it -- and an
+            // inactive app that eats its own activating click can NEVER become
+            // active again by any amount of clicking on it. With focus gone the
+            // pointer lock and the cursor hide stay off, so the arrow wanders
+            // across the desktop and clicking the game to fix it does nothing.
+            // ⇒ While we do NOT have focus, a mouse-down also goes to AppKit.
+            //   The game has already had its copy (ltmac_PostMouseMessage plus
+            //   the input device above), so this costs nothing but the
+            //   activation it exists to trigger.
+            bool bMouseDown = ([ev type] == NSEventTypeLeftMouseDown  ||
+                               [ev type] == NSEventTypeRightMouseDown ||
+                               [ev type] == NSEventTypeOtherMouseDown);
+            bool bHandled   = LTMacInput_HandleEvent((void*)ev);
+            if (bMouseDown && !ltmac_AppHasFocus()) {
+                ltmac_ActivateSelf();
                 [NSApp sendEvent:ev];
+            } else if (!bHandled) {
+                [NSApp sendEvent:ev];
+            }
         }
     }
 }

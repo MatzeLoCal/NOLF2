@@ -37,6 +37,13 @@ CCursorMgr::CCursorMgr()
     m_bUseHardwareCursor	= LTFALSE;
 	m_bInitialized			= LTFALSE;
 
+	// ⚠️ Init() creates the cursor surface under `if (!m_hSurfCursor)` and Term()
+	// deletes it, so both read a member the constructor never wrote. The client
+	// shell is heap-allocated, so that is indeterminate: a non-zero value skips
+	// the load and leaves the software cursor drawing from a garbage surface.
+	m_hCursor				= LTNULL;
+	m_hSurfCursor			= LTNULL;
+
 	m_pCursorSprite				= LTNULL;
 	m_pCursorGlowSprite			= LTNULL;
 	m_pCursorBackgroundSprite	= LTNULL;
