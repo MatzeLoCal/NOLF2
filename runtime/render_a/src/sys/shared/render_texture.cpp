@@ -64,6 +64,13 @@ unsigned int RTex_GetAlphaRef(SharedTexture *pTexture)
 	return MTLTex_GetAlphaRef(pTexture);
 }
 
+bool RTex_IsFullbrite(SharedTexture *pTexture)
+{
+	if (!pTexture)
+		return false;
+	return MTLTex_IsFullbrite(pTexture);
+}
+
 // The texture's FILE name, for diagnostics. ★ This one was always
 // backend-neutral despite living in gl_texture.cpp as gltex_Name: it asks the
 // ENGINE through the RenderStruct and never looks at m_pRenderData, so it was

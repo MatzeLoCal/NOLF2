@@ -60,6 +60,23 @@ struct RWSection
 	// back when GL owned this). Created/updated/destroyed only through RWorldLM_*.
 	uintptr_t m_hLMTexture;
 	std::string m_sTexName; // slot-0 name, kept for the LT_TRACE_NOTEX census
+
+	// ★★ SLOT 1 — THE DUAL-TEXTURE LAYER (shader codes 8 and 9).
+	//
+	// A second BASE texture, sampled with the vertex's OWN SECOND UV SET, and
+	// cross-faded against slot 0 by the PER-VERTEX ALPHA. This is how the game
+	// paints a dirt path fading into snow, or moss onto stone: one section,
+	// two textures, a soft authored transition. Without it the section draws
+	// slot 0 alone at full opacity and the transition becomes a hard polygon
+	// edge -- which is exactly how Siberia's paths looked before this landed.
+	//
+	// ⚠️ NOT the same thing as the §59/§60 "second layer" (env map / detail),
+	// which is resolved through RWorld_ResolveSecondLayer from the texture's
+	// authored LINKS and takes DERIVED coordinates. These are different
+	// features and D3D implements them as different shader classes; a dual
+	// section never carries env/detail as well.
+	SharedTexture *m_pTexture1;
+	std::string m_sTexName1;   // slot-1 name, for the LT_TRACE_DUAL census
 };
 
 // A decompressed 24-bit lightmap kept on the CPU: used both as the parse-time

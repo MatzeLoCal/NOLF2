@@ -790,8 +790,9 @@ static bool rw_LoadBlock(ILTStream *pStream, RWBlock &cBlock)
 
 		// Resolve the base texture (slot 0) through the engine. Sprite-textured
 		// sections (*.spr) need the sprite system — not ported yet; draw those
-		// untextured. Slot 1 (dual-texture/lightmap-dual) is a later pass.
+		// untextured. Slot 1 is resolved below.
 		cSection.m_pTexture = 0;
+		cSection.m_pTexture1 = 0;
 		const char *pTex0 = sTexName[0];
 		cSection.m_sTexName = pTex0 ? pTex0 : "";
 		size_t nTexNameLen = strlen(pTex0);
@@ -821,6 +822,26 @@ static bool rw_LoadBlock(ILTStream *pStream, RWBlock &cBlock)
 				cSection.m_pTexture->SetRefCount(cSection.m_pTexture->GetRefCount() + 1);
 			else
 				fprintf(stderr, "[glw] texture not found: %s\n", pTex0);
+		}
+
+		// ★★ SLOT 1 — the dual-texture layer. Resolved only for the two shader
+		// codes that actually use it, so an authored-but-unused second name on
+		// any other section cannot cost a texture load or a reference.
+		// d3d_renderblock.cpp treats a missing slot-1 texture on shader 8/9 as
+		// an error and still draws the section; we do the same by falling back
+		// to the plain single-texture path when it fails to resolve.
+		const char *pTex1 = sTexName[1];
+		if (pTex1[0] &&
+		    (cSection.m_nShaderCode == kPCShader_DualTexture ||
+		     cSection.m_nShaderCode == kPCShader_Lightmap_Dual) &&
+		    g_pRenderStruct && g_pRenderStruct->GetSharedTexture)
+		{
+			cSection.m_sTexName1 = pTex1;
+			cSection.m_pTexture1 = g_pRenderStruct->GetSharedTexture(pTex1);
+			if (cSection.m_pTexture1)
+				cSection.m_pTexture1->SetRefCount(cSection.m_pTexture1->GetRefCount() + 1);
+			else
+				fprintf(stderr, "[glw] dual slot-1 texture not found: %s\n", pTex1);
 		}
 
 		// ⚠️ The per-section AUTHORED "texture effect" string. Parsed and
@@ -1121,6 +1142,37 @@ bool RWorld_Load(ILTStream *pStream)
 			}
 		fprintf(stderr, "[glw] main world: %u sections, %u carry a lightmap handle\n",
 		        nSections, nWithLM);
+	}
+
+	// LT_TRACE_DUAL=1 — every DUAL-TEXTURE section with BOTH texture names and
+	// its block centre, in the format LT_CAM_TARGET takes. "Which surface is a
+	// cross-fade, and where do I stand to look at one" is otherwise a hunt: the
+	// blend is invisible in a texture list and the sections are a few percent of
+	// the world. Prints at most 24 lines; the count line is always emitted.
+	if (getenv("LT_TRACE_DUAL"))
+	{
+		uint32 nDualSecs = 0, nShown = 0;
+		for (size_t nB = 0; nB < g_pMainWorld->m_aBlocks.size(); ++nB)
+		{
+			const RWBlock &cB = g_pMainWorld->m_aBlocks[nB];
+			for (size_t nS = 0; nS < cB.m_aSections.size(); ++nS)
+			{
+				const RWSection &cS = cB.m_aSections[nS];
+				if (!cS.m_pTexture1)
+					continue;
+				++nDualSecs;
+				if (nShown < 24)
+				{
+					++nShown;
+					fprintf(stderr, "[dual] shader %u  LT_CAM_TARGET=\"%.0f %.0f %.0f\"  "
+					                "%s + %s\n",
+					        (uint32)cS.m_nShaderCode,
+					        cB.m_vCenter.x, cB.m_vCenter.y, cB.m_vCenter.z,
+					        cS.m_sTexName.c_str(), cS.m_sTexName1.c_str());
+				}
+			}
+		}
+		fprintf(stderr, "[dual] %u sections carry a slot-1 texture\n", nDualSecs);
 	}
 
 	// Section census by shader code, main world + world models. Shader 0/6/7
@@ -1557,6 +1609,11 @@ static void rw_ReleaseTextures(RWorld *pWorld)
 			SharedTexture *pTexture = aSections[nSection].m_pTexture;
 			if (pTexture && pTexture->GetRefCount() > 0)
 				pTexture->SetRefCount(pTexture->GetRefCount() - 1);
+
+			// The dual-texture layer holds its own reference (see the load).
+			SharedTexture *pTexture1 = aSections[nSection].m_pTexture1;
+			if (pTexture1 && pTexture1->GetRefCount() > 0)
+				pTexture1->SetRefCount(pTexture1->GetRefCount() - 1);
 
 			if (aSections[nSection].m_hLMTexture)
 			{

@@ -37,6 +37,10 @@ bool         RTex_GetDetailParams(SharedTexture *pTexture, float &fScale,
                                   float &fCos, float &fSin);
 bool         RTex_GetDims(SharedTexture *pTexture, uint32 &nWidth, uint32 &nHeight);
 unsigned int RTex_GetAlphaRef(SharedTexture *pTexture);
+// DTX_FULLBRITE. Asked of a dual-texture section's SLOT-1 texture only, where
+// it picks ADD over CROSS-FADE — the world loader resolves it once per section
+// rather than per frame.
+bool         RTex_IsFullbrite(SharedTexture *pTexture);
 
 // The texture's FILE name, for diagnostics — identifying which texture an
 // effect uses is otherwise guesswork from world positions. Asks the engine

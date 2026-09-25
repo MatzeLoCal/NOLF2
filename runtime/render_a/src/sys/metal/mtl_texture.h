@@ -48,6 +48,10 @@ unsigned int MTLTex_GetAlphaRef(SharedTexture *pTexture);
 // DTX_CUBEMAP -- decides the env-map texture transform (see GLTex_IsCubeMap).
 bool MTLTex_IsCubeMap(SharedTexture *pTexture);
 
+// DTX_FULLBRITE. Read ONLY for a dual-texture section's slot-1 texture, where
+// it selects ADD over CROSS-FADE (d3d_rendershader_gouraud.cpp).
+bool MTLTex_IsFullbrite(SharedTexture *pTexture);
+
 // Authored DETAIL-texture placement from this BASE texture's DTX header Extra
 // bytes (scale + rotation as cos/sin). Mirrors GLTex_GetDetailParams.
 bool MTLTex_GetDetailParams(SharedTexture *pTexture, float &fScale,

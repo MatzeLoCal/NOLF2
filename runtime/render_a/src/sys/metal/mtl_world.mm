@@ -199,6 +199,13 @@ constant int kSaturate   [[function_constant(1)]];
 constant int kSecondKind [[function_constant(2)]];
 // 0 modulate, 1 add-signed, 2 modulate-alpha-add-colour
 constant int kSecondMode [[function_constant(3)]];
+// ★★ THE DUAL-TEXTURE LAYER — shader codes 8 (gouraud) and 9 (lightmap).
+// 0 none, 1 cross-fade, 2 add. A SECOND BASE TEXTURE on its own UV set, mixed
+// by the per-vertex alpha. Not the §59/§60 second layer (env/detail): that one
+// is authored as a texture LINK and takes derived coordinates, this one is a
+// second name in the section and takes the vertex's uv1. D3D implements them as
+// separate shader classes and never combines them.
+constant int kDualKind [[function_constant(4)]];
 
 fragment float4 w_fragment(WVSOut in [[stage_in]],
                            constant WUniforms &u      [[buffer(0)]],
@@ -206,6 +213,7 @@ fragment float4 w_fragment(WVSOut in [[stage_in]],
                            texture2d<float>   lmTex   [[texture(1)]],
                            texture2d<float>   secTex  [[texture(2)]],
                            texturecube<float> secCube [[texture(3)]],
+                           texture2d<float>   dualTex [[texture(4)]],
                            sampler            baseSmp [[sampler(0)]],
                            sampler            lmSmp   [[sampler(1)]],
                            sampler            secSmp  [[sampler(2)]])
@@ -256,6 +264,30 @@ fragment float4 w_fragment(WVSOut in [[stage_in]],
             else                       rgb = t.rgb * sec;         // MODULATE
             // Fixed-function clamps at every stage; float does not.
             t.rgb = saturate(rgb);
+        }
+
+        // ── THE DUAL-TEXTURE CROSS-FADE ─────────────────────────────────
+        // D3D stacks this as three stages (gouraud.cpp PreFlush):
+        //   stage 0  rgb = tex0            a = diffuse.a * tex0.a
+        //   stage 1  rgb = BLENDCURRENTALPHA(CURRENT, TEXTURE)
+        //                = tex0*a + tex1*(1-a)
+        //            -- or MODULATEALPHA_ADDCOLOR = tex0 + a*tex1 when the
+        //               slot-1 texture is DTX_FULLBRITE
+        //   stage 2  rgb *= diffuse (x2 under Saturate), a = CURRENT
+        // Stage 2 is the ordinary lighting multiply below, so only the mix
+        // belongs here -- and it must happen BEFORE that multiply, exactly like
+        // the §59 second layer.
+        // ⚠️ THE BLEND WEIGHT USES THE VERTEX ALPHA EVEN ON A LIGHTMAPPED
+        // SECTION, where the OUTPUT alpha deliberately does not (see the long
+        // note above). D3D's lightmap-dual sets ALPHAOP=MODULATE against
+        // DIFFUSE at stage 0 for precisely this reason: the weight is authored
+        // per vertex and is the whole point of the shader, while the surface's
+        // own opacity still comes from the texture.
+        if (kDualKind != 0) {
+            float3 d = dualTex.sample(baseSmp, in.uv1).rgb;
+            float  a = t.a * in.color.a;
+            t.rgb = (kDualKind == 2) ? saturate(t.rgb + d * a)
+                                     : mix(d, t.rgb, a);
         }
 
         if (kLightMode == 1) {
@@ -366,8 +398,9 @@ static bool                     g_bReady    = false;
 static bool                     g_bFailed   = false;
 
 // PSO cache: 4 lighting modes x 2 saturate x 3 blend modes.
-enum { kMWModes = 4, kMWSat = 2, kMWBlends = 4, kMWSecKinds = 4, kMWSecModes = 3 };
-static CFTypeRef g_aPipelines[kMWModes][kMWSat][kMWBlends][kMWSecKinds][kMWSecModes];
+// kMWDual: 0 none, 1 cross-fade (BLENDCURRENTALPHA), 2 add (fullbrite slot 1).
+enum { kMWModes = 4, kMWSat = 2, kMWBlends = 4, kMWSecKinds = 4, kMWSecModes = 3, kMWDual = 3 };
+static CFTypeRef g_aPipelines[kMWModes][kMWSat][kMWBlends][kMWSecKinds][kMWSecModes][kMWDual];
 
 // Depth states: [compare: 0 always, 1 less, 2 lessEqual][depthWrite].
 static id<MTLDepthStencilState> g_aDepth[3][2];
@@ -615,15 +648,16 @@ static bool mw_EnsureShaders(void)
 }
 
 static id<MTLRenderPipelineState> mw_Pipeline(int nMode, int nSaturate, int nBlend,
-                                              int nSecKind, int nSecMode)
+                                              int nSecKind, int nSecMode, int nDual)
 {
 	if (nMode     < 0 || nMode     >= kMWModes)    nMode     = 0;
 	if (nSaturate < 0 || nSaturate >= kMWSat)      nSaturate = 0;
 	if (nBlend    < 0 || nBlend    >= kMWBlends)   nBlend    = 0;
 	if (nSecKind  < 0 || nSecKind  >= kMWSecKinds) nSecKind  = 0;
 	if (nSecMode  < 0 || nSecMode  >= kMWSecModes) nSecMode  = 0;
+	if (nDual     < 0 || nDual     >= kMWDual)     nDual     = 0;
 
-	CFTypeRef cached = g_aPipelines[nMode][nSaturate][nBlend][nSecKind][nSecMode];
+	CFTypeRef cached = g_aPipelines[nMode][nSaturate][nBlend][nSecKind][nSecMode][nDual];
 	if (cached)
 		return (__bridge id<MTLRenderPipelineState>)cached;
 
@@ -633,17 +667,18 @@ static id<MTLRenderPipelineState> mw_Pipeline(int nMode, int nSaturate, int nBle
 
 	NSError *err = nil;
 	MTLFunctionConstantValues *cv = [[MTLFunctionConstantValues alloc] init];
-	int nM = nMode, nS = nSaturate, nK = nSecKind, nO = nSecMode;
+	int nM = nMode, nS = nSaturate, nK = nSecKind, nO = nSecMode, nD = nDual;
 	[cv setConstantValue:&nM type:MTLDataTypeInt atIndex:0];
 	[cv setConstantValue:&nS type:MTLDataTypeInt atIndex:1];
 	[cv setConstantValue:&nK type:MTLDataTypeInt atIndex:2];
 	[cv setConstantValue:&nO type:MTLDataTypeInt atIndex:3];
+	[cv setConstantValue:&nD type:MTLDataTypeInt atIndex:4];
 	id<MTLFunction> fs = [g_Library newFunctionWithName:@"w_fragment"
 	                                     constantValues:cv error:&err];
 	if (!fs)
 	{
-		fprintf(stderr, "[mtlw] fragment specialisation (mode=%d sat=%d sec=%d/%d) failed: %s\n",
-		        nMode, nSaturate, nSecKind, nSecMode,
+		fprintf(stderr, "[mtlw] fragment specialisation (mode=%d sat=%d sec=%d/%d dual=%d) failed: %s\n",
+		        nMode, nSaturate, nSecKind, nSecMode, nDual,
 		        err ? [[err localizedDescription] UTF8String] : "(none)");
 		return nil;
 	}
@@ -683,7 +718,7 @@ static id<MTLRenderPipelineState> mw_Pipeline(int nMode, int nSaturate, int nBle
 		        err ? [[err localizedDescription] UTF8String] : "(none)");
 		return nil;
 	}
-	g_aPipelines[nMode][nSaturate][nBlend][nSecKind][nSecMode] = CFBridgingRetain(pso);
+	g_aPipelines[nMode][nSaturate][nBlend][nSecKind][nSecMode][nDual] = CFBridgingRetain(pso);
 	if (mw_Trace())
 		fprintf(stderr, "[mtlw] new pipeline mode=%d saturate=%d blend=%d "
 		                "second=%d(mode %d)\n",
@@ -906,6 +941,15 @@ void MTLWorld_DrawWorld(const RWorld *pWorld, const RWDrawParams *pParams)
 	static int s_nDrawNoTex = -1;
 	if (s_nDrawNoTex < 0) s_nDrawNoTex = getenv("LT_DRAW_NOTEX") ? 1 : 0;
 
+	// LT_NO_DUAL=1 — draw dual-texture sections from slot 0 only, i.e. exactly
+	// how they drew before the layer existed. This is the bisection switch for
+	// it: "did the dual layer move this number" is otherwise unanswerable
+	// without a rebuild, and answering it by rebuilding is how a 45-minute
+	// hunt gets started (see the second-layer gates, which exist for the same
+	// reason).
+	static int s_nNoDual = -1;
+	if (s_nNoDual < 0) s_nNoDual = getenv("LT_NO_DUAL") ? 1 : 0;
+
 	const int nSaturate = RWorld_SaturateOn() ? 1 : 0;
 
 	for (size_t nBlock = 0; nBlock < pWorld->m_aBlocks.size(); ++nBlock)
@@ -1035,8 +1079,28 @@ void MTLWorld_DrawWorld(const RWorld *pWorld, const RWDrawParams *pParams)
 				}
 			}
 
+			// ★★ THE DUAL-TEXTURE LAYER (shader codes 8/9). The section names a
+			// second BASE texture; the vertex alpha cross-fades between them.
+			// ⚠️ NOT on the dynamic-light pass: D3D's DrawLights is a separate
+			// additive pass over the base texture only, and mixing a second
+			// diffuse into an additive contribution would double-light the
+			// surface (the same rule the second layer follows above).
+			// ⚠️ MTLTex_IsFullbrite must be asked AFTER MTLTex_Get: the DTX flag
+			// lives on the Metal texture entry, which is only created when the
+			// texture is first bound. Asking at world-load time -- the obvious
+			// place, since the answer never changes -- reads a NULL entry and
+			// silently returns false for every section.
+			int nDual = 0;
+			id<MTLTexture> dualTex = nil;
+			if (baseTex && !cP.m_pDynLight && cSection.m_pTexture1 && !s_nNoDual)
+			{
+				dualTex = (__bridge id<MTLTexture>)MTLTex_Get(cSection.m_pTexture1);
+				if (dualTex)
+					nDual = MTLTex_IsFullbrite(cSection.m_pTexture1) ? 2 : 1;
+			}
+
 			id<MTLRenderPipelineState> pso =
-				mw_Pipeline(nMode, nSat, (int)cP.m_eBlend, nSecKind, nSecMode);
+				mw_Pipeline(nMode, nSat, (int)cP.m_eBlend, nSecKind, nSecMode, nDual);
 			if (!pso)
 				continue;
 
@@ -1077,6 +1141,7 @@ void MTLWorld_DrawWorld(const RWorld *pWorld, const RWDrawParams *pParams)
 			[enc setFragmentTexture:(lmTex   ? lmTex   : g_WhiteTex) atIndex:1];
 			[enc setFragmentTexture:((secTex && !bSecCube) ? secTex : g_WhiteTex)  atIndex:2];
 			[enc setFragmentTexture:((secTex &&  bSecCube) ? secTex : g_WhiteCube) atIndex:3];
+			[enc setFragmentTexture:(dualTex ? dualTex : g_WhiteTex) atIndex:4];
 			// ⚠️ An env map CLAMPS (a reflection addresses the map once); a detail
 			// texture REPEATS many times across the surface.
 			{

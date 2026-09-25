@@ -43,6 +43,11 @@ struct MTLTexEntry
 	uint32    m_nWidth, m_nHeight;
 	uint16    m_nAlphaRef;    // authored alpha-test reference, 0 = ALPHAREF_NONE
 	uint8     m_bCubeMap;     // DTX_CUBEMAP -- decides the env-map transform
+	// DTX_FULLBRITE. Only the DUAL-TEXTURE world shader reads it, and there it
+	// selects the blend: a fullbrite slot-1 texture is ADDED to the base
+	// (MODULATEALPHA_ADDCOLOR) instead of being cross-faded with it
+	// (BLENDCURRENTALPHA) -- d3d_rendershader_gouraud.cpp's FlushChangeSection.
+	uint8     m_bFullbrite;
 	// Authored DETAIL-texture placement, read from THIS (base) texture's DTX
 	// header. The detail texture itself carries none of it.
 	float     m_fDetailScale;
@@ -417,6 +422,8 @@ void MTLTex_Bind(SharedTexture *pTexture, bool bTextureChanged)
 
 		TextureData *pTD = g_pRenderStruct->GetTexture ? g_pRenderStruct->GetTexture(pTexture) : 0;
 		pEntry->m_nAlphaRef = mtltex_ParseAlphaRef(pTD);
+		pEntry->m_bFullbrite =
+			(pTD && (pTD->m_Header.m_IFlags & DTX_FULLBRITE)) ? 1 : 0;
 
 		// ⚠️ These live in the DtxHeader's `Extra` bytes, NOT in the command
 		// string: GetDetailTextureScale() is `*(float*)&m_Extra[6] + 1.0f` and
@@ -495,6 +502,12 @@ bool MTLTex_IsCubeMap(SharedTexture *pTexture)
 {
 	MTLTexEntry *pEntry = mtltex_Entry(pTexture);
 	return pEntry && pEntry->m_bCubeMap != 0;
+}
+
+bool MTLTex_IsFullbrite(SharedTexture *pTexture)
+{
+	MTLTexEntry *pEntry = mtltex_Entry(pTexture);
+	return pEntry && pEntry->m_bFullbrite != 0;
 }
 
 bool MTLTex_GetDetailParams(SharedTexture *pTexture, float &fScale,
