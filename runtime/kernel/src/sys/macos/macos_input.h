@@ -43,6 +43,18 @@ void         LTMacInput_ClearKeyUps(void);
 // Persistent "is it held right now" state, sampled by InputMgr::ReadInput.
 bool LTMacInput_IsDIKDown(unsigned int nDIK);
 
+// --- Held state BY VK CODE, for GetAsyncKeyState -------------------------
+// ⚠️ A THIRD CONSUMER, AND IT IS NOT THE QUEUE ABOVE. Game code asks "is this
+// key held RIGHT NOW?" through the Win32 GetAsyncKeyState, by VK code, at a
+// moment of its own choosing -- nothing to do with draining a queue of events.
+// The compat shim routes that call here (it finds this symbol with dlsym, so
+// libCShell.dylib reaches it without linking the engine).
+//
+// Mouse buttons answer too: VK_LBUTTON/VK_RBUTTON/VK_MBUTTON are VK codes on
+// Windows and GetAsyncKeyState reports them, which the popup key-lock relies
+// on when Use is bound to a mouse button.
+bool LTMacInput_IsVKDown(unsigned int nVK);
+
 // Mouse motion accumulated since the last call (consuming read), in pixels.
 void LTMacInput_ConsumeMouseDelta(float *pDX, float *pDY);
 // Drop any accumulated motion (used when the cursor is warped on capture --

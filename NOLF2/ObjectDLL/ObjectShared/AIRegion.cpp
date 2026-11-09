@@ -149,18 +149,35 @@ LTBOOL AIRegion::ReadProp(ObjectCreateStruct *pData)
 	memset(m_bPSets,0,8*sizeof(LTBOOL));
 
 	// Read them in
-	bool bSets[8];
-	g_pLTServer->GetPropBool("Key1", &bSets[0]);
-	g_pLTServer->GetPropBool("Key2", &bSets[1]);
-	g_pLTServer->GetPropBool("Key3", &bSets[2]);
-	g_pLTServer->GetPropBool("Key4", &bSets[3]);
-	g_pLTServer->GetPropBool("Key5", &bSets[4]);
-	g_pLTServer->GetPropBool("Key6", &bSets[5]);
-	g_pLTServer->GetPropBool("Key7", &bSets[6]);
-	g_pLTServer->GetPropBool("Key8", &bSets[7]);
+	bool bSets[8] = { false, false, false, false, false, false, false, false };
+	LTRESULT aRes[8];
+	aRes[0] = g_pLTServer->GetPropBool("Key1", &bSets[0]);
+	aRes[1] = g_pLTServer->GetPropBool("Key2", &bSets[1]);
+	aRes[2] = g_pLTServer->GetPropBool("Key3", &bSets[2]);
+	aRes[3] = g_pLTServer->GetPropBool("Key4", &bSets[3]);
+	aRes[4] = g_pLTServer->GetPropBool("Key5", &bSets[4]);
+	aRes[5] = g_pLTServer->GetPropBool("Key6", &bSets[5]);
+	aRes[6] = g_pLTServer->GetPropBool("Key7", &bSets[6]);
+	aRes[7] = g_pLTServer->GetPropBool("Key8", &bSets[7]);
+	if (getenv("LT_TRACE_PSET"))
+	{
+		fprintf(stderr, "[pset] key results:");
+		for (int i = 0; i < 8; ++i)
+			fprintf(stderr, " %s", aRes[i] == LT_OK ? (bSets[i] ? "T" : "f") : "-");
+		fprintf(stderr, "   (- = property NOT FOUND)\n");
+	}
 
 	for ( uint32 nSetLoop = 0; nSetLoop < 8; ++nSetLoop )
 		m_bPSets[nSetLoop] = (bSets[nSetLoop] ? LTTRUE : LTFALSE);
+
+	if (getenv("LT_TRACE_PSET"))
+	{
+		uint8 nByte = 0;
+		for (int i = 0; i < 8; ++i) if (m_bPSets[i]) nByte |= 1 << i;
+		fprintf(stderr, "[pset] region pset=0x%02X (%d%d%d%d%d%d%d%d)\n", nByte,
+		        bSets[0]?1:0, bSets[1]?1:0, bSets[2]?1:0, bSets[3]?1:0,
+		        bSets[4]?1:0, bSets[5]?1:0, bSets[6]?1:0, bSets[7]?1:0);
+	}
 
     if ( g_pLTServer->GetPropGeneric( "Name", &g_gp ) == LT_OK )
 		if ( g_gp.m_String[0] )

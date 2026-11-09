@@ -598,6 +598,11 @@ void CAIButeMgr::SetSenseMask(int iSenseMask)
 
 		++iSense;
 	}
+
+	if (getenv("LT_TRACE_SENSEMASK"))
+		fprintf(stderr, "[sensemask] %d '%s' blocked=0x%08X (%u senses parsed)\n",
+		        iSenseMask, m_aSenseMasks[iSenseMask].szName,
+		        (unsigned)m_aSenseMasks[iSenseMask].flagsBlockedSenses, (unsigned)iSense);
 }
 
 // ----------------------------------------------------------------------- //

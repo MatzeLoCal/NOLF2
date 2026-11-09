@@ -184,7 +184,7 @@ void CAIStimulusRecord::Load(ILTMessage_Read *pMsg)
 	LOAD_DWORD_CAST(m_eTargetMatchID, EnumAITargetMatchID);
 	LOAD_VECTOR(m_vStimulusPos);
 	LOAD_VECTOR(m_vStimulusDir);
-	LOAD_COBJECT(m_pInformationVolume, AIVolume);
+	LOAD_COBJECT(m_pInformationVolume, AIInformationVolume);
 	LOAD_DWORD(m_nStimulusAlarmLevel);
 	LOAD_FLOAT(m_fDistance);
 	LOAD_TIME(m_fTimeStamp);
@@ -540,7 +540,7 @@ EnumAIStimulusID CAIStimulusMgr::_RegisterStimulus(CAIStimulusRecord* pAIStimulu
 		CCharacter* pCharacter = dynamic_cast<CCharacter*>(g_pLTServer->HandleToObject( pAIStimulusRecord->m_hStimulusSource ));
 		if( pCharacter && pCharacter->HasCurrentInformationVolume() )
 		{
-			pAIStimulusRecord->m_pInformationVolume = (AIVolume*)pCharacter->GetCurrentInformationVolume();
+			pAIStimulusRecord->m_pInformationVolume = pCharacter->GetCurrentInformationVolume();
 		}
 	}
 
@@ -1153,7 +1153,7 @@ void CAIStimulusMgr::Update()
 					CCharacter* pCharacter = dynamic_cast<CCharacter*>(g_pLTServer->HandleToObject( pRecord->m_hStimulusSource ));
 					if( pCharacter && pCharacter->HasCurrentInformationVolume() )
 					{
-						pRecord->m_pInformationVolume = (AIVolume*)pCharacter->GetCurrentInformationVolume();
+						pRecord->m_pInformationVolume = pCharacter->GetCurrentInformationVolume();
 					}
 					else
 					{
@@ -1454,16 +1454,44 @@ bool CAIStimulusMgr::CanSense( IAISensing* pSensing, CAIStimulusRecord* pRecord 
 		// muting certain senses.
 		
 		uint32 flagsSenseMask = 0xffffffff;
+		bool bTraceVol = false, bTraceCast = false, bTraceOn = false, bTraceSusp = false;
 		if( pRecord->m_pInformationVolume && IsAI( hSensing ) )
 		{
+			bTraceVol = true;
 			CAI* pAI = (CAI*)pSensing;
+			bTraceSusp = pAI->IsSuspicious();
 			if( !pAI->IsSuspicious() )
 			{
-				AIInformationVolume* pInfoVolume = dynamic_cast<AIInformationVolume*>(pRecord->m_pInformationVolume );
+				// No cast: the record now holds the real type (see the header).
+				AIInformationVolume* pInfoVolume = pRecord->m_pInformationVolume;
+				bTraceCast = (pInfoVolume != NULL);
 				if( pInfoVolume	&& pInfoVolume->IsOn() )
 				{
+					bTraceOn = true;
 					flagsSenseMask = pInfoVolume->GetSenseMask();
 				}
+			}
+		}
+
+		// LT_TRACE_SENSEMASK: the last links of the "permitted area" chain,
+		// which only exist with a player in the level. Each must hold or the
+		// guard senses an enemy it should be ignoring:
+		//   vol=0   the stimulus carried no information volume (the PLAYER's
+		//           current volume, set in CCharacter::UpdateCurrentInformationVolume)
+		//   cast=0  dynamic_cast<AIInformationVolume*> failed
+		//   on=0    the volume is switched off
+		//   susp=1  the AI is already suspicious, so masking is skipped BY DESIGN
+		// Rate-limited: this is called per stimulus per AI, every frame.
+		if( eSenseType == kSense_SeeEnemy && getenv("LT_TRACE_SENSEMASK") )
+		{
+			static int s_nPrinted = 0;
+			if( s_nPrinted < 60 )
+			{
+				++s_nPrinted;
+				fprintf(stderr, "[seemask] SeeEnemy vol=%d susp=%d cast=%d on=%d mask=0x%08X -> %s\n",
+				        bTraceVol?1:0, bTraceSusp?1:0, bTraceCast?1:0, bTraceOn?1:0,
+				        (unsigned)flagsSenseMask,
+				        ((eSenseType & flagsSenseMask) & pSensing->GetCurSenseFlags()) ? "REACTS" : "ignored");
 			}
 		}
 

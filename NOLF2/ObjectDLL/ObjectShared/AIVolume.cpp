@@ -594,8 +594,19 @@ bool AIInformationVolume::ReadProp(ObjectCreateStruct *pocs)
 		{
 			uint32 iSenseMask = g_pAIButeMgr->GetSenseMaskIDByName(g_gp.m_String);
 			m_dwSenseMask = ~(g_pAIButeMgr->GetSenseMask(iSenseMask)->flagsBlockedSenses);
+			if (getenv("LT_TRACE_SENSEMASK"))
+				fprintf(stderr, "[volmask] volume '%s' mask '%s' -> 0x%08X "
+				                "centre (%.0f %.0f %.0f) dims (%.0f %.0f %.0f)\n",
+				        GetName() ? GetName() : "?", g_gp.m_String,
+				        (unsigned)m_dwSenseMask,
+				        GetCenter().x, GetCenter().y, GetCenter().z,
+				        GetDims().x, GetDims().y, GetDims().z);
 		}
+		else if (getenv("LT_TRACE_SENSEMASK"))
+			fprintf(stderr, "[volmask] volume mask '%s' (no masking)\n", g_gp.m_String);
 	}
+	else if (getenv("LT_TRACE_SENSEMASK"))
+		fprintf(stderr, "[volmask] volume has NO SenseMask property\n");
 
 	// On/Off State.
 

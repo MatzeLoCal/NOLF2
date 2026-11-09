@@ -1578,6 +1578,12 @@ void CAI::InitialUpdate()
 
 	AIASSERT( GetRelationMgr() != NULL, m_hObject,  "No RelationMgr" );
 	GetRelationMgr()->Init( m_hObject, GetAITemplate()->szAlignment );
+
+	if (getenv("LT_TRACE_ALIGN"))
+		fprintf(stderr, "[align] AI '%s' type '%s' alignment '%s'\n",
+		        GetObjectName(m_hObject),
+		        GetAITemplate()->szName ? GetAITemplate()->szName : "?",
+		        GetAITemplate()->szAlignment);
 }
 
 // ----------------------------------------------------------------------- //

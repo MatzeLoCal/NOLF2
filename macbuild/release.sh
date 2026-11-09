@@ -25,9 +25,25 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUILD=$ROOT/build-xcode
 APP=$BUILD/Release/NOLF2Launcher.app
 
-# Team ID is the parenthesised suffix of the identity string.
-TEAM=$(printf '%s' "$IDENTITY" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
-[ -n "$TEAM" ] || { echo "Could not parse a Team ID out of the identity."; exit 1; }
+# ⚠️ THE TEAM ID COMES FROM THE CERTIFICATE, NOT FROM ITS NAME.
+#
+# This used to be the parenthesised suffix of the identity string, which is only
+# the team for a "Developer ID" certificate. On an "Apple Development" one the
+# parenthesis holds the CERTIFICATE's id and the team is somewhere else entirely:
+#
+#   CN=Apple Development: Matthias Schonder (B99SCL239F)  OU=EJBTKE7CEJ
+#                                            ^ not a team    ^ the team
+#
+# Passing the former as DEVELOPMENT_TEAM fails every target with "No certificate
+# for team 'X' matching 'Y' found", which reads as a missing certificate when the
+# certificate is present and merely mislabelled. The team is the OU field.
+TEAM=$(security find-certificate -c "$IDENTITY" -p 2>/dev/null \
+       | openssl x509 -noout -subject 2>/dev/null \
+       | sed -n 's|.*/OU=\([A-Z0-9]*\).*|\1|p')
+# Fall back to the old parse if the certificate is not in the keychain, so the
+# failure is still xcodebuild's clear one rather than this script's.
+[ -n "$TEAM" ] || TEAM=$(printf '%s' "$IDENTITY" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
+[ -n "$TEAM" ] || { echo "Could not determine a Team ID for that identity."; exit 1; }
 
 # ⚠️ CLEAR ARCHIVE RESIDUE FIRST.
 #
@@ -50,11 +66,22 @@ echo "==> Configuring"
 cmake -S "$ROOT/macbuild" -B "$BUILD" -G Xcode > /dev/null
 
 echo "==> Building Release (signed as $TEAM)"
-xcodebuild -project "$BUILD/LithtechMacFoundation.xcodeproj" \
-    -target NOLF2Launcher -configuration Release \
-    CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
-    CODE_SIGN_STYLE=Manual OTHER_CODE_SIGN_FLAGS="--timestamp" \
-    build > /dev/null
+# ⚠️ KEEP THE LOG. This used to be `> /dev/null`, so a failure printed nothing
+# but "** BUILD FAILED **" and every diagnosis started by re-running the build
+# by hand to find out what went wrong. The full log is too noisy to show, so it
+# goes to a file and only the error lines are echoed.
+BUILD_LOG=$BUILD/release-build.log
+if ! xcodebuild -project "$BUILD/LithtechMacFoundation.xcodeproj" \
+        -target NOLF2Launcher -configuration Release \
+        CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
+        CODE_SIGN_STYLE=Manual OTHER_CODE_SIGN_FLAGS="--timestamp" \
+        build > "$BUILD_LOG" 2>&1
+then
+    echo "** BUILD FAILED **"
+    grep -E 'error:' "$BUILD_LOG" | sort -u | head -10
+    echo "    full log: $BUILD_LOG"
+    exit 1
+fi
 
 # ⚠️ Sign inner-out. The nested binaries must each carry Developer ID AND the
 # hardened runtime, or notarisation is rejected — the enclosing app's signature

@@ -103,6 +103,16 @@ static const LTMacKeyMap kKeyMap[] =
 // Built once from kKeyMap for O(1) lookup by macOS keycode.
 static unsigned char g_aMacToVK[MACKEY_MAX];
 static unsigned char g_aMacToDIK[MACKEY_MAX];
+
+// ★ AND THE REVERSE, VK -> DIK, for LTMacInput_IsVKDown (GetAsyncKeyState).
+// The held state is kept per DIK, so a VK query has to come back through the
+// table. TWO SLOTS PER VK BECAUSE THE MAPPING IS NOT ONE TO ONE: Windows
+// reports VK_SHIFT / VK_CONTROL / VK_MENU as down when EITHER side is held,
+// and VK_RETURN covers Return and Keypad Enter as well. Those four are the
+// only duplicates in kKeyMap, so two slots is enough -- a third entry for one
+// VK would be dropped, which is why input_BuildTables says so out loud.
+#define VK_TABLE_SIZE 256
+static unsigned char g_aVKToDIK[VK_TABLE_SIZE][2];
 static bool g_bTablesBuilt = false;
 
 static void input_BuildTables(void)
@@ -111,6 +121,7 @@ static void input_BuildTables(void)
 		return;
 	memset(g_aMacToVK, 0, sizeof(g_aMacToVK));
 	memset(g_aMacToDIK, 0, sizeof(g_aMacToDIK));
+	memset(g_aVKToDIK, 0, sizeof(g_aVKToDIK));
 	for (size_t i = 0; i < sizeof(kKeyMap) / sizeof(kKeyMap[0]); ++i)
 	{
 		unsigned char nMac = kKeyMap[i].m_nMac;
@@ -118,6 +129,19 @@ static void input_BuildTables(void)
 		{
 			g_aMacToVK[nMac]  = kKeyMap[i].m_nVK;
 			g_aMacToDIK[nMac] = kKeyMap[i].m_nDIK;
+		}
+
+		unsigned char nVK  = kKeyMap[i].m_nVK;
+		unsigned char nDIK = kKeyMap[i].m_nDIK;
+		if (nVK && nDIK)
+		{
+			if (!g_aVKToDIK[nVK][0])
+				g_aVKToDIK[nVK][0] = nDIK;
+			else if (!g_aVKToDIK[nVK][1])
+				g_aVKToDIK[nVK][1] = nDIK;
+			else
+				fprintf(stderr, "[in] VK 0x%02X has a THIRD key (DIK 0x%02X); "
+				                "widen g_aVKToDIK\n", nVK, nDIK);
 		}
 	}
 	g_bTablesBuilt = true;
@@ -288,6 +312,39 @@ void         LTMacInput_ClearKeyUps(void)                { g_nKeyUps = 0; }
 bool LTMacInput_IsDIKDown(unsigned int nDIK)
 {
 	return (nDIK < DIK_STATE_SIZE) ? g_aDIKDown[nDIK] : false;
+}
+
+// ★★ THE SAME HELD STATE, ASKED FOR BY VK CODE -- see macos_input.h.
+//
+// ⚠️ THIS ANSWERS A QUESTION THAT USED TO HAVE NO ANSWER AT ALL. The compat
+// GetAsyncKeyState was `return 0;`, so every caller was told that NO key is
+// ever held, and the one that mattered was CInterfaceMgr::PrePopupState: it
+// snapshots the keys held as an intelligence popup opens so that the Use key
+// STILL BEING HELD (searching a cabinet needs it held for seconds, long past
+// the start of macOS key repeat) cannot dismiss the sheet it just produced.
+// With an empty snapshot the next auto-repeat closed the popup within a frame
+// -- "the intel appears and vanishes".
+bool LTMacInput_IsVKDown(unsigned int nVK)
+{
+	// Cheap and idempotent: a VK query can arrive before the first NSEvent.
+	input_BuildTables();
+
+	// Mouse buttons are VK codes on Windows, and GetAsyncKeyState reports
+	// them -- VK_LBUTTON/VK_RBUTTON/VK_MBUTTON. They are not in kKeyMap.
+	switch (nVK)
+	{
+		case 0x01: return g_aMouseDown[0];
+		case 0x02: return g_aMouseDown[1];
+		case 0x04: return g_aMouseDown[2];
+		default:   break;
+	}
+
+	if (nVK >= VK_TABLE_SIZE)
+		return false;
+
+	unsigned char nDIK0 = g_aVKToDIK[nVK][0];
+	unsigned char nDIK1 = g_aVKToDIK[nVK][1];
+	return (nDIK0 && g_aDIKDown[nDIK0]) || (nDIK1 && g_aDIKDown[nDIK1]);
 }
 
 void LTMacInput_ConsumeMouseDelta(float *pDX, float *pDY)

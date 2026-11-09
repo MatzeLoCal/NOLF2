@@ -2947,6 +2947,12 @@ LTBOOL CInterfaceMgr::OnKeyDown(int key, int rep)
 				KeystrokeList::iterator iter = g_keys.begin();
 				while (iter != g_keys.end() && (*iter) != key)
 					iter++;
+
+				if (getenv("LT_TRACE_POPUP"))
+					g_pLTClient->CPrint("[popup] KEY 0x%02X rep=%d held=%d -> %s",
+						key, rep, (int)g_keys.size(),
+						(iter == g_keys.end()) ? "CLOSE" : "ignored (was held)");
+
 				if (iter == g_keys.end())
 					m_PopupText.Close();
 
@@ -3584,6 +3590,14 @@ LTBOOL CInterfaceMgr::PrePopupState(GameState eCurState)
 		SetHUDRenderLevel(kHUDRenderNone);
 	}
 
+	// ⚠️ THIS SNAPSHOT IS LOAD-BEARING, AND ON macOS IT USED TO BE EMPTY.
+	// The keys held as the popup opens are the ones that must NOT dismiss it:
+	// searching a cabinet holds Use down for seconds (CSearcher::Update stops
+	// the moment IsCommandOn(ACTIVATE) goes false), so macOS key repeat is
+	// streaming key-downs for that very key when the sheet appears. The compat
+	// GetAsyncKeyState returned a constant 0, so this list came out empty and
+	// the next repeat closed the popup within a frame. See the shim in
+	// macbuild/compat/windows.h and LTMacInput_IsVKDown.
 	g_keys.clear();
 	for (int k = 0; k < 256; k++)
 	{
@@ -3592,6 +3606,15 @@ LTBOOL CInterfaceMgr::PrePopupState(GameState eCurState)
 	}
 
 	g_bLockPopup = !g_keys.empty();
+
+	if (getenv("LT_TRACE_POPUP"))
+	{
+		char szHeld[256] = "";
+		for (KeystrokeList::iterator it = g_keys.begin(); it != g_keys.end(); ++it)
+			sprintf(szHeld + strlen(szHeld), " 0x%02X", *it);
+		g_pLTClient->CPrint("[popup] OPEN  held=%d%s lock=%d",
+			(int)g_keys.size(), szHeld, (int)g_bLockPopup);
+	}
 
     return LTTRUE;
 }

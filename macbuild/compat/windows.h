@@ -41,6 +41,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <limits.h>
+#include <dlfcn.h>    // GetAsyncKeyState reaches the input layer with dlsym
 
 // --- calling conventions / storage (no-ops off Windows) ------------------
 #ifndef WINAPI
@@ -454,8 +455,61 @@ static inline HFONT   CreateFontIndirectA(const void*) { return NULL; }
 typedef DWORD COLORREF;
 static inline HBRUSH  CreateSolidBrush(COLORREF) { return NULL; }
 
-static inline short GetAsyncKeyState(int) { return 0; }
-static inline short GetKeyState(int) { return 0; }
+/* ★★ GetAsyncKeyState: "IS THIS KEY HELD RIGHT NOW?" -- A REAL ANSWER.
+ *
+ * ⚠️ THIS WAS `return 0;` AND IT WAS A GAMEPLAY BUG, NOT A COSMETIC GAP.
+ * Game code asks through ClientUtilities.h's
+ *     #define IsKeyDown(key) (GetAsyncKeyState(key) & 0x80000000)
+ * and a constant 0 answers "nothing is ever held" -- which is not a missing
+ * feature, it is a WRONG ANSWER, and the callers believe it:
+ *
+ *   - CInterfaceMgr::PrePopupState snapshots the keys held at the instant an
+ *     intelligence popup opens, so the key that OPENED it cannot close it.
+ *     Searching a cabinet holds Use down for seconds (CSearcher::Update ends
+ *     the search the moment IsCommandOn(ACTIVATE) goes false), so macOS key
+ *     repeat is in full flow when the sheet appears; with an empty snapshot
+ *     the next repeat reached the GS_POPUP branch of OnKeyDown, failed to
+ *     find itself in the list, and closed the popup within a frame.
+ *   - CInterfaceMgr::UpdateLoadingLevelState offers ESC to leave a failed
+ *     load; that escape hatch never worked.
+ *   - HandleDebugKey's modifier chords.
+ *
+ * ⚠️ THE 0x8000 MUST BE RETURNED AS A NEGATIVE SHORT. Win32 sets the high bit
+ * of a SHORT, and the macro above tests bit 31 of an INT -- it only ever
+ * worked because the short is SIGN-EXTENDED. 0x8000 as a short is negative,
+ * so it widens to 0xFFFF8000 and the test passes. Returning 1, or 0x4000, or
+ * widening to an int first, all read as "not held".
+ *
+ * ⚠️ dlsym, NOT A DIRECT CALL. libCShell.dylib / libObject.lto are dlopen'd
+ * and link none of the engine (otool -L shows only libc++ and libSystem), so
+ * they cannot name LTMacInput_IsVKDown at link time. The engine executable
+ * exports it, so RTLD_DEFAULT finds it from inside any image in the process.
+ * No cross-module build dependency, one shim for everybody. The lookup is
+ * cached because PrePopupState asks this 256 times in a row.
+ *
+ * Plain statics with constant initialisers rather than one initialised
+ * function-local: that form needs no __cxa_guard_acquire on every call, and
+ * it stays valid C if a C translation unit ever includes this header (no .c
+ * in the tree does today, and line ~782's bare `bool` already assumes so). */
+typedef bool (*LTMacIsVKDownFn)(unsigned int);
+static inline short GetAsyncKeyState(int nVK) {
+    static LTMacIsVKDownFn s_pfnIsVKDown = 0;
+    static int             s_nResolved   = 0;
+    if (!s_nResolved) {
+        s_pfnIsVKDown = (LTMacIsVKDownFn)dlsym(RTLD_DEFAULT, "LTMacInput_IsVKDown");
+        s_nResolved = 1;   /* the engine is the main executable: always loaded */
+    }
+    if (!s_pfnIsVKDown || nVK < 0)
+        return 0;
+    return s_pfnIsVKDown((unsigned int)nVK) ? (short)0x8000 : (short)0;
+}
+/* Win32's GetKeyState reports the state as of the message being processed,
+ * plus a TOGGLE bit (bit 0) for Caps/Num/Scroll Lock. The held bit is the
+ * same question as above; the toggle bit is not tracked, so it reads 0 and
+ * VKToASCII would see Caps Lock as off. Nothing calls VKToASCII in this game,
+ * which is the only reason that is acceptable -- it is noted rather than
+ * fixed so that a future caller knows what it is getting. */
+static inline short GetKeyState(int nVK) { return GetAsyncKeyState(nVK); }
 static inline BOOL  GetCursorPos(LPPOINT p) { if (p) { p->x = 0; p->y = 0; } return TRUE; }
 static inline BOOL  SetCursorPos(int, int) { return TRUE; }
 static inline BOOL  ClipCursor(const RECT*) { return TRUE; }

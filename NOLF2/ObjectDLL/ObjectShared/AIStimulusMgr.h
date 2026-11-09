@@ -26,6 +26,7 @@
 class CAIStimulusMgr;
 class CAI;
 class AIVolume;
+class AIInformationVolume;
 class RelationSet;
 class RelationData;
 class IAISensing;
@@ -97,7 +98,18 @@ class CAIStimulusRecord : public CAIClassAbstract
 		LTObjRefNotifier	m_hStimulusSource;		// Handle to source of stimulus.
 		LTObjRefNotifier	m_hStimulusTarget;		// Handle to target of stimulus (optional).
 		EnumAITargetMatchID	m_eTargetMatchID;		// ID used to match stimuli affecting the same object.
-		AIVolume*			m_pInformationVolume;	// Volume where stimulus occured, for sense masks.
+		// ⚠️ THIS IS AN AIInformationVolume, AND THE TYPE MATTERS.
+		// It used to be declared AIVolume*, filled with a C-style cast from
+		// AIInformationVolume* and read back with a dynamic_cast. Those two
+		// classes are SIBLINGS -- both derive from AISpatialRepresentation and
+		// neither derives from the other -- so the cast in was a
+		// reinterpret_cast between unrelated types and the dynamic_cast out
+		// always returned NULL under clang. The sense mask was therefore never
+		// applied: every AI sensed the player through every "permitted" volume,
+		// which is what made the guards in c07s02 (Chapter 7, "Planting a bug")
+		// hostile the moment the level started, when Cate is supposed to be an
+		// employee free to walk the compound.
+		AIInformationVolume*	m_pInformationVolume;	// Volume where stimulus occured, for sense masks.
 		RelationData		m_RelationData;			// Data describing who the emitter was
 		
 		typedef std::vector<CharacterAlignment> _listAlignments;
