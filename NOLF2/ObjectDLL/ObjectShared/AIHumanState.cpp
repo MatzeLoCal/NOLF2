@@ -28,6 +28,13 @@
 #include "AIUtils.h"
 #include "AIMovement.h"
 
+// LT_TRACE_TRIGGER (owned by Trigger.cpp) also covers the AI end of a
+// level's logic chain: a Goto node's arrival command is what unlocks the next
+// link, and the path-failure branch below completes the goal WITHOUT running
+// it -- silently breaking the chain for good.
+extern bool g_bTraceTrigger;
+extern void TrigTrace(const char *pMsg, ...);
+
 extern CAIStimulusMgr* g_pAIStimulusMgr;
 
 DEFINE_AI_FACTORY_CLASS_SPECIFIC(State, CAIHumanStateAnimate, kState_HumanAnimate);
@@ -1017,6 +1024,10 @@ void CAIHumanStateGoto::Update()
 
 					if( pNode && ( pNode->GetType() == kNode_Goto ) && pNode->HasCmd() )
 					{
+						if( g_bTraceTrigger )
+							TrigTrace("[trig] NODE ARRIVED %s -> run cmd: %s",
+								::ToString( pNode->GetName() ),
+								g_pLTServer->GetStringData( pNode->GetCmd() ));
 						SendTriggerMsgToObject( pNode, GetAI()->m_hObject, pNode->GetCmd() );
 					}
 				}
@@ -1040,6 +1051,10 @@ void CAIHumanStateGoto::Update()
 						AITRACE( AIShowStates, ( GetAI()->m_hObject, "CAIHumanStateGoto::Update: Could not find path to dest (%s).",
 							pContainingVolume ? pContainingVolume->GetName() : "No Volume" ) );
 					}
+
+					if( g_bTraceTrigger )
+						TrigTrace("[trig] NODE UNREACHABLE: no path -- goal "
+							"completes WITHOUT running the arrival command");
 
 					m_eStateStatus = kSStat_StateComplete;
 					return;
@@ -1071,6 +1086,10 @@ void CAIHumanStateGoto::Update()
 
 					if( pNode && ( pNode->GetType() == kNode_Goto ) && pNode->HasCmd() )
 					{
+						if( g_bTraceTrigger )
+							TrigTrace("[trig] NODE ARRIVED %s -> run cmd: %s",
+								::ToString( pNode->GetName() ),
+								g_pLTServer->GetStringData( pNode->GetCmd() ));
 						SendTriggerMsgToObject( pNode, GetAI()->m_hObject, pNode->GetCmd() );
 					}
 

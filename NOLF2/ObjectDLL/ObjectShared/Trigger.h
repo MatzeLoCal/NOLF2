@@ -73,6 +73,15 @@ class Trigger : public GameBase
 
         LTBOOL		m_bLocked;              // Is this door locked?
 
+		// ★ A `trigger` MESSAGE that arrived while locked, held until unlock.
+		// See the LT_TRACE_TRIGGER banner and the latch in Trigger.cpp's
+		// OnTrigger for why the alternative -- throwing it away -- can make a
+		// level unfinishable. NOT serialised, on purpose: adding a field to
+		// Trigger::Save would invalidate every existing save, and the window
+		// this bit is set in is the few seconds an escorted AI spends walking
+		// to its next node.
+		LTBOOL		m_bPendingMsgTrigger;
+
         LTBOOL		m_bDelayingActivate;    // Are we currently delaying activate
         LTFLOAT		m_fStartDelayTime;      // When did we start the delay
         LTFLOAT		m_fSendDelay;           // How long do we wait

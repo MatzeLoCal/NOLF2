@@ -198,6 +198,7 @@ Trigger::Trigger() : GameBase()
 	m_nPlayerKeyID			= KEY_INVALID_ID;
     m_bAITriggerable        = LTFALSE;
     m_bLocked               = LTFALSE;
+	m_bPendingMsgTrigger	= LTFALSE;
     m_hstrAIName            = LTNULL;
     m_bBodyTriggerable      = LTFALSE;
     m_hstrBodyName          = LTNULL;
@@ -357,6 +358,41 @@ uint32 Trigger::EngineMessageFn(uint32 messageID, void *pData, LTFLOAT fData)
 //
 // ----------------------------------------------------------------------- //
 
+// ★★ LT_TRACE_TRIGGER -- THE LEVEL'S LOGIC CHAIN, AS IT ACTUALLY RUNS.
+//
+// A level like c08s04 ("The Getaway") is one long single-threaded chain of
+// Triggers unlocking each other; when a link is lost the level simply stops
+// being finishable and NOTHING is reported. The lines that matter most are the
+// REFUSED ones -- a `trigger` message arriving at a LOCKED trigger, or at one
+// that has used up its NumberOfActivations, is discarded in silence by design
+// (see DoTrigger / Activate below), and that silence is the whole difficulty.
+bool g_bTraceTrigger = (getenv("LT_TRACE_TRIGGER") != LTNULL);
+
+// ⚠️ stderr, NOT g_pLTServer->CPrint. CPrint goes to dsi_PrintToConsole, which
+// on this port mirrors to stdout ONLY when LT_TRACE_CONSOLE=1 is ALSO set (and
+// otherwise reaches nothing at all on a client, since there is no dedicated
+// server app handler to receive it). A diagnostic that needs a second switch
+// to appear is a diagnostic that reports an empty log as "nothing happened" --
+// the exact trap dsi_PrintToConsole's own comment describes. Every other probe
+// in this port writes to stderr ([wobj], [in], [df], [seemask]); so does this.
+void TrigTrace(const char *pMsg, ...)
+{
+	va_list marker;
+	va_start(marker, pMsg);
+	vfprintf(stderr, pMsg, marker);
+	va_end(marker);
+	fputc('\n', stderr);
+}
+
+static const char *TrigName(HOBJECT hObj)
+{
+	static char s_szName[64];
+	s_szName[0] = 0;
+	if (hObj && g_pLTServer)
+		g_pLTServer->GetObjectName(hObj, s_szName, sizeof(s_szName));
+	return s_szName[0] ? s_szName : "?";
+}
+
 bool Trigger::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 {
 	static CParsedMsg::CToken s_cTok_Trigger(g_szTrigger);
@@ -367,17 +403,70 @@ bool Trigger::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 
 	if (cMsg.GetArg(0) == s_cTok_Trigger)
 	{
+		if (g_bTraceTrigger)
+			TrigTrace("[trig] MSG trigger -> %s (from %s) locked=%d used=%d/%d",
+				TrigName(m_hObject), TrigName(hSender), (int)m_bLocked,
+				(int)m_nNumTimesActivated, (int)m_nNumActivations);
+
+		// ★★ LATCH A REFUSED `trigger` MESSAGE INSTEAD OF LOSING IT.
+		//
+		// ⚠️ WHY: a level's logic chain is single-threaded, and the thing that
+		// sends such a message is usually a ONE-SHOT trigger. c08s04 ("The
+		// Getaway") is the case that found this. Pierre is escorted node to
+		// node: each pierre_gotoN unlocks p_triggerN on arrival, and the
+		// player walking into continuetriggerN sends `msg p_triggerN trigger`
+		// to make him run on. continuetrigger1..7 are NOT locked and have
+		// NumberOfActivations=1 -- so a player who reaches continuetrigger7
+		// BEFORE Pierre reaches pierre_goto7 spends its single activation on a
+		// message that p_trigger7, still locked, discards. Nothing can ever
+		// send it again: Pierre stops at node 7 for good, pierre_goto8's
+		// command never runs, continuetrigger8 stays locked, and the three
+		// mimes it spawns (Spawner5/6/06) never appear. The level cannot be
+		// finished, and whether it happens depends purely on whether the
+		// player outran the AI -- which is why it reproduces every time for
+		// one player and never for another.
+		//
+		// Latching only applies to an explicit MESSAGE, never to a touch and
+		// never to a timed trigger's self-fire (both reach DoTrigger directly,
+		// not through here), so a locked trigger still swallows a player who
+		// walks into it early. LT_NO_TRIGGER_LATCH=1 restores the original
+		// lose-it behaviour for an A/B.
+		if (m_bLocked && !getenv("LT_NO_TRIGGER_LATCH"))
+		{
+			m_bPendingMsgTrigger = LTTRUE;
+			if (g_bTraceTrigger)
+				TrigTrace("[trig] LATCHED %s: locked now, will fire on unlock",
+					TrigName(m_hObject));
+		}
+
         DoTrigger(hSender, LTFALSE);
 	}
 	else if (cMsg.GetArg(0) == s_cTok_Lock)  // See if we should lock the trigger...
 	{
+		if (g_bTraceTrigger)
+			TrigTrace("[trig] LOCK   %s (from %s)",
+				TrigName(m_hObject), TrigName(hSender));
         m_bLocked = LTTRUE;
 		SendLockedMsg();
 	}
 	else if (cMsg.GetArg(0) == s_cTok_Unlock) // See if we should unlock the trigger...
 	{
+		if (g_bTraceTrigger)
+			TrigTrace("[trig] UNLOCK %s (from %s) used=%d/%d",
+				TrigName(m_hObject), TrigName(hSender),
+				(int)m_nNumTimesActivated, (int)m_nNumActivations);
         m_bLocked = LTFALSE;
 		SendLockedMsg();
+
+		// Replay a message that arrived while we were locked.
+		if (m_bPendingMsgTrigger)
+		{
+			m_bPendingMsgTrigger = LTFALSE;
+			if (g_bTraceTrigger)
+				TrigTrace("[trig] REPLAY %s: firing the latched trigger",
+					TrigName(m_hObject));
+			DoTrigger(hSender, LTFALSE);
+		}
 	}
 	else
 		return GameBase::OnTrigger(hSender, cMsg);
@@ -697,6 +786,18 @@ void Trigger::DoTrigger(HOBJECT hObj, LTBOOL bTouchNotify)
 		{
 			RequestActivate();
 		}
+		else if (g_bTraceTrigger)
+		{
+			// ⚠️ THE SILENT LOSS. The message is gone -- unlocking later does
+			// not replay it, and if whatever sent it was itself a one-shot
+			// trigger, nothing will ever send it again.
+			TrigTrace("[trig] REFUSED %s: LOCKED (touch=%d from %s)",
+				TrigName(m_hObject), (int)bTouchNotify, TrigName(hObj));
+		}
+	}
+	else if (g_bTraceTrigger)
+	{
+		TrigTrace("[trig] REFUSED %s: not active yet", TrigName(m_hObject));
 	}
 }
 
@@ -908,10 +1009,21 @@ LTBOOL Trigger::Activate()
 	{
 		if (m_nNumTimesActivated >= m_nNumActivations)
 		{
+			if (g_bTraceTrigger)
+				TrigTrace("[trig] REFUSED %s: used up (%d/%d)",
+					TrigName(m_hObject), (int)m_nNumTimesActivated,
+					(int)m_nNumActivations);
             return LTFALSE;
 		}
 
 		m_nNumTimesActivated++;
+		if (g_bTraceTrigger)
+			TrigTrace("[trig] FIRE   %s (%d/%d)", TrigName(m_hObject),
+				(int)m_nNumTimesActivated, (int)m_nNumActivations);
+	}
+	else if (g_bTraceTrigger)
+	{
+		TrigTrace("[trig] FIRE   %s (unlimited)", TrigName(m_hObject));
 	}
 
 

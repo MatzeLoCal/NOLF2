@@ -52,6 +52,12 @@ struct Settings: Codable {
     var disable3DSound: Bool = false          // LT_NO_SOUND_3D
     var disableMusic: Bool = false            // LT_NO_MUSIC
 
+    // Diagnostics. A bug we cannot reproduce can only be diagnosed from the
+    // reporter's own machine, and they cannot set an environment variable on a
+    // double-clicked .app. These two put the engine's probes within reach.
+    var traceLevelLogic: Bool = false         // LT_TRACE_TRIGGER + LT_TRACE_CONSOLE
+    var extraEnv: String = ""                 // free-form "LT_x=1" lines
+
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                             in: .userDomainMask)[0]
@@ -206,13 +212,55 @@ enum GameModules {
     }
 }
 
+/// Read from the bundle, never hard-coded: the one place the version is set is
+/// macbuild/CMakeLists.txt, and a log that reports a version typed into Swift
+/// would eventually report the wrong one.
+enum AppVersion {
+    static var full: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return short == build ? short : "\(short) (build \(build))"
+    }
+}
+
 enum EngineLog {
     /// A standard macOS location, so a bug report can just say "attach this".
-    static var url: URL {
-        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+    static var url: URL { dir.appendingPathComponent("engine.log") }
+
+    /// The PREVIOUS run, kept because a reporter usually realises they want the
+    /// log only after they have quit and relaunched -- which used to overwrite
+    /// the very run that showed the bug.
+    static var previousURL: URL { dir.appendingPathComponent("engine.previous.log") }
+
+    static var dir: URL {
+        let d = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/NOLF2Mac", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("engine.log")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    /// Rotate, truncate, and write the header. Returns a handle positioned at
+    /// the END of the file -- the header would otherwise be overwritten by the
+    /// engine's first line of output, since a fresh FileHandle starts at 0.
+    ///
+    /// ⚠️ THE HEADER IS THE POINT, not decoration. A log that does not say
+    /// which build produced it, from which game folder, with which switches
+    /// on, cannot settle an argument about whether a fix is even present in
+    /// the binary the reporter ran.
+    static func begin(header: [String]) -> FileHandle? {
+        let fm = FileManager.default
+        try? fm.removeItem(at: previousURL)
+        try? fm.moveItem(at: url, to: previousURL)
+
+        var text = ""
+        for line in header { text += line + "\n" }
+        text += String(repeating: "-", count: 60) + "\n"
+        try? text.data(using: .utf8)?.write(to: url, options: .atomic)
+
+        guard let h = try? FileHandle(forWritingTo: url) else { return nil }
+        h.seekToEndOfFile()
+        return h
     }
 }
 
@@ -464,6 +512,40 @@ struct LauncherView: View {
                         Text("Disable music")
                             .font(.system(size: 10)).foregroundColor(Palette.cream)
                     }
+
+                    Divider().padding(.vertical, 2)
+
+                    Toggle(isOn: $settings.traceLevelLogic) {
+                        Text("Record level-logic diagnostics in the log")
+                            .font(.system(size: 10)).foregroundColor(Palette.cream)
+                    }
+                    Text("For reporting a level that cannot be finished — logs every "
+                       + "trigger, spawn and AI waypoint. Slows nothing noticeably, but "
+                       + "the log grows; leave it off for normal play.")
+                        .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        Text("Extra switches")
+                            .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+                        TextField("LT_TRACE_POPUP=1", text: $settings.extraEnv)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 9, design: .monospaced))
+                            .frame(width: 210)
+                    }
+
+                    HStack(spacing: 6) {
+                        Button("SHOW LOG") { revealLog() }
+                            .buttonStyle(MenuButtonStyle(tint: Palette.teal))
+                        Button("COPY PATH") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(EngineLog.url.path, forType: .string)
+                        }
+                        .buttonStyle(MenuButtonStyle(tint: Palette.creamDim))
+                        Text(logStatus)
+                            .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+                    }
+                    .padding(.top, 2)
                 }
                 .toggleStyle(.checkbox)
                 .padding(.top, 3)
@@ -473,6 +555,29 @@ struct LauncherView: View {
                     .foregroundColor(Palette.teal)
             }
         }
+    }
+
+    /// The previous run's log is kept too, so offer whichever exists — a
+    /// reporter who has already quit and relaunched still has the run that
+    /// showed the bug.
+    private var logStatus: String {
+        let fm = FileManager.default
+        func size(_ u: URL) -> Int? {
+            (try? fm.attributesOfItem(atPath: u.path)[.size] as? Int) ?? nil
+        }
+        if let n = size(EngineLog.url) {
+            let kb = max(1, n / 1024)
+            return fm.fileExists(atPath: EngineLog.previousURL.path)
+                ? "\(kb) KB, previous run kept" : "\(kb) KB"
+        }
+        return "no log yet — launch once"
+    }
+
+    private func revealLog() {
+        let fm = FileManager.default
+        let target = fm.fileExists(atPath: EngineLog.url.path) ? EngineLog.url : EngineLog.dir
+        NSWorkspace.shared.selectFile(target.path,
+                                      inFileViewerRootedAtPath: EngineLog.dir.path)
     }
 
     private var footer: some View {
@@ -605,20 +710,70 @@ struct LauncherView: View {
         // still the cleanest way to say "default".
         if settings.disable3DSound { env["LT_NO_SOUND_3D"] = "1" }
         if settings.disableMusic   { env["LT_NO_MUSIC"]    = "1" }
-        if !settings.fullscreen {
-            env["LT_WINDOWED"]    = "1"
-            env["LT_WINDOW_SIZE"] = settings.windowSize
+
+        // ★ Diagnostics. LT_TRACE_TRIGGER logs a level's whole logic chain --
+        // every trigger fire, lock, unlock, latch and REFUSAL, every spawn and
+        // its success, every AI goto-node arrival. It is what turns "the level
+        // cannot be finished" into a named broken link.
+        // ⚠️ LT_TRACE_CONSOLE GOES WITH IT, and not for this trace's sake: the
+        // [trig] lines write to stderr themselves. It is for the engine's and
+        // the game's OWN diagnostics, which go to dsi_PrintToConsole and
+        // con_PrintString and reach nothing without it -- so their absence
+        // from a log would read as "that code never ran". See the banners in
+        // linuxdsys.cpp and console.cpp.
+        if settings.traceLevelLogic {
+            env["LT_TRACE_TRIGGER"] = "1"
+            env["LT_TRACE_CONSOLE"] = "1"
         }
+
+        // Free-form switches, for a probe added after this launcher shipped.
+        // ⚠️ LT_* ONLY. Anything else is refused on purpose -- a typo'd or
+        // pasted DYLD_INSERT_LIBRARIES / PATH line here would silently change
+        // what gets loaded into the game, and a diagnostics box is no place to
+        // be able to do that.
+        var rejectedEnv: [String] = []
+        for raw in settings.extraEnv.split(whereSeparator: { $0 == "\n" || $0 == ";" }) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            let value = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "1"
+            if name.hasPrefix("LT_") && !name.contains(" ") {
+                env[name] = value
+            } else {
+                rejectedEnv.append(name)
+            }
+        }
+        if !rejectedEnv.isEmpty {
+            launchError = "Ignored non-LT_ variable(s): \(rejectedEnv.joined(separator: ", "))."
+        }
+
         proc.environment = env
 
         // Capture the engine's output. A black screen is otherwise silent, and
         // this is the file a bug report should carry.
-        FileManager.default.createFile(atPath: EngineLog.url.path, contents: nil)
-        if let h = try? FileHandle(forWritingTo: EngineLog.url) {
+        let archiveList = GameFolder.archives(in: folder, extras: settings.extraRez)
+            .map { ($0 as NSString).lastPathComponent }
+        var onSwitches = env.keys.filter { $0.hasPrefix("LT_") }.sorted()
+        if onSwitches.isEmpty { onSwitches = ["(none)"] }
+        let header = [
+            "NOLF2 for macOS — engine log",
+            "launcher   \(AppVersion.full)",
+            "started    \(ISO8601DateFormatter().string(from: Date()))",
+            "macOS      \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "engine     \(enginePath)",
+            "game       \(folder.path)",
+            "archives   \(archiveList.joined(separator: " "))",
+            "switches   \(onSwitches.joined(separator: " "))",
+        ]
+        if let h = EngineLog.begin(header: header) {
             proc.standardOutput = h
             proc.standardError = h
         }
-
+        if !settings.fullscreen {
+            env["LT_WINDOWED"]    = "1"
+            env["LT_WINDOW_SIZE"] = settings.windowSize
+        }
         // ⚠️⚠️ DO NOT LET THIS PROCESS EXIT WHILE THE GAME RUNS. The engine is
         // posix_spawn'd by us, so it lives in OUR coalition and is not an app
         // LaunchServices ever opened. While we are alive it has a frontmost

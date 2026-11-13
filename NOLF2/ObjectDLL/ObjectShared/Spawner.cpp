@@ -20,6 +20,10 @@
 #include "ServerSoundMgr.h"
 #include "ObjectTemplateMgr.h"
 
+// LT_TRACE_TRIGGER lives in Trigger.cpp -- see the banner there.
+extern bool g_bTraceTrigger;
+extern void TrigTrace(const char *pMsg, ...);
+
 LINKFROM_MODULE( Spawner );
 
 BEGIN_CLASS(Spawner)
@@ -522,6 +526,19 @@ bool Spawner::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 		pBaseClass = SpawnObjectTemplate( szSpawn, pName, vPos, rRot );
 	else
 		pBaseClass = SpawnObject( szSpawn, vPos, rRot );
+
+	// ⚠️ A FAILED SPAWN IS SILENT -- pBaseClass just comes back NULL and the
+	// character the level expected never exists. The two ways that happens are
+	// an unknown template name (lookup is case-INSENSITIVE, so case is not it)
+	// and a class the server does not have. LT_TRACE_TRIGGER says which.
+	if( g_bTraceTrigger )
+	{
+		char szWho[64] = "";
+		g_pLTServer->GetObjectName( m_hObject, szWho, sizeof(szWho) );
+		TrigTrace("[trig] SPAWN  %s target='%s' at (%.0f %.0f %.0f) -> %s",
+			szWho[0] ? szWho : "?", szSpawn, vPos.x, vPos.y, vPos.z,
+			pBaseClass ? "ok" : "*** FAILED (no such template/class) ***");
+	}
 
 	// Check if we succeeded in creating someone.
 	if( pBaseClass )

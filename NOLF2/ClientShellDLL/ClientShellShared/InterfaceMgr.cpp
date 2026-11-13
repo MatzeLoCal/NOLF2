@@ -183,6 +183,18 @@ namespace
 
 	bool g_bLockPopup = true;
 
+	// stderr for the same reason as [trig] -- see the TrigTrace banner in
+	// ObjectDLL/ObjectShared/Trigger.cpp. CPrint needs LT_TRACE_CONSOLE=1 on
+	// top of its own switch before it shows anything.
+	void PopupTrace(const char *pMsg, ...)
+	{
+		va_list marker;
+		va_start(marker, pMsg);
+		vfprintf(stderr, pMsg, marker);
+		va_end(marker);
+		fputc('\n', stderr);
+	}
+
 	CTimer g_SplashScreenTimer;
 }
 
@@ -2949,7 +2961,7 @@ LTBOOL CInterfaceMgr::OnKeyDown(int key, int rep)
 					iter++;
 
 				if (getenv("LT_TRACE_POPUP"))
-					g_pLTClient->CPrint("[popup] KEY 0x%02X rep=%d held=%d -> %s",
+					PopupTrace("[popup] KEY 0x%02X rep=%d held=%d -> %s",
 						key, rep, (int)g_keys.size(),
 						(iter == g_keys.end()) ? "CLOSE" : "ignored (was held)");
 
@@ -3612,7 +3624,7 @@ LTBOOL CInterfaceMgr::PrePopupState(GameState eCurState)
 		char szHeld[256] = "";
 		for (KeystrokeList::iterator it = g_keys.begin(); it != g_keys.end(); ++it)
 			sprintf(szHeld + strlen(szHeld), " 0x%02X", *it);
-		g_pLTClient->CPrint("[popup] OPEN  held=%d%s lock=%d",
+		PopupTrace("[popup] OPEN  held=%d%s lock=%d",
 			(int)g_keys.size(), szHeld, (int)g_bLockPopup);
 	}
 

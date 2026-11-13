@@ -363,6 +363,18 @@ LTRESULT LoadObjects(ILTStream *pStream, const char *pWorldName, bool bAllObject
 
     pClassMgr = &g_pServerMgr->m_ClassMgr;
 
+	// ★ LT_DUMP_WORLDOBJECTS -- THE LEVEL'S LOGIC, AS THE DESIGNER AUTHORED IT.
+	// Every trigger chain, counter, spawner and AI in a world lives in this
+	// object block as a class name plus a property list, and nothing in the
+	// port could read it back: diagnosing "object X never fires in level Y"
+	// meant guessing. Set it to 1 (or *) for every object, or to a substring
+	// of the CLASS name to filter (e.g. =AI, =Trigger). stderr, so a run can
+	// be redirected to a file and grepped.
+	// NOTE: it prints from the RAW property bytes, before the pClass/pObject
+	// test below, so objects whose class the server does not have still show
+	// up -- which is exactly when you most want to see them.
+	const char *pDumpFilter = getenv("LT_DUMP_WORLDOBJECTS");
+
     // Load the objects.
     pStream->SeekTo(nObjectDataOffset);
 
@@ -381,6 +393,11 @@ LTRESULT LoadObjects(ILTStream *pStream, const char *pWorldName, bool bAllObject
 			g_pServerMgr->m_pCurOCS = pOldOCS;
             RETURN_ERROR(1, LoadObjects, LT_INVALIDWORLDFILE);
         }
+
+		const bool bDump = pDumpFilter &&
+			(pDumpFilter[0] == '1' || pDumpFilter[0] == '*' || strstr(typeName, pDumpFilter));
+		if (bDump)
+			fprintf(stderr, "[wobj] === %s ===\n", typeName);
 
         // Get the class.
 		CClassData *pClassData = g_pServerMgr->m_ClassMgr.FindClassData(typeName);
@@ -454,6 +471,58 @@ LTRESULT LoadObjects(ILTStream *pStream, const char *pWorldName, bool bAllObject
             {
                 pStream->Read(static_cast<void*>(&(*aPropData.begin())), propLen);
             }
+
+			if (bDump)
+			{
+				const void *pRaw = propLen ? static_cast<const void*>(&(*aPropData.begin())) : LTNULL;
+				switch (propCode)
+				{
+					case LT_PT_STRING:
+						fprintf(stderr, "[wobj]   %-28s str   \"%s\"\n", propName,
+							pRaw ? (const char*)pRaw : "");
+						break;
+					case LT_PT_VECTOR:
+					case LT_PT_COLOR:
+						if (propLen >= sizeof(LTVector))
+						{
+							const LTVector *pV = (const LTVector*)pRaw;
+							fprintf(stderr, "[wobj]   %-28s %s (%.1f %.1f %.1f)\n", propName,
+								(propCode == LT_PT_COLOR) ? "col " : "vec ",
+								pV->x, pV->y, pV->z);
+						}
+						break;
+					case LT_PT_ROTATION:
+						if (propLen >= sizeof(LTVector))
+						{
+							const LTVector *pV = (const LTVector*)pRaw;
+							fprintf(stderr, "[wobj]   %-28s rot   (%.1f %.1f %.1f)\n", propName,
+								pV->x, pV->y, pV->z);
+						}
+						break;
+					case LT_PT_REAL:
+						if (propLen >= sizeof(float))
+							fprintf(stderr, "[wobj]   %-28s real  %g\n", propName,
+								*(const float*)pRaw);
+						break;
+					case LT_PT_LONGINT:
+					case LT_PT_FLAGS:
+						// Stored as a float and cast -- the tools have no int type.
+						if (propLen >= sizeof(float))
+							fprintf(stderr, "[wobj]   %-28s %s %d\n", propName,
+								(propCode == LT_PT_FLAGS) ? "flags" : "int  ",
+								(int)(*(const float*)pRaw));
+						break;
+					case LT_PT_BOOL:
+						if (propLen >= 1)
+							fprintf(stderr, "[wobj]   %-28s bool  %d\n", propName,
+								(int)(*aPropData.begin() != 0));
+						break;
+					default:
+						fprintf(stderr, "[wobj]   %-28s code %d len %u\n", propName,
+							(int)propCode, (unsigned)propLen);
+						break;
+				}
+			}
 
 			// Add it as a property if we're going to tell them about it
 			if (pClass && pObject)
