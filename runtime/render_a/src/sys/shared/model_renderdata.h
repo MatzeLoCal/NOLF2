@@ -53,6 +53,14 @@ struct REmitState
 	// letting that reach a SRC_ALPHA blend deletes the surface.
 	bool    m_bTextureAlpha;
 
+	// Clamp the base texture's addressing instead of repeating it. Needed by
+	// any emitter whose UVs leave 0..1 deliberately: a snow particle is one
+	// triangle whose UVs span (0,-1)..(2,1), and under the default REPEATING
+	// sampler that tiles the flake 3x3 instead of showing one. D3D sets
+	// D3DTADDRESS_CLAMP per draw (drawvolumeeffects.cpp:182); our samplers
+	// belong to the TEXTURE, so the draw has to override it.
+	bool    m_bClampTexture;
+
 	// ★★ NoZ SPRITES (lamp halos) — HOW METAL REPRODUCES THE DEPTH PROBE.
 	//
 	// The GL path glReadPixels()es the DEPTH BUFFER at the sprite's centre and
@@ -85,6 +93,7 @@ struct REmitState
 		  m_bBlend(false), m_nSrcBlend(0), m_nDstBlend(0),
 		  m_bZTest(true), m_bZWrite(true),
 		  m_bIgnoreDiffuse(false), m_fColorScale(1.0f), m_bTextureAlpha(true),
+		  m_bClampTexture(false),
 		  m_bFlattenDepth(false), m_fFlatNDCz(0.0f), m_pModelMatrix(0),
 		  m_pEnvMap(0) {}
 };

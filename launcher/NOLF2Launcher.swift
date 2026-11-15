@@ -533,19 +533,6 @@ struct LauncherView: View {
                             .font(.system(size: 9, design: .monospaced))
                             .frame(width: 210)
                     }
-
-                    HStack(spacing: 6) {
-                        Button("SHOW LOG") { revealLog() }
-                            .buttonStyle(MenuButtonStyle(tint: Palette.teal))
-                        Button("COPY PATH") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(EngineLog.url.path, forType: .string)
-                        }
-                        .buttonStyle(MenuButtonStyle(tint: Palette.creamDim))
-                        Text(logStatus)
-                            .font(.system(size: 9)).foregroundColor(Palette.creamDim)
-                    }
-                    .padding(.top, 2)
                 }
                 .toggleStyle(.checkbox)
                 .padding(.top, 3)
@@ -554,6 +541,58 @@ struct LauncherView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Palette.teal)
             }
+
+            // ⚠️ DELIBERATELY OUTSIDE THE DISCLOSURE GROUP.
+            //
+            // These used to live inside "Troubleshooting", which is COLLAPSED
+            // by default -- so the log was, in practice, invisible: the person
+            // who most needs it is a bug reporter who does not know the
+            // section exists, and asking them to go hunting is how a report
+            // arrives with no log attached. The engine log is written on EVERY
+            // launch (EngineLog.begin, unconditional), so the way to reach it
+            // is always relevant and is always shown.
+            Divider().padding(.vertical, 2)
+            SectionLabel(text: "Engine log")
+            HStack(spacing: 6) {
+                // OPEN, not reveal. "Show me the log" means read it; selecting
+                // the file in Finder leaves one more step to get wrong.
+                Button("OPEN LOG") { openLog(EngineLog.url) }
+                    .buttonStyle(MenuButtonStyle(tint: Palette.teal))
+                    .disabled(!logExists(EngineLog.url))
+                    .opacity(logExists(EngineLog.url) ? 1 : 0.4)
+                // The previous run is kept, because a reporter usually realises
+                // they want the log only AFTER quitting and relaunching.
+                Button("PREVIOUS") { openLog(EngineLog.previousURL) }
+                    .buttonStyle(MenuButtonStyle(tint: Palette.creamDim))
+                    .disabled(!logExists(EngineLog.previousURL))
+                    .opacity(logExists(EngineLog.previousURL) ? 1 : 0.4)
+                Button("REVEAL") { revealLog() }
+                    .buttonStyle(MenuButtonStyle(tint: Palette.creamDim))
+                Button("COPY PATH") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(EngineLog.url.path, forType: .string)
+                }
+                .buttonStyle(MenuButtonStyle(tint: Palette.creamDim))
+            }
+            Text(logStatus)
+                .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+        }
+    }
+
+    private func logExists(_ u: URL) -> Bool {
+        FileManager.default.fileExists(atPath: u.path)
+    }
+
+    /// Open the log in whatever the user reads text with.
+    /// ⚠️ A .log file may have no default application on a clean machine, in
+    /// which case NSWorkspace.open returns false and NOTHING happens -- the
+    /// button would look broken. Fall back to revealing it in Finder, so the
+    /// click always does something visible.
+    private func openLog(_ u: URL) {
+        guard logExists(u) else { revealLog(); return }
+        if !NSWorkspace.shared.open(u) {
+            NSWorkspace.shared.selectFile(u.path,
+                                          inFileViewerRootedAtPath: EngineLog.dir.path)
         }
     }
 

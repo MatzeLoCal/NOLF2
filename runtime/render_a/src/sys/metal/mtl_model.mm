@@ -639,6 +639,12 @@ void MTLModel_DrawTris(const MTLModelVert *pVerts, uint32_t nCount,
 	{
 		id<MTLSamplerState> smp = cS.m_pTexture
 			? (__bridge id<MTLSamplerState>)MTLTex_Sampler(cS.m_pTexture) : nil;
+		// A sampler belongs to the TEXTURE here (mtl_texture.mm builds it
+		// REPEATING), so an emitter that needs clamping has to say so per draw
+		// the way D3D does. Snow is the case: its UVs span (0,-1)..(2,1) on
+		// purpose and repeat would tile each flake 3x3.
+		if (cS.m_bClampTexture)
+			smp = g_ClampSmp;
 		[enc setFragmentSamplerState:(smp ? smp : g_WhiteSmp) atIndex:0];
 	}
 

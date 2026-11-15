@@ -2932,6 +2932,36 @@ bool ci_SetupVolumeEffect(HLOCALOBJ hObj, VolumeEffectInfo& info)
 	if( !pVE || pVE->m_ObjectType != OT_VOLUMEEFFECT )
 		return false;
 
+	// -----------------------------------------------------------------------
+	// PROBE: LT_TRACE_VOLFX -- is anything asking for a volume effect?
+	//
+	// Snowfall is this call's only user: a SnowVolume in the world becomes a
+	// client CSnowFX, which splits itself into airspaces and creates ONE
+	// OT_VOLUMEEFFECT per active airspace, handing over m_DPUpdateFn to fill a
+	// vertex buffer with camera-facing snow tris.
+	//
+	// This separates two very different diagnoses that look identical on
+	// screen: "the renderer has no volume-effect pass" (true as of now) versus
+	// "nothing ever asks for one". Without it, implementing the renderer pass
+	// would be a guess.
+	//
+	// stderr, NOT CPrint: CPrint needs LT_TRACE_CONSOLE as a SECOND switch and
+	// a diagnostic that cannot travel is worse than none (see handoff 121.a).
+	// -----------------------------------------------------------------------
+	if( getenv("LT_TRACE_VOLFX") )
+	{
+		static uint32 s_nSetups = 0;
+		++s_nSetups;
+		fprintf( stderr,
+		         "[volfx] setup #%u type=%d dims=(%.0f %.0f %.0f) prim=%s lighting=%d sat=%d tex='%s' updatefn=%s\n",
+		         s_nSetups, (int)info.m_EffectType,
+		         info.m_Dims.x, info.m_Dims.y, info.m_Dims.z,
+		         (info.m_DPPrimitive == VolumeEffectInfo::kQuadlist) ? "quads" : "tris",
+		         (int)info.m_DPLighting, info.m_DPSaturate ? 1 : 0,
+		         info.m_DPTextureName ? info.m_DPTextureName : "(none)",
+		         info.m_DPUpdateFn ? "set" : "NULL" );
+	}
+
 	return ve_Init( pVE, &info );
 }
 

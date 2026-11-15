@@ -62,6 +62,24 @@ if [ -d "$BUILD" ]; then
     done
 fi
 
+# ⚠️ A STAPLED .app CANNOT BE REBUILT IN PLACE.
+#
+# Once a notarisation ticket has been stapled into the bundle, macOS treats it
+# as a managed application and App Management protection blocks other processes
+# from modifying its contents. The build then fails in the launcher's PostBuild
+# copy with "Error copying file (if different) ... Lithtech" and, by hand,
+# "Operation not permitted" -- which reads like a build fault and is not. There
+# are no uchg flags and chmod is irrelevant; the markers are the bundle's
+# com.apple.provenance / com.apple.macl xattrs.
+#
+# Deleting the bundle is allowed, so do that and let the build make a fresh one.
+# Nothing is lost: the signed+stapled artifact of the previous version is the
+# dist zip this script produces.
+if [ -d "$APP" ]; then
+    echo "==> Removing the previous bundle (a stapled .app cannot be rebuilt in place)"
+    rm -rf "$APP"
+fi
+
 echo "==> Configuring"
 cmake -S "$ROOT/macbuild" -B "$BUILD" -G Xcode > /dev/null
 

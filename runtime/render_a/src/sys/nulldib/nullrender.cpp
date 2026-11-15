@@ -25,6 +25,7 @@
 #include "sys/shared/render_convar.h"  // renderer console vars (see render_convar.cpp)
 #include "sys/shared/render_polygrid.h"   // OT_POLYGRID = water / ice
 #include "sys/shared/render_particles.h"  // OT_PARTICLESYSTEM = fire, smoke, waterfall
+#include "sys/shared/render_volumeeffect.h" // OT_VOLUMEEFFECT = snowfall, scattered grass
 // ★ THE METAL BACKEND -- the only backend. The gl_* headers above no longer
 // name a GL module: those files hold the backend-neutral parse/walk/scene code
 // the Metal passes consume, and are being renamed out of gl/ as they move.
@@ -619,6 +620,12 @@ int nr_RenderScene(struct SceneDesc *pScene)
 				RWorld_DrawDynamicLights();           // lamp pools, muzzle flashes
 				RWorld_DrawWorldModels(true);         // glass etc.
 				RPolyGrid_Draw(true);                 // translucent water
+				// Snowfall / scattered grass. D3D draws volume effects BEFORE
+				// the translucent set (drawobjects.cpp:231, right after the
+				// solid polygrids), so they go first here too -- ours are
+				// blended and z-write-off, which is why they sit in this group
+				// rather than with the opaque passes.
+				RVolumeEffect_Draw();                 // snowfall (SnowVolume)
 				RParticle_DrawSystems();              // fire, smoke, sparks
 				RSprite_DrawSprites();                // lamp halos / glows
 

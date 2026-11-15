@@ -147,6 +147,7 @@ target_sources(EXE_Lithtech PRIVATE
     ${ROOT}/runtime/render_a/src/sys/shared/render_drawprim.cpp # CRenderDrawPrim — the neutral ILTDrawPrim base
     ${ROOT}/runtime/render_a/src/sys/shared/render_polygrid.cpp       # OT_POLYGRID (water, ice) height-field draw
     ${ROOT}/runtime/render_a/src/sys/shared/render_particles.cpp      # OT_PARTICLESYSTEM (fire, smoke, waterfall)
+    ${ROOT}/runtime/render_a/src/sys/shared/render_volumeeffect.cpp   # OT_VOLUMEEFFECT (snowfall, scattered grass)
     ${ROOT}/runtime/sound/src/sys/macos/s_coreaudio.cpp       # Phase-3 CoreAudio ILTSoundSys (registers the sound factory)
     ${ROOT}/runtime/render_b/src/sys/d3d/d3dtexinterface.cpp) # ILTTexInterface (renderer-agnostic; console font/UI textures)
 # ⚠️⚠️ TARGET_DIRECTORY IS LOAD-BEARING, NOT DECORATION. Source-file properties
@@ -317,8 +318,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
 		MACOSX_BUNDLE_BUNDLE_NAME                       "No One Lives Forever 2"
 		MACOSX_BUNDLE_GUI_IDENTIFIER                    "com.schonder.nolf2mac.launcher"
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER       "com.schonder.nolf2mac.launcher"
-		MACOSX_BUNDLE_BUNDLE_VERSION                    "0.4.5"
-		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.4.5"
+		MACOSX_BUNDLE_BUNDLE_VERSION                    "0.4.6"
+		MACOSX_BUNDLE_SHORT_VERSION_STRING              "0.4.6"
 		XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET        "12.0"
 		XCODE_ATTRIBUTE_SWIFT_VERSION                   "5.0"
 		# Hardened runtime is required for notarisation. Signing everything with
