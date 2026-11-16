@@ -1056,6 +1056,54 @@ static void nr_ExpandSurfaceRGBA(NullBuf *pBuf, bool bTransparent, uint16 transC
 		pOut[3] = (bTransparent && (uint16)(px & 0x7FFF) == tc) ? 0 : 255;
 		pOut += 4;
 	}
+
+	// ⚠️ A COLOUR KEY AND A LINEAR SAMPLER DO NOT MIX. A keyed-out texel has
+	// alpha 0 but still carries the KEY COLOUR, and the surface is drawn with a
+	// linear sampler -- so wherever it is drawn at anything but 1:1, the edge
+	// samples blend the artwork with the key and pick up a rim of it. Nothing
+	// showed this while every keyed blit was either 1:1 or a flat 2x2 fade; the
+	// software mouse cursor drawn at two pixels per point (GitHub issue #6) is
+	// the first scaled piece of keyed ARTWORK, and it came out with a magenta
+	// outline (interface\cursor0.pcx is keyed on 255,0,255).
+	// ⇒ Give every keyed-out texel the average colour of its opaque neighbours.
+	//   Its alpha stays 0, so at 1:1 nothing changes at all; scaled, the edge
+	//   now fades out in the artwork's own colour. In place is safe: only
+	//   texels with alpha 255 are read, and none of those are written.
+	if (!bTransparent)
+		return;
+	for (uint32 y = 0; y < h; ++y)
+	{
+		for (uint32 x = 0; x < w; ++x)
+		{
+			uint8 *pPx = &g_SurfBuf[((size_t)y * w + x) * 4];
+			if (pPx[3])
+				continue;
+
+			uint32 nR = 0, nG = 0, nB = 0, nCount = 0;
+			for (int dy = -1; dy <= 1; ++dy)
+			{
+				const int ny = (int)y + dy;
+				if (ny < 0 || ny >= (int)h)
+					continue;
+				for (int dx = -1; dx <= 1; ++dx)
+				{
+					const int nx = (int)x + dx;
+					if (nx < 0 || nx >= (int)w)
+						continue;
+					const uint8 *pN = &g_SurfBuf[((size_t)ny * w + nx) * 4];
+					if (!pN[3])
+						continue;
+					nR += pN[0]; nG += pN[1]; nB += pN[2]; ++nCount;
+				}
+			}
+			if (nCount)
+			{
+				pPx[0] = (uint8)(nR / nCount);
+				pPx[1] = (uint8)(nG / nCount);
+				pPx[2] = (uint8)(nB / nCount);
+			}
+		}
+	}
 }
 
 // dst = 4 screen-space quad corners; src = the matching source pixel coords.

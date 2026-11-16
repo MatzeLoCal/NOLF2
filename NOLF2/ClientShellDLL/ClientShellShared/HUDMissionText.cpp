@@ -102,11 +102,21 @@ void CHUDMissionText::Pause(LTBOOL bPause)
 void CHUDMissionText::SetScale(float fScale)
 {
 	m_fScale = fScale;
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	// ⚠️ CHUDItem, not CLTGUICtrl -- same hand-applied rule as CHUDSubtitles:
+	// x and wrap width on XRatio, y on YRatio, character height on min(X,Y).
+	// Authored at (32,360): the old code put the objective line at
+	// y = 360*4.000 = 1440 on a 1440 px drawable, i.e. exactly ON the bottom
+	// edge and invisible. The rule gives 1080. (GitHub issue #7.)
+	const float fScaleY = g_pInterfaceResMgr->GetYRatio();
+	// GetHUDFontRatio() = that, times the player's HUD text scale (1.0 unless
+	// the launcher set one). The wrap width below stays on XRatio.
+	m_nFontSize = (uint8)(g_pInterfaceResMgr->GetHUDFontRatio() * (float)m_nBaseFontSize);
+	CInterfaceResMgr::TraceLayout("MissionText", m_BasePos.x, m_BasePos.y, m_nBaseFontSize,
+	                              CInterfaceResMgr::GetHUDTextScale());
 	if (m_pText)
 	{
 		float x = m_fScale * (float)m_BasePos.x;
-		float y = m_fScale * (float)m_BasePos.y;
+		float y = fScaleY * (float)m_BasePos.y;
 		m_pText->SetCharScreenHeight(m_nFontSize);
 		m_pText->SetPosition(x,y);
 
@@ -128,7 +138,7 @@ void CHUDMissionText::UpdateLayout()
 	m_nFontSize = m_nBaseFontSize = (uint8)g_pLayoutMgr->GetInt(pTag,"FontSize");
 
 	float x = m_fScale * (float)m_BasePos.x;
-	float y = m_fScale * (float)m_BasePos.y;
+	float y = g_pInterfaceResMgr->GetYRatio() * (float)m_BasePos.y;  // ★ vertical ratio
 	m_pText = g_pFontManager->CreateFormattedPolyString(m_pFont," ",x,y);
 	if (!m_pText)
 		return;

@@ -283,7 +283,19 @@ void CHUDMessage::SetScale(float fScale)
 	CLTGUICtrl::SetScale(fScale);
 	ScalePoly();
 	m_fImageGap = 4.0f * m_fScale;
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	// ★ CHARACTER HEIGHT TAKES THE FONT SCALE -- min(XRatio,YRatio) -- not the
+	// horizontal one. m_fScale is XRatio (every caller passes GetXRatio()), and
+	// on a 16:9 display that is a third larger than the vertical ratio the
+	// positions use, so the text grew out of its own layout. See the note on
+	// GetFontRatio in InterfaceResMgr.h. Identical at 4:3.
+	// ★ ...and then the player's HUD text scale (the launcher's "HUD text"
+	// control, 1.0 unless set). Height only: m_pos and the wrap width keep
+	// their ratios, so the message stays anchored where it was authored and
+	// the queue, which stacks by each message's measured height, closes up by
+	// itself. See GetHUDTextScale in InterfaceResMgr.h.
+	const float fHud = CInterfaceResMgr::GetHUDTextScale();
+	m_nFontSize = (uint8)(GetFontScale() * fHud * (float)m_nBaseFontSize);
+	CInterfaceResMgr::TraceLayout("Message", GetBasePos().x, GetBasePos().y, m_nBaseFontSize, fHud);
 	if (m_pText)
 	{
 		float x = (float)m_pos.x;
@@ -356,8 +368,16 @@ void CHUDMessage::ScalePoly()
 	}
 
 
-	m_imageSize.x = (int)((float)w * m_fScale);
-	m_imageSize.y = (int)((float)h * m_fScale);
+	// ★ The icon belongs TO the text, so it takes the same uniform scale the
+	// character height does. On m_fScale (XRatio) it came out a third larger
+	// than the line it sits beside at 16:9 -- and stretching only one axis
+	// would have distorted it, so both take GetFontScale().
+	// ★ For the same reason it follows the HUD text scale: a pickup's icon left
+	// at full size beside a line set to 70% would both dwarf the line and keep
+	// the queue's row height at the icon's, so the rows would not close up.
+	const float fIcon = GetFontScale() * CInterfaceResMgr::GetHUDTextScale();
+	m_imageSize.x = (int)((float)w * fIcon);
+	m_imageSize.y = (int)((float)h * fIcon);
 
 }
 
@@ -367,7 +387,11 @@ void CHUDMessage::JustifyPoly()
 	if (!m_hImage) return;
 
 	float x = (float)m_basePos.x * m_fScale;
-	float y = (float)m_basePos.y * m_fScale;
+	// ⚠️ The TEXT is placed by CLTGUICtrl::SetScale, which maps y through the
+	// vertical ratio. This poly has to use the same mapping or the icon and
+	// its own text separate as the display gets wider -- at base y 440 on a
+	// 16:9 drawable that was 1760 against the text's 1320, i.e. 440 px apart.
+	float y = (float)m_basePos.y * GetYScale();
 	float fw = (float)m_imageSize.x;
 	float fh = (float)m_imageSize.y;
 

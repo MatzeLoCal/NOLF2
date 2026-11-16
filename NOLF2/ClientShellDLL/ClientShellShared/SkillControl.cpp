@@ -96,7 +96,10 @@ void CSkillCtrl::SetBasePos ( LTIntPt pos )
 void CSkillCtrl::SetScale(float fScale)
 {
 	CLTGUICtrl::SetScale(fScale);
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	// ★ Character height on the font scale, not the horizontal one -- see the
+	// note in HUDMessage::SetScale and GetFontRatio in InterfaceResMgr.h.
+	m_nFontSize = (uint8)(GetFontScale() * (float)m_nBaseFontSize);
+	CInterfaceResMgr::TraceLayout("SkillCtrl", GetBasePos().x, GetBasePos().y, m_nBaseFontSize);
 	ScalePolies();
 
 }

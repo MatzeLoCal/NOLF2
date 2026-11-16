@@ -41,6 +41,23 @@ void  LTMacWin_SetMouseCapture(bool bCapture);
 // cursor sprite there) but only LOCKS it during gameplay.
 void  LTMacWin_SetCursorVisible(bool bVisible);
 
+// ★ The pointer IMAGE shown while the hardware cursor is visible -- the macOS
+// half of ILTCursor::LoadCursorBitmapResource / SetCursor. CreateCursor takes
+// straight-alpha RGBA8 (top row first) and returns an opaque handle that stays
+// valid for the life of the process; one image pixel is shown as one POINT,
+// which is what a Windows pixel is on a display of ordinary density.
+// SetCursor(NULL) goes back to the system arrow.
+void* LTMacWin_CreateCursor(const unsigned char* pRGBA, int nWidth, int nHeight,
+                            int nHotX, int nHotY);
+void  LTMacWin_SetCursor(void* pCursor);
+
+// Backing pixels per point of the game view (2.0 on a Retina display), kept
+// current across a move between displays. The game reaches it through the
+// "MacPointScale" engine hook to draw its SOFTWARE cursor at the size the
+// hardware one has -- see CCursorMgr::Update. A pointer to a live value, so one
+// lookup serves the whole run.
+const float* LTMacWin_GetPointScaleSlot(void);
+
 // The game's hooked window procedure. NOLF2 gets ALL its mouse input through a
 // WNDPROC it installs itself (CGameClientShell::HookWindow) -- IClientShell has
 // no mouse callbacks. With no Win32 window there is nothing to hook, so the game

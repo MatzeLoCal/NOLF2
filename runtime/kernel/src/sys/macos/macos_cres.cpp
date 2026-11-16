@@ -21,6 +21,15 @@
 //           whose id is (stringID / 16) + 1 holds 16 consecutive
 //           uint16-length-prefixed UTF-16 strings; stringID % 16 selects one.
 //
+//           A CURSOR is two resources. RT_GROUP_CURSOR (type 12) is the one
+//           the game names (IDC_POINTER = 630): a 6-byte header and one
+//           14-byte entry per image { width, height*2, planes, bitcount,
+//           bytes, id }, where `id` names an RT_CURSOR (type 1). That holds
+//           two uint16 hot-spot coordinates followed by an ordinary .cur DIB:
+//           BITMAPINFOHEADER (height DOUBLED), palette, the colour bitmap, and
+//           a 1-bpp AND mask whose set bits mean "transparent" -- both bitmaps
+//           bottom row first, rows padded to 4 bytes.
+//
 // ----------------------------------------------------------------------- //
 
 #include "bdefs.h"
@@ -35,7 +44,9 @@
 static ILTClient *ilt_client_cres;
 define_holder(ILTClient, ilt_client_cres);
 
-#define LTCRES_RT_STRING 6
+#define LTCRES_RT_CURSOR        1
+#define LTCRES_RT_STRING        6
+#define LTCRES_RT_GROUP_CURSOR 12
 
 namespace
 {
@@ -46,6 +57,23 @@ class CMacCResData
 public:
 	// stringID -> text (already narrowed from UTF-16)
 	std::vector<std::pair<uint32, std::string> > m_aStrings;
+
+	// Raw RT_GROUP_CURSOR and RT_CURSOR resources by numeric id. Kept as bytes
+	// and decoded on request: a cursor is asked for once per run, and the file
+	// image this was parsed from is gone by then.
+	typedef std::pair<uint32, std::vector<uint8> > RawRes;
+	std::vector<RawRes> m_aCursorGroups;
+	std::vector<RawRes> m_aCursors;
+
+	static const std::vector<uint8> *FindRaw(const std::vector<RawRes> &aRes, uint32 nID)
+	{
+		for (size_t i = 0; i < aRes.size(); ++i)
+		{
+			if (aRes[i].first == nID)
+				return &aRes[i].second;
+		}
+		return 0;
+	}
 
 	const char *Find(uint32 nID) const
 	{
@@ -197,6 +225,177 @@ void cres_WalkResourceDir(const std::vector<uint8> &aData,
 	}
 }
 
+// Copy out every resource of ONE numeric type, keyed by its numeric id.
+//
+// A separate walk rather than a second case in cres_WalkResourceDir on purpose:
+// that function is the string path every menu depends on, and it folds "which
+// type am I in" into a block number that only means something for RT_STRING.
+// Named resources are skipped (the game asks for its pointer by number), and
+// where a resource exists in several languages the first one is taken.
+void cres_CollectType(const std::vector<uint8> &aData,
+                      const std::vector<CResSection> &aSections,
+                      size_t nResRoot, uint32 nType,
+                      std::vector<CMacCResData::RawRes> &aOut)
+{
+	uint16 nNamed = 0, nIds = 0;
+	if (!cres_Read16(aData, nResRoot + 12, nNamed)) return;
+	if (!cres_Read16(aData, nResRoot + 14, nIds)) return;
+
+	// Level 0: find the type directory.
+	size_t nTypeDir = 0;
+	for (uint32 i = 0; i < (uint32)nNamed + nIds; ++i)
+	{
+		uint32 nName = 0, nOff = 0;
+		if (!cres_Read32(aData, nResRoot + 16 + (size_t)i * 8, nName)) return;
+		if (!cres_Read32(aData, nResRoot + 16 + (size_t)i * 8 + 4, nOff)) return;
+		if (nName == nType && (nOff & 0x80000000u))
+		{
+			nTypeDir = nResRoot + (nOff & 0x7FFFFFFFu);
+			break;
+		}
+	}
+	if (!nTypeDir)
+		return;
+
+	// Level 1: one entry per resource id.
+	if (!cres_Read16(aData, nTypeDir + 12, nNamed)) return;
+	if (!cres_Read16(aData, nTypeDir + 14, nIds)) return;
+	for (uint32 i = 0; i < (uint32)nNamed + nIds; ++i)
+	{
+		uint32 nName = 0, nOff = 0;
+		if (!cres_Read32(aData, nTypeDir + 16 + (size_t)i * 8, nName)) return;
+		if (!cres_Read32(aData, nTypeDir + 16 + (size_t)i * 8 + 4, nOff)) return;
+		if ((nName & 0x80000000u) || !(nOff & 0x80000000u))
+			continue;   // a named resource, or no language level under it
+
+		// Level 2: languages. Take the first.
+		size_t nLangDir = nResRoot + (nOff & 0x7FFFFFFFu);
+		uint16 nLangNamed = 0, nLangIds = 0;
+		if (!cres_Read16(aData, nLangDir + 12, nLangNamed)) continue;
+		if (!cres_Read16(aData, nLangDir + 14, nLangIds)) continue;
+		if ((uint32)nLangNamed + nLangIds == 0)
+			continue;
+		uint32 nLeaf = 0;
+		if (!cres_Read32(aData, nLangDir + 16 + 4, nLeaf)) continue;
+		if (nLeaf & 0x80000000u)
+			continue;   // deeper than the three levels a PE has
+
+		// IMAGE_RESOURCE_DATA_ENTRY { RVA, Size, CodePage, Reserved }
+		uint32 nDataRVA = 0, nDataSize = 0;
+		if (!cres_Read32(aData, nResRoot + nLeaf, nDataRVA)) continue;
+		if (!cres_Read32(aData, nResRoot + nLeaf + 4, nDataSize)) continue;
+		size_t nDataOff = 0;
+		if (!cres_RVAToOffset(aSections, nDataRVA, nDataOff)) continue;
+		if (!nDataSize || nDataOff + nDataSize > aData.size()) continue;
+
+		aOut.push_back(CMacCResData::RawRes(
+			nName, std::vector<uint8>(aData.begin() + nDataOff,
+			                          aData.begin() + nDataOff + nDataSize)));
+	}
+}
+
+// Decode one RT_CURSOR resource (hot spot + .cur DIB) to straight-alpha RGBA.
+bool cres_DecodeCursor(const std::vector<uint8> &aRes, LTMacCursorImage &cOut)
+{
+	uint16 nHotX = 0, nHotY = 0;
+	if (!cres_Read16(aRes, 0, nHotX) || !cres_Read16(aRes, 2, nHotY))
+		return false;
+
+	const size_t nHdr = 4;   // the BITMAPINFOHEADER starts after the hot spot
+	uint32 nHdrSize = 0, nW = 0, nH2 = 0, nCompression = 0, nClrUsed = 0;
+	uint16 nBitCount = 0;
+	if (!cres_Read32(aRes, nHdr + 0,  nHdrSize) ||
+	    !cres_Read32(aRes, nHdr + 4,  nW) ||
+	    !cres_Read32(aRes, nHdr + 8,  nH2) ||
+	    !cres_Read16(aRes, nHdr + 14, nBitCount) ||
+	    !cres_Read32(aRes, nHdr + 16, nCompression) ||
+	    !cres_Read32(aRes, nHdr + 32, nClrUsed))
+		return false;
+
+	// biHeight counts the colour bitmap AND the mask stacked on top of it.
+	const uint32 nH = nH2 / 2;
+	if (nHdrSize < 40 || nCompression != 0 /* BI_RGB */ ||
+	    nW == 0 || nH == 0 || nW > 256 || nH > 256 || (nH2 & 1))
+		return false;
+	if (nBitCount != 1 && nBitCount != 4 && nBitCount != 8 &&
+	    nBitCount != 24 && nBitCount != 32)
+		return false;
+
+	const uint32 nColours = (nBitCount <= 8) ? (nClrUsed ? nClrUsed : (1u << nBitCount)) : 0;
+	if (nColours > 256)
+		return false;
+	const size_t nPalette   = nHdr + nHdrSize;
+	const size_t nXor       = nPalette + (size_t)nColours * 4;
+	const size_t nXorStride = (((size_t)nW * nBitCount + 31) / 32) * 4;
+	const size_t nAnd       = nXor + nXorStride * nH;
+	const size_t nAndStride = (((size_t)nW + 31) / 32) * 4;
+	if (nAnd + nAndStride * nH > aRes.size())
+		return false;
+
+	// A 32-bpp cursor MAY carry real alpha, in which case the mask is ignored;
+	// one whose alpha bytes are all zero is an ordinary masked image. (The
+	// retail pointer is 8 bpp, so this branch is written from the format, not
+	// exercised by it.)
+	bool bHasAlpha = false;
+	if (nBitCount == 32)
+	{
+		for (uint32 y = 0; y < nH && !bHasAlpha; ++y)
+			for (uint32 x = 0; x < nW; ++x)
+				if (aRes[nXor + y * nXorStride + (size_t)x * 4 + 3]) { bHasAlpha = true; break; }
+	}
+
+	std::vector<unsigned char> aRGBA((size_t)nW * nH * 4, 0);
+	for (uint32 y = 0; y < nH; ++y)
+	{
+		const size_t nRow     = nXor + (size_t)(nH - 1 - y) * nXorStride;   // bottom-up
+		const size_t nMaskRow = nAnd + (size_t)(nH - 1 - y) * nAndStride;
+		for (uint32 x = 0; x < nW; ++x)
+		{
+			uint8 b = 0, g = 0, r = 0, a = 255;
+			if (nBitCount <= 8)
+			{
+				uint32 nIndex;
+				if (nBitCount == 8)      nIndex = aRes[nRow + x];
+				else if (nBitCount == 4) nIndex = (aRes[nRow + x / 2] >> ((x & 1) ? 0 : 4)) & 0x0F;
+				else                     nIndex = (aRes[nRow + x / 8] >> (7 - (x & 7))) & 0x01;
+				if (nIndex < nColours)
+				{
+					b = aRes[nPalette + (size_t)nIndex * 4 + 0];
+					g = aRes[nPalette + (size_t)nIndex * 4 + 1];
+					r = aRes[nPalette + (size_t)nIndex * 4 + 2];
+				}
+			}
+			else
+			{
+				const size_t nPx = nRow + (size_t)x * (nBitCount / 8);
+				b = aRes[nPx + 0]; g = aRes[nPx + 1]; r = aRes[nPx + 2];
+				if (bHasAlpha) a = aRes[nPx + 3];
+			}
+
+			// ⚠️ A SET MASK BIT MEANS "LEAVE THE SCREEN ALONE", and the colour
+			// under it is then XORed in -- which is how Windows draws the
+			// inverting I-beam. The retail arrow's surround is colour (4,4,4)
+			// under a set mask bit: a 1.5% XOR nobody can see, i.e. plain
+			// transparent. There is no "invert" on macOS, so every masked pixel
+			// is transparent AND its colour is dropped, or that near-black would
+			// come back as a dark fringe wherever the image is scaled.
+			if (!bHasAlpha && ((aRes[nMaskRow + x / 8] >> (7 - (x & 7))) & 0x01))
+				r = g = b = a = 0;
+
+			unsigned char *pOut = &aRGBA[((size_t)y * nW + x) * 4];
+			pOut[0] = r; pOut[1] = g; pOut[2] = b; pOut[3] = a;
+		}
+	}
+
+	cOut.m_nWidth    = (int)nW;
+	cOut.m_nHeight   = (int)nH;
+	cOut.m_nHotX     = (int)nHotX;
+	cOut.m_nHotY     = (int)nHotY;
+	cOut.m_nBitCount = (int)nBitCount;
+	cOut.m_aRGBA.swap(aRGBA);
+	return true;
+}
+
 // Parse the whole PE and pull out every RT_STRING.
 bool cres_ParsePE(const std::vector<uint8> &aData, CMacCResData &cOut)
 {
@@ -253,6 +452,8 @@ bool cres_ParsePE(const std::vector<uint8> &aData, CMacCResData &cOut)
 		return false;
 
 	cres_WalkResourceDir(aData, aSections, nResRoot, nResRoot, 0, false, 0, cOut);
+	cres_CollectType(aData, aSections, nResRoot, LTCRES_RT_GROUP_CURSOR, cOut.m_aCursorGroups);
+	cres_CollectType(aData, aSections, nResRoot, LTCRES_RT_CURSOR,       cOut.m_aCursors);
 	return !cOut.m_aStrings.empty();
 }
 
@@ -328,6 +529,45 @@ LTMacResModule *LTMacCRes_GetDefault()
 	fprintf(stderr, "[cres] cres.dll: %u strings loaded\n",
 	        (uint32)pParsed->m_aStrings.size());
 	return g_pCResModule;
+}
+
+bool LTMacCRes_LoadCursor(unsigned int nID, LTMacCursorImage &cOut)
+{
+	LTMacResModule *pModule = LTMacCRes_GetDefault();
+	if (!pModule || !pModule->m_pImpl)
+		return false;
+	const CMacCResData *pData = (const CMacCResData*)pModule->m_pImpl;
+
+	const std::vector<uint8> *pGroup = CMacCResData::FindRaw(pData->m_aCursorGroups, nID);
+	if (!pGroup)
+		return false;
+
+	// GRPCURSORDIR { reserved, type (2 = cursor), count } + 14 bytes per image.
+	uint16 nType = 0, nCount = 0;
+	if (!cres_Read16(*pGroup, 2, nType) || !cres_Read16(*pGroup, 4, nCount) || nType != 2)
+		return false;
+
+	// Deepest image first; fall back through the rest if one will not decode.
+	std::vector<std::pair<uint16, uint16> > aByDepth;   // (bit count, RT_CURSOR id)
+	for (uint16 i = 0; i < nCount; ++i)
+	{
+		uint16 nBitCount = 0, nCursorID = 0;
+		if (!cres_Read16(*pGroup, 6 + (size_t)i * 14 + 6,  nBitCount)) break;
+		if (!cres_Read16(*pGroup, 6 + (size_t)i * 14 + 12, nCursorID)) break;
+		size_t nAt = 0;
+		while (nAt < aByDepth.size() && aByDepth[nAt].first >= nBitCount)
+			++nAt;
+		aByDepth.insert(aByDepth.begin() + nAt, std::make_pair(nBitCount, nCursorID));
+	}
+
+	for (size_t i = 0; i < aByDepth.size(); ++i)
+	{
+		const std::vector<uint8> *pCursor =
+			CMacCResData::FindRaw(pData->m_aCursors, aByDepth[i].second);
+		if (pCursor && cres_DecodeCursor(*pCursor, cOut))
+			return true;
+	}
+	return false;
 }
 
 void LTMacCRes_Term()

@@ -69,6 +69,19 @@ public:
 	void				ConvertScreenRect(LTRect &rect);
 	void				ConvertScreenPos(LTIntPt &pos) {ConvertScreenPos(pos.x,pos.y);}
 	void				ConvertScreenPos(int &x, int &y);
+	// ★ LT_TRACE_UILAYOUT=1 -- one stderr line per control that recomputes its
+	// layout, giving the authored base values, the live ratios, and the pixel
+	// result BOTH ways: what the shipped rule produced and what the corrected
+	// rule produces. One run therefore carries its own A/B, which matters here
+	// because the controls it covers (subtitles, mission text) are driven by
+	// level logic and cannot be made to appear in a +runworld harness at all.
+	// ⚠️ stderr, not CPrint: CPrint needs LT_TRACE_CONSOLE as a second switch.
+	// fTextScale is the extra factor the caller applied to the character height
+	// (GetHUDTextScale() for HUD text, 1 for everything else); it is folded into
+	// the 'new' font figure and named on the line when it is not 1.
+	static void		TraceLayout(const char *pWho, int nBaseX, int nBaseY, int nBaseFont,
+	                            float fTextScale = 1.0f);
+
     LTFLOAT             GetXRatio()                         {return m_fXRatio;}
     LTFLOAT             GetYRatio()                         {return m_fYRatio;}
 
@@ -92,6 +105,36 @@ public:
 	// positions: scaling those uniformly would pull edge-anchored HUD elements
 	// inward, which is a different and worse bug.
 	LTFLOAT             GetFontRatio()                       {return (m_fXRatio < m_fYRatio) ? m_fXRatio : m_fYRatio;}
+
+	// ★★ THE PLAYER'S HUD TEXT SCALE -- LT_HUD_TEXT_SCALE=<percent>, set by the
+	// launcher's "HUD text" control. NOT part of the aspect-ratio fix above.
+	//
+	// GetFontRatio() already puts every character at its AUTHORED size: a
+	// 16-unit message is 16/480 = 3.3% of the screen height, exactly what the
+	// original shows on the 4:3 displays it was laid out for. That is the
+	// correct answer and it is still large -- the game was authored for a
+	// 640x480..1024x768 CRT, and 3.3% of a 27" panel is a lot of text. Making
+	// it smaller is therefore a PREFERENCE, a deliberate departure from the
+	// original, and it stays behind a switch that defaults to "unchanged".
+	//
+	// ⚠️ HUD RUNNING TEXT ONLY: the message queues (rewards, pickups, chat,
+	// search), transmissions, subtitles, mission text and the crosshair's
+	// activation label. Every one of those is anchored at a point and grows
+	// from it, so a smaller glyph simply leaves more room. It is NOT applied to
+	// menus, popups or the decision/radio dialogs (text there sits inside
+	// authored frames and columns), nor to the health/armor/ammo/air figures
+	// (each belongs to the gauge drawn beside it).
+	//
+	// ⚠️ CHARACTER HEIGHT ONLY -- never a position or a wrap width. Those stay
+	// on XRatio/YRatio so every block keeps its authored anchor; scaling them
+	// would pull edge-anchored elements inward, the same mistake the note on
+	// GetFontRatio() warns about.
+	//
+	// A PERCENTAGE, not a fraction: "80", not "0.8". A decimal point is parsed
+	// according to the C locale in force, and "0.8" read under a comma locale
+	// is 0. 100 (or unset) is the original size. Read once; see the .cpp.
+	static float		GetHUDTextScale();
+	LTFLOAT             GetHUDFontRatio()                    {return GetFontRatio() * GetHUDTextScale();}
 
 	// ★★ THE 4:3 LETTERBOX FOR FULL-SCREEN AUTHORED ART (loading + postload).
 	//

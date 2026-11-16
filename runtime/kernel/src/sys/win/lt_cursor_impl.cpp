@@ -13,7 +13,12 @@
 //the ILTClient game interface
 #include "iltclient.h"
 #ifdef LT_MACOS
-#include "ltmacwindow.h"   // LTMacWin_SetCursorVisible
+#include "ltmacwindow.h"   // LTMacWin_SetCursorVisible, LTMacWin_CreateCursor/SetCursor
+#include "macos_cres.h"    // LTMacCRes_LoadCursor (the pointer image in cres.dll)
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <vector>
 #endif
 static ILTClient *ilt_client;
 define_holder(ILTClient, ilt_client);
@@ -172,6 +177,15 @@ LTRESULT CLTCursor::SetCursor(HLTCURSOR hCursor)
     if (!hCursor->IsValid())
         return LT_INVALIDPARAMS;
 
+#ifdef LT_MACOS
+    // The native half of ::SetCursor, which is an empty shim on this platform.
+    // A handle with no image (see LoadCursorBitmapResource) selects the system
+    // arrow. ⚠️ The IsValid() test above does not keep such a handle out: it
+    // returns LT_YES or LT_NO, which are 86 and 87 -- both "true" -- so it has
+    // never rejected anything on any platform. Leave it; CCursorMgr::Init
+    // treats a failure here as fatal to the whole interface.
+    LTMacWin_SetCursor(hCursor->GetData());
+#endif
     ::SetCursor((HCURSOR)hCursor->GetData());
 
     return LT_OK;
@@ -201,17 +215,77 @@ LTRESULT CLTCursor::IsCursorModeAvailable(CursorMode cMode)
     return LT_YES;
 }
 
+#ifdef LT_MACOS
+// ★ THE HARDWARE CURSOR'S IMAGE (GitHub issue #6).
+//
+// This used to hand back a handle with no image at all, on the reasoning that
+// "the cursor the game actually draws is a surface loaded from
+// interface\cursor0.pcx". That is only the FALLBACK. NOLF2's default is
+// "Hardware Cursor: On", where the game draws nothing and expects the OS to
+// show the pointer it loaded here -- so the menus ran under the macOS arrow.
+// The image is where Windows finds it, in cres.dll (see macos_cres.h).
+//
+// Returns NULL -- the system arrow -- when there is no image to be had. That is
+// deliberately not an error: CCursorMgr::Init returns FALSE on one, and that
+// takes the whole InterfaceMgr and the client shell down with it.
+static void *ltmac_NativeCursorFor(const char *pName)
+{
+    // MAKEINTRESOURCE: a numeric id travelling as a pointer.
+    const uintptr_t nRaw = (uintptr_t)pName;
+    if (nRaw >> 16)
+    {
+        fprintf(stderr, "[cur] cursor resource '%s' is asked for by NAME -- only numeric "
+                        "ids are read from cres.dll; the system arrow is used\n", pName);
+        return NULL;
+    }
+    const uint32 nID = (uint32)nRaw;
+
+    // One native cursor per id, however often the game re-initialises
+    // (CCursorMgr::Init runs again after every renderer restart).
+    static std::vector<std::pair<uint32, void*> > s_aLoaded;
+    for (size_t i = 0; i < s_aLoaded.size(); ++i)
+    {
+        if (s_aLoaded[i].first == nID)
+            return s_aLoaded[i].second;
+    }
+
+    void *pNative = NULL;
+    if (getenv("LT_NO_GAME_CURSOR"))
+    {
+        // The A/B arm: the behaviour before this existed.
+        fprintf(stderr, "[cur] LT_NO_GAME_CURSOR on -- cursor resource %u NOT loaded, the "
+                        "hardware cursor is the system arrow\n", nID);
+    }
+    else
+    {
+        LTMacCursorImage cImage;
+        if (!LTMacCRes_LoadCursor(nID, cImage))
+        {
+            fprintf(stderr, "[cur] cursor resource %u is not in cres.dll (or will not "
+                            "decode) -- the hardware cursor is the system arrow\n", nID);
+        }
+        else
+        {
+            pNative = LTMacWin_CreateCursor(&cImage.m_aRGBA[0], cImage.m_nWidth, cImage.m_nHeight,
+                                            cImage.m_nHotX, cImage.m_nHotY);
+            fprintf(stderr, "[cur] hardware cursor: resource %u from cres.dll, %dx%d, %d bpp, "
+                            "hot spot (%d,%d)%s\n",
+                    nID, cImage.m_nWidth, cImage.m_nHeight, cImage.m_nBitCount,
+                    cImage.m_nHotX, cImage.m_nHotY,
+                    pNative ? "" : " -- BUT the system refused the image, using its arrow");
+        }
+    }
+    s_aLoaded.push_back(std::make_pair(nID, pNative));
+    return pNative;
+}
+#endif // LT_MACOS
+
 LTRESULT CLTCursor::LoadCursorBitmapResource(const char *pName, HLTCURSOR &hCursor)
 {
 #ifdef LT_MACOS
-    // No Win32 resources (and no cres module) on macOS: the HCURSOR here only
-    // ever drives the *hardware* cursor. The cursor the game actually draws is
-    // a surface loaded from interface\cursor0.pcx, so hand back a valid handle
-    // with no native bitmap — CCursorMgr::Init would otherwise fail and take
-    // the whole InterfaceMgr (and client shell) down with it.
     HLTCURSOR hNewMac;
     LT_MEM_TRACK_ALLOC(hNewMac = new CLTCursorInst(),LT_MEM_TYPE_MISC);
-    hNewMac->SetData(NULL);
+    hNewMac->SetData(ltmac_NativeCursorFor(pName));
     hCursor = hNewMac;
     return LT_OK;
 #else

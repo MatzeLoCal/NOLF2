@@ -55,6 +55,78 @@ CInterfaceResMgr::~CInterfaceResMgr()
 // Description	    :
 // Return type      : LTBOOL
 //////////////////////////////////////////////////////////////////////
+// See the banner on TraceLayout in the header. Announces itself once, so a run
+// that was meant to carry the trace and did not is obvious in the log.
+void CInterfaceResMgr::TraceLayout(const char *pWho, int nBaseX, int nBaseY, int nBaseFont,
+                                   float fTextScale)
+{
+	static int s_nOn = -1;
+	if (s_nOn < 0)
+	{
+		const char *p = getenv("LT_TRACE_UILAYOUT");
+		s_nOn = (p && *p && *p != '0') ? 1 : 0;
+		if (s_nOn)
+			fprintf(stderr, "[uilay] LT_TRACE_UILAYOUT on -- 'old' is the shipped "
+			                "XRatio rule, 'new' is y:YRatio / font:min(X,Y)\n");
+	}
+	if (!s_nOn || !g_pInterfaceResMgr) return;
+
+	const float fX = g_pInterfaceResMgr->GetXRatio();
+	const float fY = g_pInterfaceResMgr->GetYRatio();
+	const float fF = g_pInterfaceResMgr->GetFontRatio();
+	// The 'new' font figure is what the control actually set, so it carries the
+	// HUD text scale when the caller applied one; the suffix says so, and gives
+	// the unscaled figure, so the two effects are never confused in a log.
+	char szHud[48] = "";
+	if (fTextScale != 1.0f)
+		snprintf(szHud, sizeof(szHud), " (hud text %d%% of %d)",
+		         (int)(fTextScale * 100.0f + 0.5f), (int)(nBaseFont * fF));
+	fprintf(stderr,
+	        "[uilay] %-14s base(%d,%d) font %2d | X %.3f Y %.3f | "
+	        "y %4d -> %4d | font %3d -> %3d%s\n",
+	        pWho, nBaseX, nBaseY, nBaseFont, fX, fY,
+	        (int)(nBaseY * fX), (int)(nBaseY * fY),
+	        (int)(nBaseFont * fX), (int)(nBaseFont * fF * fTextScale), szHud);
+}
+
+// See the banner on GetHUDTextScale in the header.
+//
+// ⚠️ ANNOUNCES ITSELF, on stderr, once, whenever the variable is set at all --
+// including when the value is refused. A scale that silently fell back to 100
+// would look exactly like a setting that "does nothing", and the launcher's
+// log header only proves the variable was PASSED, not that it was understood.
+// Unset says nothing: that is the default and every ordinary run.
+float CInterfaceResMgr::GetHUDTextScale()
+{
+	static float s_fScale = -1.0f;
+	if (s_fScale > 0.0f) return s_fScale;
+
+	s_fScale = 1.0f;
+	const char *p = getenv("LT_HUD_TEXT_SCALE");
+	if (!p || !*p) return s_fScale;
+
+	// The bounds are sanity, not taste: below 50% a 14-unit subtitle is under
+	// ten pixels on a 1280x720 window, and above 150% the three-line subtitle
+	// block runs off the bottom edge again. The launcher offers 50..100.
+	const int kMin = 50, kMax = 150;
+	char *pEnd = NULL;
+	long n = strtol(p, &pEnd, 10);
+	if (pEnd == p || n <= 0)
+	{
+		fprintf(stderr, "[hud] LT_HUD_TEXT_SCALE='%s' IGNORED -- expects a percentage "
+		                "(%d..%d, e.g. 80); HUD text stays at 100%%\n", p, kMin, kMax);
+		return s_fScale;
+	}
+	long nUse = (n < kMin) ? kMin : (n > kMax) ? kMax : n;
+	s_fScale = (float)nUse / 100.0f;
+	if (nUse != n)
+		fprintf(stderr, "[hud] LT_HUD_TEXT_SCALE=%ld is outside %d..%d -- using %ld%%\n",
+		        n, kMin, kMax, nUse);
+	fprintf(stderr, "[hud] LT_HUD_TEXT_SCALE on -- HUD message text, subtitles, mission "
+	                "text and the activation label at %ld%% of their authored size\n", nUse);
+	return s_fScale;
+}
+
 LTBOOL CInterfaceResMgr::Init()
 {
 

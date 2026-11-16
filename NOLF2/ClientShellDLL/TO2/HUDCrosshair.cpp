@@ -269,7 +269,12 @@ void CHUDCrosshair::Update()
 
 		ScalePolies();
 
-		float fFontRatio = g_pInterfaceResMgr->GetFontRatio();
+		// ...times the player's HUD text scale (1.0 unless the launcher set one;
+		// see GetHUDTextScale). The label is centre-justified about m_x and
+		// hangs from m_y, so a smaller glyph only widens the gap to the bar.
+		float fFontRatio = g_pInterfaceResMgr->GetHUDFontRatio();
+		CInterfaceResMgr::TraceLayout("Activation", m_StrPos.x, m_StrPos.y, m_nStrSz,
+		                              CInterfaceResMgr::GetHUDTextScale());
 
 		m_x = (float)m_StrPos.x * m_fScaleX;
 		m_y = (float)m_StrPos.y * m_fScale;

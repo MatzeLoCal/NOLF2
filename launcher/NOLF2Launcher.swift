@@ -52,6 +52,12 @@ struct Settings: Codable {
     var disable3DSound: Bool = false          // LT_NO_SOUND_3D
     var disableMusic: Bool = false            // LT_NO_MUSIC
 
+    // HUD text size, as a PERCENTAGE of the original. 100 is the game as
+    // authored and passes nothing to the engine. Smaller is a preference, not a
+    // fix: the port already draws HUD text at its authored proportion, and that
+    // proportion was chosen for a 640x480 CRT. See `HUDText` below.
+    var hudTextScale: Int = 100               // LT_HUD_TEXT_SCALE
+
     // Diagnostics. A bug we cannot reproduce can only be diagnosed from the
     // reporter's own machine, and they cannot set an environment variable on a
     // double-clicked .app. These two put the engine's probes within reach.
@@ -66,9 +72,34 @@ struct Settings: Codable {
         return base.appendingPathComponent("launcher.json")
     }
 
+    /// ⚠️ A SAVED FILE FROM AN OLDER LAUNCHER MUST STILL LOAD.
+    ///
+    /// The synthesized decoder REQUIRES every non-optional key and ignores the
+    /// default values written above: one key missing and the whole decode
+    /// throws. Decoding the file directly therefore meant that adding any field
+    /// here reset every upgrading player to a blank launcher -- game folder,
+    /// extra archives and all -- with no message, because a failed decode and
+    /// a first run look the same.
+    ///
+    /// So the saved keys are laid OVER the defaults before decoding. A field
+    /// the file has never heard of takes its default; nothing has to be listed
+    /// per field, so the next addition cannot forget to. Keys this launcher
+    /// does not know (a file written by a newer one) are simply ignored.
     static func load() -> Settings {
-        guard let d = try? Data(contentsOf: fileURL),
-              let s = try? JSONDecoder().decode(Settings.self, from: d) else { return Settings() }
+        let defaults = Settings()
+        guard let d = try? Data(contentsOf: fileURL) else { return defaults }
+        return decode(d) ?? defaults
+    }
+
+    static func decode(_ saved: Data) -> Settings? {
+        guard let over = (try? JSONSerialization.jsonObject(with: saved)) as? [String: Any],
+              let baseData = try? JSONEncoder().encode(Settings()),
+              let base = (try? JSONSerialization.jsonObject(with: baseData)) as? [String: Any],
+              let merged = try? JSONSerialization.data(
+                  withJSONObject: base.merging(over) { _, new in new }),
+              var s = try? JSONDecoder().decode(Settings.self, from: merged)
+        else { return nil }
+        s.hudTextScale = HUDText.snap(s.hudTextScale)
         return s
     }
 
@@ -125,6 +156,21 @@ enum GameFolder {
     }
 }
 
+/// What "Fullscreen" covers on this Mac, for the caption beside the picker.
+///
+/// On a MacBook with a camera housing the engine keeps the picture BELOW it
+/// (GitHub issue #9): the screen's frame includes the strip the notch sits in,
+/// and a picture that covers it loses the middle of its top edge -- which is
+/// where the game draws inventory items and messages. So "uses the whole
+/// display" would be a false statement there. Same test the engine makes:
+/// a non-zero top safe-area inset.
+enum FullscreenArea {
+    static var caption: String {
+        (NSScreen.main?.safeAreaInsets.top ?? 0) > 0 ? "stays below the notch"
+                                                     : "uses the whole display"
+    }
+}
+
 /// Windowed sizes offered, filtered to what the display can actually show.
 /// Mirrors the ladder the renderer reports for the in-game Display Options
 /// (nullrender.cpp), so the two agree.
@@ -138,6 +184,28 @@ enum Resolutions {
             return p.count == 2 && CGFloat(p[0]) <= f.width && CGFloat(p[1]) <= f.height
         }
         return out.isEmpty ? ["800x600"] : out
+    }
+}
+
+/// HUD text sizes offered, as percentages of the original.
+///
+/// ⚠️ NOTHING ABOVE 100. Text larger than authored outgrows the layout it was
+/// positioned for -- lines overlap and the subtitle block runs off the bottom
+/// edge -- which is exactly the fault the aspect-ratio fix removed. Smaller only
+/// ever leaves more room: every block this applies to is anchored at a point
+/// and grows away from it.
+///
+/// What it covers is decided in the game, not here: reward / pickup / chat /
+/// search messages, transmissions, subtitles, mission text and the label under
+/// the crosshair. Menus and the health / ammo figures keep their size.
+enum HUDText {
+    static let steps = [100, 90, 80, 70, 60, 50]
+
+    /// A hand-edited or out-of-range value becomes the nearest step, so the
+    /// picker always has a row selected and the engine is never sent a value
+    /// the launcher cannot show.
+    static func snap(_ p: Int) -> Int {
+        steps.min(by: { abs($0 - p) < abs($1 - p) }) ?? 100
     }
 }
 
@@ -351,10 +419,15 @@ struct LauncherView: View {
             } else {
                 FallbackBackground().frame(width: 1024, height: 768)
             }
+            // 174…726. The logo ends at y≈148 and the trademark line sits at
+            // y≈757, so this keeps ~26 pt clear above and ~31 below. It was
+            // 190…710 (520 pt) until the "HUD text" row: the collapsed layout
+            // filled 520 exactly, and one more 32 pt row had to come from
+            // somewhere -- the margins had it to spare, the sections did not.
             controlPanel
-                .frame(width: 500, height: 520)
+                .frame(width: 500, height: 552)
                 .padding(.leading, 48)
-                .padding(.top, 190)
+                .padding(.top, 174)
         }
         .frame(width: 1024, height: 768)
         .preferredColorScheme(.dark)
@@ -368,10 +441,34 @@ struct LauncherView: View {
                 .tracking(1.6)
                 .foregroundColor(Palette.teal)
 
-            gameFolderSection
-            extraRezSection
-            optionsSection
-            Spacer(minLength: 0)
+            // ⚠️ THE SECTIONS SCROLL; THE FOOTER DOES NOT.
+            //
+            // The panel is a FIXED 500x552 box (see `body`): it has to stay
+            // below the logo and clear of the trademark strip. Its content is
+            // not fixed -- opening "Troubleshooting" adds ~150 pt. With the
+            // sections laid straight into the panel, that made the panel itself
+            // 650+ pt tall; SwiftUI centres an oversized child on its frame, so
+            // it grew over the logo at the top AND past the window's bottom
+            // edge, taking LAUNCH with it. (Rendered and measured: the panel
+            // top moved from y=190 to y=124, its bottom to 776 in a 768 window.)
+            //
+            // A ScrollView takes exactly the height left over, so the panel
+            // keeps its box whatever is open, and QUIT / LAUNCH stay put and
+            // reachable. Collapsed, everything fits and nothing scrolls. It is
+            // also what replaces the Spacer that used to pin the footer down.
+            //
+            // The 4 pt in / 4 pt out is for focus rings: a ScrollView clips to
+            // its bounds, and the controls sit flush against the left edge.
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 14) {
+                    gameFolderSection
+                    extraRezSection
+                    optionsSection
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, -4)
             footer
         }
         .padding(18)
@@ -494,7 +591,25 @@ struct LauncherView: View {
                 .disabled(settings.fullscreen)
                 .opacity(settings.fullscreen ? 0.4 : 1)
 
-                Text(settings.fullscreen ? "uses the whole display" : "window size")
+                Text(settings.fullscreen ? FullscreenArea.caption : "window size")
+                    .font(.system(size: 9)).foregroundColor(Palette.creamDim)
+            }
+
+            // In Display, not Troubleshooting: this is a taste setting a player
+            // looks for, not a diagnostic, and that section is collapsed.
+            HStack(spacing: 10) {
+                Text("HUD text")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Palette.cream)
+                Picker("", selection: $settings.hudTextScale) {
+                    ForEach(HUDText.steps, id: \.self) { p in
+                        Text(p == 100 ? "100% (original)" : "\(p)%").tag(p)
+                    }
+                }
+                .frame(width: 130)
+                .labelsHidden()
+
+                Text("subtitles, messages, pickups — not menus")
                     .font(.system(size: 9)).foregroundColor(Palette.creamDim)
             }
 
@@ -750,6 +865,27 @@ struct LauncherView: View {
         if settings.disable3DSound { env["LT_NO_SOUND_3D"] = "1" }
         if settings.disableMusic   { env["LT_NO_MUSIC"]    = "1" }
 
+        // ⚠️⚠️ EVERY SWITCH MUST BE SET BEFORE `proc.environment = env` BELOW.
+        //
+        // A Swift dictionary is a VALUE: that assignment hands the process a
+        // COPY, and anything written to `env` afterwards goes nowhere. The two
+        // window switches used to sit after it -- so "Windowed" in this
+        // launcher never reached the engine, which opened fullscreen whatever
+        // was chosen, and the log header (built from the same dictionary,
+        // earlier still) did not list them either, so the log agreed with the
+        // bug. Nothing failed; a setting just did nothing.
+        if !settings.fullscreen {
+            env["LT_WINDOWED"]    = "1"
+            env["LT_WINDOW_SIZE"] = settings.windowSize
+        }
+
+        // ★ HUD text size. Only when it differs from the original: 100 is "say
+        // nothing", like every other switch here. A percentage, never a
+        // fraction -- see GetHUDTextScale in InterfaceResMgr.h for why. The
+        // engine confirms the value it understood on a "[hud]" line in the log.
+        let hudPct = HUDText.snap(settings.hudTextScale)
+        if hudPct != 100 { env["LT_HUD_TEXT_SCALE"] = String(hudPct) }
+
         // ★ Diagnostics. LT_TRACE_TRIGGER logs a level's whole logic chain --
         // every trigger fire, lock, unlock, latch and REFUSAL, every spawn and
         // its success, every AI goto-node arrival. It is what turns "the level
@@ -808,10 +944,6 @@ struct LauncherView: View {
         if let h = EngineLog.begin(header: header) {
             proc.standardOutput = h
             proc.standardError = h
-        }
-        if !settings.fullscreen {
-            env["LT_WINDOWED"]    = "1"
-            env["LT_WINDOW_SIZE"] = settings.windowSize
         }
         // ⚠️⚠️ DO NOT LET THIS PROCESS EXIT WHILE THE GAME RUNS. The engine is
         // posix_spawn'd by us, so it lives in OUR coalition and is not an app

@@ -33,7 +33,21 @@
 @interface LTMetalView : NSView
 @end
 
+// The pointer image the game asked for (CLTCursor::SetCursor), nil for the
+// system arrow. Retained by hand -- this file is manual retain/release.
+// Declared up here because the view's cursor rect needs it.
+static NSCursor* g_pGameCursor = nil;
+
 @implementation LTMetalView
+
+// AppKit's own mechanism for "this pointer over this view". It is only half of
+// what keeps the game's pointer on screen -- see ltmac_ApplyCursorImage for why
+// it is not relied on alone.
+- (void)resetCursorRects {
+    [super resetCursorRects];
+    if (g_pGameCursor)
+        [self addCursorRect:[self bounds] cursor:g_pGameCursor];
+}
 
 + (Class)layerClass           { return [CAMetalLayer class]; }
 - (CALayer*)makeBackingLayer  { return [CAMetalLayer layer]; }
@@ -85,6 +99,9 @@ namespace {
     NSWindow*     g_pWindow    = nil;
     LTMetalView*  g_pMetalView = nil;
     bool          g_bShouldClose = false;
+    // True when the Metal view covers only PART of a fullscreen window -- the
+    // part clear of the display's camera housing. See LTMacWin_Create.
+    bool          g_bViewInset = false;
 }
 
 @interface LTWindowDelegate : NSObject <NSWindowDelegate>
@@ -155,6 +172,59 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
         NSScreen*  screen = [NSScreen mainScreen];
         NSRect     screenFrame = screen ? [screen frame] : NSMakeRect(0, 0, width, height);
         NSRect     frame = fullscreen ? screenFrame : NSMakeRect(0, 0, width, height);
+
+        // ★ KEEP THE PICTURE OUT FROM UNDER THE CAMERA HOUSING (GitHub issue #9).
+        //
+        // On a MacBook with a notch the screen's frame INCLUDES the strip the
+        // notch sits in, so a window covering "the whole screen" puts its top
+        // 32 points behind the housing: 179 points of the middle of that strip
+        // are simply not there. That is where this game draws things -- the
+        // reporter lost inventory items and top-of-screen text -- and nothing
+        // could be done about it from inside the game, because the resolution
+        // list in its Display options is a placeholder here (nr_Init always
+        // reports the real drawable; see rdll_GetSupportedModes).
+        //
+        // -[NSScreen safeAreaInsets] is the system's own statement of how much
+        // to stay clear of. So: the WINDOW still covers the whole screen, in
+        // black, and the Metal view takes only the safe area. The strip beside
+        // the notch stays dark, exactly as it does behind the menu bar of any
+        // other full-screen app, and the game gets an unobstructed rectangle
+        // (16:10 on every notched MacBook so far). Everything downstream sizes
+        // itself from the VIEW -- drawable, mouse scaling, cursor rect -- so
+        // nothing else has to know.
+        //
+        // Insets are zero on an external display, and on a notched one that the
+        // user has already switched to a below-the-notch mode; both take the
+        // old path untouched.
+        NSRect viewFrame = NSMakeRect(0, 0, frame.size.width, frame.size.height);   // window coords
+        if (fullscreen && screen) {
+            NSEdgeInsets insets = NSEdgeInsetsZero;
+            if (@available(macOS 12.0, *))
+                insets = [screen safeAreaInsets];
+            if (insets.top > 0.0 || insets.left > 0.0 || insets.bottom > 0.0 || insets.right > 0.0) {
+                if (getenv("LT_USE_NOTCH_AREA")) {
+                    // The behaviour before this existed, for anyone who prefers
+                    // the taller picture and can live with the cut-out.
+                    fprintf(stderr, "[mac] LT_USE_NOTCH_AREA on -- fullscreen covers the whole "
+                                    "%.0fx%.0f display; the top %.0f points sit behind the "
+                                    "camera housing\n",
+                            frame.size.width, frame.size.height, insets.top);
+                } else {
+                    viewFrame = NSMakeRect(insets.left, insets.bottom,
+                                           frame.size.width  - insets.left - insets.right,
+                                           frame.size.height - insets.top  - insets.bottom);
+                    g_bViewInset = true;
+                    fprintf(stderr, "[mac] fullscreen: this display has a camera housing "
+                                    "(safe-area insets top %.0f left %.0f bottom %.0f right %.0f) "
+                                    "-- the picture is %.0fx%.0f of the %.0fx%.0f points, clear of "
+                                    "it; LT_USE_NOTCH_AREA=1 covers the whole display\n",
+                            insets.top, insets.left, insets.bottom, insets.right,
+                            viewFrame.size.width, viewFrame.size.height,
+                            frame.size.width, frame.size.height);
+                }
+            }
+        }
+
         NSUInteger style = fullscreen
             ? NSWindowStyleMaskBorderless
             : (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -195,7 +265,7 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
         // only remaining GL artefact. A GL-vs-Metal A/B is a diff against those
         // images, not a runtime switch.
         {
-            g_pMetalView = [[LTMetalView alloc] initWithFrame:frame];
+            g_pMetalView = [[LTMetalView alloc] initWithFrame:viewFrame];
             g_pMetalView.wantsLayer = YES;
             CGFloat scale = fullscreen ? (getenv("LT_HIDPI") ? 2.0 : 1.0)
                                        : [[NSScreen mainScreen] backingScaleFactor];
@@ -211,9 +281,22 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
                 l.displaySyncEnabled = NO;
                 fprintf(stderr, "[mac] LT_NO_VSYNC: display sync OFF -- frame rate uncapped\n");
             }
-            l.drawableSize  = CGSizeMake(frame.size.width * scale,
-                                         frame.size.height * scale);
-            [g_pWindow setContentView:g_pMetalView];
+            l.drawableSize  = CGSizeMake(viewFrame.size.width * scale,
+                                         viewFrame.size.height * scale);
+            if (g_bViewInset) {
+                // A content view always fills its window, so the Metal view
+                // cannot be it here: it sits inside a plain black one.
+                NSView* pBackdrop = [[NSView alloc]
+                    initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+                pBackdrop.wantsLayer = YES;
+                pBackdrop.layer.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
+                [pBackdrop addSubview:g_pMetalView];
+                [g_pWindow setBackgroundColor:[NSColor blackColor]];
+                [g_pWindow setContentView:pBackdrop];
+                [pBackdrop release];   // the window keeps it
+            } else {
+                [g_pWindow setContentView:g_pMetalView];
+            }
             [g_pWindow makeFirstResponder:g_pMetalView];
             [g_pWindow makeKeyAndOrderFront:nil];
             // -activateIgnoringOtherApps: is deprecated and is increasingly
@@ -223,8 +306,17 @@ bool LTMacWin_Create(const char* pTitle, int width, int height, bool fullscreen)
                 [NSApp activate];
             else
                 [NSApp activateIgnoringOtherApps:YES];
-            fprintf(stderr, "[mac] Metal view %.0fx%.0f (scale %.1f)\n",
-                    l.drawableSize.width, l.drawableSize.height, (double)scale);
+            // ⚠️ `scale` above is only the first guess: AppKit replaces it with
+            // the window's real backing scale the moment the view joins the
+            // window (-viewDidChangeBackingProperties), which is why this line
+            // used to say "scale 1.0" next to a 2x drawable. Report what is in
+            // force, and where the picture actually sits on the screen.
+            NSRect onScreen = [g_pWindow convertRectToScreen:
+                                  [g_pMetalView convertRect:[g_pMetalView bounds] toView:nil]];
+            fprintf(stderr, "[mac] Metal view %.0fx%.0f (scale %.1f) at screen points "
+                            "(%.0f,%.0f %.0fx%.0f), y up\n",
+                    l.drawableSize.width, l.drawableSize.height, (double)l.contentsScale,
+                    NSMinX(onScreen), NSMinY(onScreen), NSWidth(onScreen), NSHeight(onScreen));
             return true;
         }
     }
@@ -455,8 +547,248 @@ static void ltmac_PostMouseMessage(NSEvent* ev, unsigned int uMsg) {
 }
 
 void LTMacWin_SetCursorVisible(bool bVisible) {
+    // LT_TEST_SHOW_POINTER=1 -- never hide the hardware pointer. For automated
+    // runs that have to see WHICH pointer image is on screen: a run launched
+    // from a tool keeps focus for a few seconds at best, and the game spends
+    // those on its splash screens with the pointer hidden.
+    static int s_nTestShow = -1;
+    if (s_nTestShow < 0) {
+        s_nTestShow = getenv("LT_TEST_SHOW_POINTER") ? 1 : 0;
+        if (s_nTestShow)
+            fprintf(stderr, "[cur] LT_TEST_SHOW_POINTER on -- the hardware pointer is "
+                            "never hidden (test runs only)\n");
+    }
+    if (s_nTestShow) bVisible = true;
+
     g_bGameWantsCursor = bVisible;
     ltmac_ApplyCursorVisibility();
+}
+
+// --------------------------------------------------------------------------
+// ★ THE GAME'S OWN POINTER IMAGE (GitHub issue #6).
+//
+// With "Hardware Cursor: On" -- the game's default -- Windows shows the arrow
+// out of cres.dll as the system pointer. Here the engine had no image to give
+// the system, so the menus ran under the macOS arrow. Now CLTCursor hands over
+// the decoded resource and this keeps it on screen whenever the pointer is
+// visible over the game view.
+//
+// ⚠️ TWO MECHANISMS, BECAUSE THE FIRST ONE DEPENDS ON STATE THIS PROCESS HAS
+// FAILED TO KEEP BEFORE. Cursor rects (-resetCursorRects on the view) are
+// applied by AppKit only for the KEY window of an app AppKit believes is
+// ACTIVE -- and ltmac_AppHasFocus above documents a traced session in which
+// -[NSApp isActive] sat at NO from the first frame to the last, because the
+// engine never calls -[NSApp run]. So the same poll that already re-asserts
+// visibility also re-asserts the image: if the pointer is over the view and
+// the application's current cursor is not the game's, set it.
+//
+// MEASURED (2026-11-16, LT_TRACE_CURSOR, +[NSCursor currentSystemCursor] --
+// what the window server is showing, not what we asked for): launched as an
+// ordinary app AND as a child process the way the launcher starts it, the app
+// was active and key, and the server reported the game's 32x32 image with hot
+// spot (1,1) in every sample taken with the pointer over the view, and the
+// system arrow in the title bar. In those runs the two mechanisms agree and
+// the poll changes nothing; the stuck-flag session it exists for could not be
+// reproduced, so that half is a backstop, not a tested path.
+//
+// Outside the view (the title bar of a windowed game) the arrow comes back, so
+// the window can still be dragged with a pointer that looks like one.
+// --------------------------------------------------------------------------
+static bool ltmac_PointerOverView(void) {
+    if (!g_pWindow || !g_pMetalView) return false;
+    NSPoint pt = [g_pMetalView convertPoint:[g_pWindow mouseLocationOutsideOfEventStream]
+                                   fromView:nil];
+    return NSPointInRect(pt, [g_pMetalView bounds]) ? true : false;
+}
+
+static void ltmac_ApplyCursorImage(void) {
+    if (!g_pGameCursor) return;
+    // Nothing to do while the pointer is hidden (software cursor, or captured
+    // for mouse-look) or while another app owns it.
+    if (!g_bGameWantsCursor || g_bCaptureActive || !ltmac_AppHasFocus()) return;
+
+    NSCursor* pCurrent = [NSCursor currentCursor];
+    if (ltmac_PointerOverView()) {
+        if (pCurrent != g_pGameCursor) [g_pGameCursor set];
+    } else if (pCurrent == g_pGameCursor) {
+        [[NSCursor arrowCursor] set];
+    }
+}
+
+// LT_DUMP_CURSOR=<prefix> -- write pointer images as PNG so they can be LOOKED
+// at: <prefix>_game.png is the game's pointer as AppKit will draw it on a
+// Retina display (twice the image's size), <prefix>_system.png is whatever the
+// window server reports on screen the first time that is not the arrow.
+static bool ltmac_WriteCursorPNG(NSImage* pImage, int nPixels, const char* pSuffix) {
+    const char* pPrefix = getenv("LT_DUMP_CURSOR");
+    if (!pPrefix || !pImage) return false;
+    NSBitmapImageRep* pRep = [[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:NULL pixelsWide:nPixels pixelsHigh:nPixels
+                   bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                  colorSpaceName:NSDeviceRGBColorSpace
+                     bytesPerRow:nPixels * 4 bitsPerPixel:32];
+    if (!pRep) return false;
+    NSGraphicsContext* pCtx = [NSGraphicsContext graphicsContextWithBitmapImageRep:pRep];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:pCtx];
+    [pImage drawInRect:NSMakeRect(0, 0, nPixels, nPixels)
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationCopy
+              fraction:1.0];
+    [pCtx flushGraphics];
+    [NSGraphicsContext restoreGraphicsState];
+    NSData*   pPng  = [pRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    NSString* pPath = [NSString stringWithFormat:@"%s_%s.png", pPrefix, pSuffix];
+    bool bOK = pPng && [pPng writeToFile:pPath atomically:YES];
+    [pRep release];
+    fprintf(stderr, "[cur] LT_DUMP_CURSOR: %s %s\n",
+            bOK ? "wrote" : "could NOT write", [pPath UTF8String]);
+    return bOK;
+}
+
+void* LTMacWin_CreateCursor(const unsigned char* pRGBA, int nWidth, int nHeight,
+                            int nHotX, int nHotY) {
+    if (!pRGBA || nWidth <= 0 || nHeight <= 0) return NULL;
+    @autoreleasepool {
+        // ⚠️ DEVICE RGB, NOT "CALIBRATED". The same artwork is also drawn INTO
+        // the frame as the software cursor (interface\cursor0.pcx), and the
+        // Metal layer is not colour-managed; a calibrated colour space here
+        // would have AppKit convert the bytes and the two pointers would be
+        // slightly different blues.
+        NSBitmapImageRep* pRep = [[NSBitmapImageRep alloc]
+            initWithBitmapDataPlanes:NULL
+                          pixelsWide:nWidth
+                          pixelsHigh:nHeight
+                       bitsPerSample:8
+                     samplesPerPixel:4
+                            hasAlpha:YES
+                            isPlanar:NO
+                      colorSpaceName:NSDeviceRGBColorSpace
+                        bitmapFormat:NSBitmapFormatAlphaNonpremultiplied
+                         bytesPerRow:nWidth * 4
+                        bitsPerPixel:32];
+        if (!pRep) return NULL;
+        // Row by row: the rep is free to pad its rows.
+        unsigned char* pDst    = [pRep bitmapData];
+        NSInteger      nStride = [pRep bytesPerRow];
+        for (int y = 0; y < nHeight; ++y)
+            memcpy(pDst + (size_t)y * nStride, pRGBA + (size_t)y * nWidth * 4, (size_t)nWidth * 4);
+
+        // ★ ONE IMAGE PIXEL = ONE POINT. The size given here is in points, so a
+        // 32x32 cursor covers what 32x32 Windows pixels cover on a display of
+        // ordinary density, and AppKit doubles it for a Retina screen. (The
+        // system's own "pointer size" accessibility setting applies on top.)
+        NSImage* pImage = [[NSImage alloc] initWithSize:NSMakeSize(nWidth, nHeight)];
+        [pImage addRepresentation:pRep];
+        // The hot spot is measured from the TOP-left, like the resource's.
+        NSCursor* pCursor = [[NSCursor alloc] initWithImage:pImage
+                                                    hotSpot:NSMakePoint(nHotX, nHotY)];
+        ltmac_WriteCursorPNG(pImage, nWidth * 2, "game");
+        [pImage release];
+        [pRep release];
+        return (void*)pCursor;   // +1, owned by the caller for the life of the process
+    }
+}
+
+void LTMacWin_SetCursor(void* pCursor) {
+    NSCursor* pNew = (NSCursor*)pCursor;
+    if (pNew == g_pGameCursor) return;
+    [pNew retain];
+    [g_pGameCursor release];
+    g_pGameCursor = pNew;
+
+    if (g_pWindow && g_pMetalView)
+        [g_pWindow invalidateCursorRectsForView:g_pMetalView];
+    if (pNew)
+        ltmac_ApplyCursorImage();
+    else if (ltmac_AppHasFocus())
+        [[NSCursor arrowCursor] set];
+}
+
+// Backing pixels per point of the game view. Measured the same way
+// ltmac_PostMouseMessage scales the pointer position -- drawable over bounds --
+// rather than asked of the screen, so the two can never disagree about how big
+// a pixel is.
+static float g_fPointScale = 1.0f;
+static void ltmac_UpdatePointScale(void) {
+    if (!g_pMetalView) return;
+    CGFloat fPoints = NSWidth([g_pMetalView bounds]);
+    CGFloat fPixels = ((CAMetalLayer*)g_pMetalView.layer).drawableSize.width;
+    if (fPoints > 0.0 && fPixels > 0.0)
+        g_fPointScale = (float)(fPixels / fPoints);
+}
+const float* LTMacWin_GetPointScaleSlot(void) {
+    ltmac_UpdatePointScale();
+    return &g_fPointScale;
+}
+
+// LT_TRACE_CURSOR's second line: WHICH image is on screen.
+//
+// +[NSCursor currentCursor] is only this application's opinion; what the window
+// server is actually showing is +currentSystemCursor. Both are rendered to the
+// same 32x32 bitmap and compared as mean absolute difference per channel, so
+// "sys~game=0.0" is the game's pointer on screen and "sys~arrow=0.0" is the
+// system arrow. A difference rather than a hash because the server may hand the
+// image back at another scale or with slightly different rounding.
+static bool ltmac_RenderCursor(NSCursor* pCursor, unsigned char* pOut /* 32*32*4 */) {
+    memset(pOut, 0, 32 * 32 * 4);
+    if (!pCursor || ![pCursor image]) return false;
+    NSBitmapImageRep* pRep = [[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:NULL pixelsWide:32 pixelsHigh:32
+                   bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                  colorSpaceName:NSDeviceRGBColorSpace
+                     bytesPerRow:32 * 4 bitsPerPixel:32];
+    if (!pRep) return false;
+    NSGraphicsContext* pCtx = [NSGraphicsContext graphicsContextWithBitmapImageRep:pRep];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:pCtx];
+    [[pCursor image] drawInRect:NSMakeRect(0, 0, 32, 32)
+                       fromRect:NSZeroRect
+                      operation:NSCompositingOperationCopy
+                       fraction:1.0];
+    [pCtx flushGraphics];
+    [NSGraphicsContext restoreGraphicsState];
+    for (int y = 0; y < 32; ++y)
+        memcpy(pOut + y * 32 * 4, [pRep bitmapData] + y * [pRep bytesPerRow], 32 * 4);
+    [pRep release];
+    return true;
+}
+static double ltmac_CursorDifference(const unsigned char* pA, const unsigned char* pB) {
+    long nSum = 0;
+    for (int i = 0; i < 32 * 32 * 4; ++i)
+        nSum += (pA[i] > pB[i]) ? (pA[i] - pB[i]) : (pB[i] - pA[i]);
+    return (double)nSum / (32.0 * 32.0 * 4.0);
+}
+static void ltmac_TraceCursorImage(void) {
+    @autoreleasepool {
+        static unsigned char s_aSys[32 * 32 * 4], s_aApp[32 * 32 * 4],
+                             s_aGame[32 * 32 * 4], s_aArrow[32 * 32 * 4];
+        NSCursor* pSys = [NSCursor currentSystemCursor];
+        bool bSys   = ltmac_RenderCursor(pSys, s_aSys);
+        bool bApp   = ltmac_RenderCursor([NSCursor currentCursor], s_aApp);
+        bool bGame  = ltmac_RenderCursor(g_pGameCursor, s_aGame);
+        ltmac_RenderCursor([NSCursor arrowCursor], s_aArrow);
+        NSSize  szSys  = (pSys && [pSys image]) ? [[pSys image] size] : NSZeroSize;
+        NSPoint hotSys = pSys ? [pSys hotSpot] : NSZeroPoint;
+        fprintf(stderr, "[cur] image: game=%s appIsGame=%d overView=%d "
+                        "sys=%.0fx%.0f hot=(%.0f,%.0f) sys~game=%.1f sys~arrow=%.1f "
+                        "app~game=%.1f scale=%.1f\n",
+                bGame ? "set" : "none",
+                (int)(g_pGameCursor && [NSCursor currentCursor] == g_pGameCursor),
+                (int)ltmac_PointerOverView(),
+                szSys.width, szSys.height, hotSys.x, hotSys.y,
+                (bSys && bGame) ? ltmac_CursorDifference(s_aSys, s_aGame) : -1.0,
+                bSys ? ltmac_CursorDifference(s_aSys, s_aArrow) : -1.0,
+                (bApp && bGame) ? ltmac_CursorDifference(s_aApp, s_aGame) : -1.0,
+                (double)g_fPointScale);
+
+        // What the window server says is on screen, the first time that is a
+        // real image and not the arrow -- see ltmac_WriteCursorPNG.
+        static bool s_bDumped = false;
+        if (!s_bDumped && bSys && szSys.width > 1.0 &&
+            ltmac_CursorDifference(s_aSys, s_aArrow) > 1.0)
+            s_bDumped = ltmac_WriteCursorPNG([pSys image], 64, "system");
+    }
 }
 
 static void ltmac_WarpCursorToWindowCentre(void) {
@@ -501,6 +833,13 @@ static void ltmac_ConfinePointerToWindow(void) {
     CGFloat screenH = NSHeight([screen frame]);
 
     NSRect  frame = [g_pWindow frame];
+    // Fullscreen on a notched display: the window is larger than the picture
+    // (see LTMacWin_Create). Keep the pointer on the picture -- in the black
+    // strip a click would land on the game's top row, and under the housing
+    // the pointer cannot be seen at all.
+    if (g_bViewInset && g_pMetalView)
+        frame = [g_pWindow convertRectToScreen:
+                    [g_pMetalView convertRect:[g_pMetalView bounds] toView:nil]];
     NSPoint pt    = [NSEvent mouseLocation];      // screen coords, y-up
 
     // One pixel of inset, so the clamped position is unambiguously inside and
@@ -586,9 +925,84 @@ void LTMacWin_SetMouseCapture(bool bCapture) {
 bool LTMacWin_IsMouseCaptured(void) { return g_bCaptureActive; }
 
 // Pump pending Cocoa events without blocking (engine drives the frame loop).
+// --------------------------------------------------------------------------
+// LT_TEST_MOUSE="<sec>:<x>,<y>[:click] ..." -- put the mouse somewhere, and
+// optionally click, from an automated run. The mouse counterpart of
+// LT_TEST_KEYS.
+//
+// x,y are SCREEN POINTS measured from the TOP-LEFT corner of the screen the
+// window is on -- deliberately not window, view or drawable coordinates, so the
+// test does not presuppose the very mapping it is there to check. Each entry
+// becomes real NSEvents (mouse-moved, then down and up for a click) posted to
+// the application's own queue, so they come out of -nextEventMatchingMask: in
+// LTMacWin_PumpEvents and take exactly the route a hand-moved mouse takes:
+// ltmac_PostMouseMessage, the game's window proc, the input device.
+//
+// The pointer on screen does NOT move (nothing here touches the HID system or
+// needs a permission), and the events arrive whether or not the app has focus.
+// --------------------------------------------------------------------------
+static void ltmac_TickTestMouse(void) {
+    struct Step { double t; double x, y; bool click; bool done; };
+    static Step   s_aSteps[16];
+    static int    s_nSteps = -1;
+    static double s_fStart = 0.0;
+
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    double fNow = (double)ts.tv_sec + ts.tv_nsec * 1e-9;
+
+    if (s_nSteps < 0) {
+        s_nSteps = 0;
+        s_fStart = fNow;
+        const char* p = getenv("LT_TEST_MOUSE");
+        while (p && *p && s_nSteps < 16) {
+            Step s; int nUsed = 0;
+            if (sscanf(p, " %lf:%lf,%lf%n", &s.t, &s.x, &s.y, &nUsed) != 3) break;
+            p += nUsed;
+            s.click = (strncmp(p, ":click", 6) == 0);
+            if (s.click) p += 6;
+            s.done = false;
+            s_aSteps[s_nSteps++] = s;
+        }
+        if (getenv("LT_TEST_MOUSE"))
+            fprintf(stderr, "[in] LT_TEST_MOUSE on -- %d synthetic mouse step(s) "
+                            "(screen points from the top-left)\n", s_nSteps);
+    }
+    if (!s_nSteps || !g_pWindow) return;
+
+    for (int i = 0; i < s_nSteps; ++i) {
+        Step& s = s_aSteps[i];
+        if (s.done || fNow - s_fStart < s.t) continue;
+        s.done = true;
+
+        NSScreen* pScreen = [g_pWindow screen] ?: [NSScreen mainScreen];
+        NSRect    scr     = pScreen ? [pScreen frame] : NSZeroRect;
+        // top-left, y down  ->  Cocoa screen (y up)  ->  window base coordinates
+        NSPoint ptScreen = NSMakePoint(NSMinX(scr) + s.x, NSMaxY(scr) - s.y);
+        NSPoint ptWindow = [g_pWindow convertPointFromScreen:ptScreen];
+        fprintf(stderr, "[in] LT_TEST_MOUSE: %s at screen (%.0f,%.0f) = window (%.0f,%.0f)\n",
+                s.click ? "click" : "move", s.x, s.y, ptWindow.x, ptWindow.y);
+
+        const NSEventType aTypes[3] = { NSEventTypeMouseMoved, NSEventTypeLeftMouseDown,
+                                        NSEventTypeLeftMouseUp };
+        for (int e = 0; e < (s.click ? 3 : 1); ++e) {
+            NSEvent* ev = [NSEvent mouseEventWithType:aTypes[e]
+                                             location:ptWindow
+                                        modifierFlags:0
+                                            timestamp:[[NSProcessInfo processInfo] systemUptime]
+                                         windowNumber:[g_pWindow windowNumber]
+                                              context:nil
+                                          eventNumber:0
+                                           clickCount:(e == 0 ? 0 : 1)
+                                             pressure:(e == 1 ? 1.0f : 0.0f)];
+            if (ev) [NSApp postEvent:ev atStart:NO];
+        }
+    }
+}
+
 void LTMacWin_PumpEvents(void) {
     LTMacInput_TickInjection();
     LTMacInput_TickHold();
+    ltmac_TickTestMouse();
 
     // Capture state is re-evaluated every pump from the engine's own cursor-lock
     // variable (CursorCenter), ANDed with app activation so Cmd-Tab always frees
@@ -654,11 +1068,14 @@ void LTMacWin_PumpEvents(void) {
                     pt.x, pt.y,
                     NSMinX(fr), NSMinY(fr), NSWidth(fr), NSHeight(fr),
                     (int)NSPointInRect(pt, fr));
+            ltmac_TraceCursorImage();
         }
     }
     ltmac_RetryStartupActivation();
     ltmac_ApplyMouseCapture(g_bWantCapture && ltmac_AppHasFocus());
     ltmac_ApplyCursorVisibility();   // also follows activation
+    ltmac_ApplyCursorImage();        // ...and WHICH pointer, once it is visible
+    ltmac_UpdatePointScale();        // a move to another display changes it
     ltmac_ConfinePointerToWindow();  // the ClipCursor half, for when the lock is off
     @autoreleasepool {
         NSEvent* ev;

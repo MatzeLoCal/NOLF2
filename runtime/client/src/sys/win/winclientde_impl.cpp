@@ -1711,6 +1711,18 @@ static LTRESULT cis_GetEngineHook(char *pName, void **pData)
 		*pData = (void*)LTMacWin_GetWndProcSlot();
 		return LT_OK;
 	}
+	else if(stricmp(pName, "MacPointScale")==0)
+	{
+		// A `const float*`: backing pixels per point of the game view (2.0 on a
+		// Retina display), live for the whole run. Every size the game works in
+		// is backing pixels, which is right for anything authored against a
+		// screen resolution -- but the pointer is authored in the pixels of a
+		// display of ordinary density, and CCursorMgr needs this to draw its
+		// software cursor as large as the hardware one. Same plain-data channel
+		// as the slot above, for the same reason.
+		*pData = (void*)LTMacWin_GetPointScaleSlot();
+		return LT_OK;
+	}
 #endif
 	else if(stricmp(pName, "cres_hinstance")==0)
 	{

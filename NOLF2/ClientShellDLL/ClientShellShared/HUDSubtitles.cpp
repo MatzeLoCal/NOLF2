@@ -311,11 +311,27 @@ void CHUDSubtitles::Clear()
 void CHUDSubtitles::SetScale(float fScale)
 {
 	m_fScale = fScale;
-	m_nFontSize = (uint8)(m_fScale * (float)m_nBaseFontSize);
+	// ⚠️ CHUDSubtitles derives from CHUDItem, NOT CLTGUICtrl, so it never gets
+	// CLTGUICtrl::SetScale's vertical correction and has to apply the rule
+	// itself: x and widths on XRatio, y on YRatio, character height on
+	// min(X,Y). fScale is XRatio -- every caller passes GetXRatio().
+	//
+	// Authored at FullScreenPos (70,340) with 3 lines of 14. On a 2560x1440
+	// drawable the old code put the block at y = 340*4.000 = 1360 and made the
+	// glyphs 56 px, so the subtitle ran from 1360 to 1528 on a 1440 px screen --
+	// it was not "missing", it was BELOW THE BOTTOM EDGE. The rule gives
+	// y = 1020 and 42 px glyphs, ending at 1146. (GitHub issue #7.)
+	const float fScaleY = g_pInterfaceResMgr->GetYRatio();
+	// GetHUDFontRatio() = that, times the player's HUD text scale (1.0 unless
+	// the launcher set one). m_DisplayRect.height below is lines * m_nFontSize,
+	// so the block's clip box shrinks with the glyphs and stays top-anchored.
+	m_nFontSize = (uint8)(g_pInterfaceResMgr->GetHUDFontRatio() * (float)m_nBaseFontSize);
+	CInterfaceResMgr::TraceLayout("Subtitle", m_FullScreenPos.x, m_FullScreenPos.y, m_nBaseFontSize,
+	                              CInterfaceResMgr::GetHUDTextScale());
 	if (m_pText)
 	{
 		float x = (float)m_BasePos.x * m_fScale;
-		float y = (float)m_BasePos.y * m_fScale;
+		float y = (float)m_BasePos.y * fScaleY;
 		m_pText->SetCharScreenHeight(m_nFontSize);
 		m_pText->SetPosition(x,y);
 
@@ -329,7 +345,7 @@ void CHUDSubtitles::SetScale(float fScale)
 
 
 		m_DisplayRect.x = (float)pos.x * m_fScale;
-		m_DisplayRect.y = (float)pos.y * m_fScale;
+		m_DisplayRect.y = (float)pos.y * fScaleY;      // ★ vertical ratio
 		m_DisplayRect.width = (float)width * m_fScale;
 		m_DisplayRect.height = (float)m_nMaxLines * (float)m_nFontSize;
 

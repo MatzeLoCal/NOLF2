@@ -21,6 +21,40 @@ VarTrack	g_vtCursorHack;
 
 CCursorMgr * g_pCursorMgr = LTNULL;
 
+#ifdef LT_MACOS
+// ★ HOW BIG ONE PIXEL OF THE SOFTWARE CURSOR IS DRAWN (GitHub issue #6).
+//
+// With "Hardware Cursor: Off" the game blits interface\cursor0.pcx itself, one
+// image pixel per SCREEN pixel. On Windows that is the same size as the hardware
+// pointer, which is the point of the file: it is the same 24-pixel arrow as the
+// one in cres.dll, so the setting changes who draws it and nothing else.
+//
+// On this port "screen pixels" are a Retina display's backing pixels, of which
+// there are two to the point, so the software arrow came out at half the width
+// and height of the hardware one -- 12 points, on a display where the system's
+// own arrow is larger than that. The reporter's "very very small".
+//
+// The engine says how many backing pixels make a point ("MacPointScale", a
+// pointer to a live float so a move to another display is followed), and the
+// arrow is drawn that many times larger: one image pixel per point, exactly
+// what AppKit does with the hardware one. 1.0 -- an ordinary display, or an
+// engine without the hook -- is the original blit, untouched.
+static float GetSoftwareCursorScale()
+{
+	static const float *s_pScale = LTNULL;
+	static bool s_bAsked = false;
+	if (!s_bAsked)
+	{
+		s_bAsked = true;
+		void *pSlot = LTNULL;
+		if (g_pLTClient->GetEngineHook("MacPointScale", &pSlot) == LT_OK && pSlot)
+			s_pScale = (const float*)pSlot;
+	}
+	const float fScale = s_pScale ? *s_pScale : 1.0f;
+	return (fScale > 1.0f && fScale <= 8.0f) ? fScale : 1.0f;
+}
+#endif
+
 // ----------------------------------------------------------------------- //
 //
 //	ROUTINE:	CCursorMgr constructor and destructor
@@ -264,6 +298,37 @@ void CCursorMgr::Update()
 		g_pLTClient->Start3D();
 		g_pLTClient->StartOptimized2D();
 
+#ifdef LT_MACOS
+		const float fScale = GetSoftwareCursorScale();
+		uint32 nSurfW = 0, nSurfH = 0;
+		if (fScale > 1.0f)
+			g_pLTClient->GetSurfaceDims(m_hSurfCursor, &nSurfW, &nSurfH);
+		if (nSurfW && nSurfH)
+		{
+			// The tip of the arrow is its top-left corner, so growing the image
+			// down and to the right keeps the hot spot where the click lands.
+			LTRect rcDest;
+			rcDest.left   = CursorPos.x;
+			rcDest.top    = CursorPos.y;
+			rcDest.right  = CursorPos.x + (int)((float)nSurfW * fScale + 0.5f);
+			rcDest.bottom = CursorPos.y + (int)((float)nSurfH * fScale + 0.5f);
+
+			// Said once per size, so a log shows which arrow a reporter had.
+			static float s_fSaid = 0.0f;
+			if (s_fSaid != fScale)
+			{
+				s_fSaid = fScale;
+				fprintf(stderr, "[cur] software cursor: %ux%u image drawn %dx%d "
+				                "(%.1f backing pixels per point)\n",
+				        nSurfW, nSurfH, rcDest.right - rcDest.left,
+				        rcDest.bottom - rcDest.top, fScale);
+			}
+
+			g_pLTClient->ScaleSurfaceToSurfaceTransparent(g_pLTClient->GetScreenSurface(), m_hSurfCursor,
+														  &rcDest, LTNULL, kTrans);
+		}
+		else
+#endif
 		g_pLTClient->DrawSurfaceToSurfaceTransparent(g_pLTClient->GetScreenSurface(), m_hSurfCursor, LTNULL,
 												   CursorPos.x, CursorPos.y, kTrans);
 

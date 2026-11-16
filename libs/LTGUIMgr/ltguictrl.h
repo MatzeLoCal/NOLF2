@@ -47,7 +47,20 @@ public:
 	virtual uint16	GetHeight ( ) { return 0; }
 
 	virtual uint16	GetBaseWidth ( ) { return ( uint16 )( (float)GetWidth() / GetScale()); }
-	virtual uint16	GetBaseHeight ( ) { return ( uint16 )( (float)GetHeight() / GetScale()); }
+	// ⚠️ HEIGHT COMES BACK THROUGH THE *VERTICAL* SCALE, NOT GetScale().
+	//
+	// GetHeight() is PIXELS. A caller converts it to base 640x480 space here,
+	// stacks in that space, and hands the result to SetBasePos -- which maps y
+	// with (fScale * s_fYOverX), i.e. YRatio. Dividing by GetScale() (XRatio)
+	// made that round trip lossy on any non-4:3 display:
+	//
+	//     spacing_px = height_px * (YRatio / XRatio)  =  0.75 * height_px @ 16:9
+	//
+	// so stacked items were laid out three quarters of a line apart and OVERLAPPED
+	// (GitHub issue #7: the message queue's lines written on top of each other).
+	// The divisor has to be the same ratio the position mapping will re-apply.
+	// At 4:3 s_fYOverX is exactly 1.0f and this is the shipped behaviour.
+	virtual uint16	GetBaseHeight ( ) { return ( uint16 )( (float)GetHeight() / GetYScale()); }
 	
 	virtual void	SetBasePos( LTIntPt pos )       { m_basePos=pos; SetScale(m_fScale);}
     virtual LTIntPt GetBasePos ( )                  { return m_basePos; }

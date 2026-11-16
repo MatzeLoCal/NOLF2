@@ -99,7 +99,10 @@ void CObjectiveCtrl::ScalePoly()
 	float fh = (float)m_nFontSize;
 
 	float x = (float)(m_basePos.x) * m_fScale;
-	float y = (float)(m_basePos.y) * m_fScale + (strH-fh)/2.0f;
+	// ⚠️ Same rule as CHUDMessage::JustifyPoly: the bullet is centred on a line
+	// of text whose y comes from CLTGUITextCtrl's vertical mapping, so it has
+	// to be placed with GetYScale() or it drifts off its own line at 16:9.
+	float y = (float)(m_basePos.y) * GetYScale() + (strH-fh)/2.0f;
 
 
 	g_pDrawPrim->SetXYWH(&m_Poly,x,y,fh,fh);
