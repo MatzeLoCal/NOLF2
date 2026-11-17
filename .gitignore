@@ -8,8 +8,12 @@ FullGame/
 # Build output
 build/
 build-*/
-*.xcodeproj/
 DerivedData/
+
+# NOLF2.xcodeproj IS the build definition and is checked in. Only what Xcode
+# keeps per user (window state, breakpoints, private schemes) stays out.
+xcuserdata/
+*.xcuserstate
 *.o
 *.obj
 *.lto

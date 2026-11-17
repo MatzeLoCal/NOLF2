@@ -336,8 +336,8 @@ bool CCheatMgr::Process( CheatCode nCheatCode, CParsedMsg &cMsg )
 		break;
 
 // ★ macOS PORT: the development cheats are ENABLED here even though we build
-// with _FINAL (macbuild/CMakeLists.txt:19 defines it for every non-Debug
-// config). They are the porting effort's own diagnostic tools —
+// with _FINAL (NOLF2.xcodeproj defines it in every configuration;
+// there is no Debug one). They are the porting effort's own diagnostic tools —
 // `mpclip` (spectator flight, the only way to reach a vantage point for a
 // reference screenshot), `mpcampos`, `mptriggers`, `mpremoveai`, and
 // `budonkadonk` (chase view, the ONLY way to see the player model and so the

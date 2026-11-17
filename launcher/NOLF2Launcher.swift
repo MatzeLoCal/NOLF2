@@ -20,6 +20,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Palette (sampled from the artwork)
 
@@ -211,7 +212,7 @@ enum HUDText {
 
 enum EngineLocator {
     /// In a shipped .app the engine sits beside the launcher. In development it
-    /// is wherever CMake put it, so a saved override wins.
+    /// is wherever the build put it, so a saved override wins.
     static func find(saved: String) -> String? {
         if !saved.isEmpty, FileManager.default.isExecutableFile(atPath: saved) { return saved }
         let sibling = Bundle.main.bundleURL
@@ -242,8 +243,8 @@ enum GameModules {
     static let envVars = ["LT_CSHELL_MODULE", "LT_OBJECT_MODULE", "LT_CLIENTFX_MODULE"]
 
     /// Search, in order: beside the engine (shipping bundle), the bundle's
-    /// Frameworks directory, and the CMake build layout, where each module
-    /// lands in its own subdirectory next to `client/Lithtech`.
+    /// Frameworks directory, and the old CMake build layout, where each module
+    /// landed in its own subdirectory next to `client/Lithtech`.
     static func locate(enginePath: String) -> [String: String] {
         let fm = FileManager.default
         let engineDir = URL(fileURLWithPath: enginePath).deletingLastPathComponent()
@@ -281,7 +282,7 @@ enum GameModules {
 }
 
 /// Read from the bundle, never hard-coded: the one place the version is set is
-/// macbuild/CMakeLists.txt, and a log that reports a version typed into Swift
+/// MARKETING_VERSION in NOLF2.xcodeproj, and a log that reports a version typed into Swift
 /// would eventually report the wrong one.
 enum AppVersion {
     static var full: String {
@@ -791,7 +792,7 @@ struct LauncherView: View {
         let p = NSOpenPanel()
         p.canChooseFiles = true
         p.allowsMultipleSelection = true
-        p.allowedFileTypes = ["rez"]
+        p.allowedContentTypes = [UTType(filenameExtension: "rez")].compactMap { $0 }
         p.message = "Select additional .rez archives"
         guard p.runModal() == .OK else { return }
         for u in p.urls where !settings.extraRez.contains(u.path) {

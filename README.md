@@ -20,40 +20,20 @@ see [Known issues](#known-issues).
 
 ## Requirements
 
-* Apple Silicon Mac (arm64), macOS 12 or later
-* Xcode command line tools, and CMake 3.20+
+* Apple Silicon Mac (arm64), macOS 15 or later
+* Xcode 16 or later (to build)
 * A retail NOLF2 installation
 
 ## Building
 
-```sh
-cmake -S macbuild -B build-mac -G "Unix Makefiles"
-cmake --build build-mac --target EXE_Lithtech -- -j8
-cmake --build build-mac --target DLL_Server NOLF2_ObjectDLL NOLF2_ClientShellDLL NOLF2_ClientFXDLL -- -j8
-```
-
-### Xcode
-
-The Xcode project is **generated**, not checked in — that keeps it from drifting
-out of sync with the CMake source lists:
+The build is the Xcode project at the root of the repository:
 
 ```sh
-cmake -S macbuild -B build-xcode -G Xcode
-open build-xcode/LithtechMacFoundation.xcodeproj
+open NOLF2.xcodeproj
 ```
 
-## The launcher (and the app bundle)
-
-The launcher, the engine and the three game modules are assembled into a single
-`NOLF2Launcher.app` by the **Xcode** build:
-
-```sh
-cmake -S macbuild -B build-xcode -G Xcode
-open build-xcode/LithtechMacFoundation.xcodeproj
-```
-
-Build the `NOLF2Launcher` scheme (or `xcodebuild -target NOLF2Launcher`). The
-resulting bundle contains everything:
+Choose the **NOLF2Launcher** scheme and build or run it. That builds the engine,
+the three game modules and the launcher, and assembles them into one bundle:
 
 ```
 NOLF2Launcher.app/Contents/MacOS/NOLF2Launcher    the launcher
@@ -61,14 +41,25 @@ NOLF2Launcher.app/Contents/MacOS/Lithtech         the engine
 NOLF2Launcher.app/Contents/Frameworks/            libCShell / libObject / libClientFx
 ```
 
-> ⚠️ **Do not use Product → Archive.** It runs the install action and replaces
-> every build product with a symlink into Xcode's archive intermediates; once
-> those are cleaned, ordinary builds fail with `ld: open() failed, errno=2` on
-> their own output. Use `macbuild/release.sh` to produce a signed build.
->
-> The Swift target is defined only for the Xcode generator — CMake supports
-> Swift under Xcode and Ninja, not Unix Makefiles. The Makefiles build below
-> still builds the engine exactly as before.
+From the command line:
+
+```sh
+xcodebuild -project NOLF2.xcodeproj -scheme NOLF2Launcher -configuration Release build
+```
+
+> ⚠️ **Signing:** set your own team under *Signing & Capabilities* (a free
+> personal team is enough). "Sign to Run Locally" builds, but macOS then refuses
+> to load the game modules into the engine and the game shows a black screen.
+> `macbuild/BUILD_NOTES.md` explains why, along with the reasons behind the
+> other build settings.
+
+### Distributing
+
+Product › Archive (scheme **NOLF2Launcher**), then *Distribute App › Direct
+Distribution* in the Organizer: it signs with your Developer ID, notarises and
+staples. `macbuild/release.sh` does the same from the command line.
+
+## The launcher
 
 The launcher asks for your retail folder, validates it, lets you add extra
 `.rez` archives (loaded in order — later entries override earlier ones), and
@@ -83,11 +74,16 @@ ever written into your game folder.**
 
 ## Running directly
 
-Point the build at your retail installation:
+Without the launcher, give the engine the three modules yourself:
 
 ```sh
+APP=/path/to/NOLF2Launcher.app
 cd "/path/to/No One Lives Forever 2"
-/path/to/build-mac/client/Lithtech -rez GAME.rez -rez GAME2.rez -rez Update_v1x3.rez -rez Game
+LT_LOAD_CSHELL=1 \
+LT_CSHELL_MODULE="$APP/Contents/Frameworks/libCShell.dylib" \
+LT_OBJECT_MODULE="$APP/Contents/Frameworks/libObject.lto" \
+LT_CLIENTFX_MODULE="$APP/Contents/Frameworks/libClientFx.dylib" \
+"$APP/Contents/MacOS/Lithtech" -rez GAME.rez -rez GAME2.rez -rez Update_v1x3.rez -rez Game
 ```
 
 To boot straight into a level:

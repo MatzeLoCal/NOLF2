@@ -47,7 +47,8 @@ void CString::FormatV(LPCTSTR pFormat, va_list args)
 	if (!pFormat)
 		return;
 
-	va_list argListSave = args;
+	va_list argListSave;
+	va_copy(argListSave, args);
 
 	// make a guess at the maximum length of the resulting string
 	int nMaxLen = 0;

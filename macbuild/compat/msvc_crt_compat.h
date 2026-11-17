@@ -1,8 +1,8 @@
 // ----------------------------------------------------------------------- //
 // MSVC C-runtime compatibility shim (POSIX / macOS).
 //
-// Force-included into every translation unit by the macOS build (see
-// macbuild/CMakeLists.txt). Provides the MSVC-specific CRT helpers the engine
+// Force-included into every translation unit by the macOS build (it is the
+// prefix header of NOLF2.xcodeproj; see macbuild/BUILD_NOTES.md). Provides the MSVC-specific CRT helpers the engine
 // uses but which are absent or differently-named on POSIX. C and C++ safe.
 // ----------------------------------------------------------------------- //
 #ifndef __LT_MSVC_CRT_COMPAT_H__

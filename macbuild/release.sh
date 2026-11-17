@@ -1,8 +1,12 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# Build, sign, notarise and staple NOLF2Launcher.app.
+# Build, sign, notarise and staple NOLF2Launcher.app -- from the command line.
 #
 #   macbuild/release.sh "Developer ID Application: Your Name (TEAMID)" [profile]
+#
+# This is the scripted alternative to Xcode's own route (Product > Archive, then
+# Distribute App > Direct Distribution in the Organizer), which does the same
+# job with no script at all. Both build NOLF2.xcodeproj; neither needs CMake.
 #
 # `profile` is a notarytool keychain profile. Create it once with:
 #
@@ -45,22 +49,10 @@ TEAM=$(security find-certificate -c "$IDENTITY" -p 2>/dev/null \
 [ -n "$TEAM" ] || TEAM=$(printf '%s' "$IDENTITY" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
 [ -n "$TEAM" ] || { echo "Could not determine a Team ID for that identity."; exit 1; }
 
-# ⚠️ CLEAR ARCHIVE RESIDUE FIRST.
-#
-# Product -> Archive in Xcode runs the *install* action and replaces the build
-# products with symlinks into DerivedData/.../ArchiveIntermediates/. Once those
-# intermediates are cleaned the links dangle, and an ordinary build then fails
-# with either "ld: open() failed, errno=2" on its own output or "MkDir ...
-# NOLF2Launcher.app" — both of which look like signing faults and are not.
-# This script is the supported distribution path, so it must not be derailed by
-# whatever happened in the IDE beforehand.
-if [ -d "$BUILD" ]; then
-    find "$BUILD" -type l 2>/dev/null | while read -r l; do
-        case "$(readlink "$l")" in
-            *ArchiveIntermediates*) echo "    clearing archive residue: $l"; rm -f "$l" ;;
-        esac
-    done
-fi
+# (This script used to clear "archive residue" here: with the CMake-generated
+# project, Product > Archive replaced the products in this folder with symlinks
+# into Xcode's archive intermediates. NOLF2.xcodeproj archives into DerivedData
+# like any other project and never touches $BUILD, so there is nothing to clear.)
 
 # ⚠️ A STAPLED .app CANNOT BE REBUILT IN PLACE.
 #
@@ -80,17 +72,18 @@ if [ -d "$APP" ]; then
     rm -rf "$APP"
 fi
 
-echo "==> Configuring"
-cmake -S "$ROOT/macbuild" -B "$BUILD" -G Xcode > /dev/null
-
 echo "==> Building Release (signed as $TEAM)"
 # ⚠️ KEEP THE LOG. This used to be `> /dev/null`, so a failure printed nothing
 # but "** BUILD FAILED **" and every diagnosis started by re-running the build
 # by hand to find out what went wrong. The full log is too noisy to show, so it
 # goes to a file and only the error lines are echoed.
+mkdir -p "$BUILD"
 BUILD_LOG=$BUILD/release-build.log
-if ! xcodebuild -project "$BUILD/LithtechMacFoundation.xcodeproj" \
+# SYMROOT/OBJROOT keep the products where they have always been
+# ($BUILD/Release/NOLF2Launcher.app) instead of in Xcode's DerivedData.
+if ! xcodebuild -project "$ROOT/NOLF2.xcodeproj" \
         -target NOLF2Launcher -configuration Release \
+        SYMROOT="$BUILD" OBJROOT="$BUILD/Intermediates" \
         CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
         CODE_SIGN_STYLE=Manual OTHER_CODE_SIGN_FLAGS="--timestamp" \
         build > "$BUILD_LOG" 2>&1
@@ -103,8 +96,9 @@ fi
 
 # ⚠️ Sign inner-out. The nested binaries must each carry Developer ID AND the
 # hardened runtime, or notarisation is rejected — the enclosing app's signature
-# is not enough. Re-signing here is belt-and-braces: the CMake targets already
-# set ENABLE_HARDENED_RUNTIME, and this guarantees the timestamp too.
+# is not enough. Re-signing here is belt-and-braces: the project already sets
+# ENABLE_HARDENED_RUNTIME for every target and signs the embedded copies itself,
+# and this guarantees the secure timestamp too.
 # ⚠️ --identifier EXPLICITLY. These are plain Mach-O files, not bundles, so
 # there is no Info.plist for codesign to take an identifier from: without this
 # it invents one per build ("Lithtech-55554944aad12..."), which is unstable

@@ -1,5 +1,5 @@
 # Everything libClientFx.dylib exports to the outside world.  See the
-# "one dylib per game module" note in macbuild/CMakeLists.txt for why the rest
+# "closed world" note in macbuild/BUILD_NOTES.md for why the rest
 # MUST stay private.
 #
 # ClientFX is the THIRD dylib built from the shared NOLF2 sources (after
