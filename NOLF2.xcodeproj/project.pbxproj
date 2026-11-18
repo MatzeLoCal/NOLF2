@@ -8641,7 +8641,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = launcher/Info.plist;
 				INSTALL_PATH = "$(LOCAL_APPS_DIR)";
-				MARKETING_VERSION = 0.6;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.schonder.nolf2mac.launcher;
 				PRODUCT_NAME = NOLF2Launcher;
 				SKIP_INSTALL = NO;
@@ -9304,7 +9304,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = launcher/Info.plist;
 				INSTALL_PATH = "$(LOCAL_APPS_DIR)";
-				MARKETING_VERSION = 0.6;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.schonder.nolf2mac.launcher;
 				PRODUCT_NAME = NOLF2Launcher;
 				SKIP_INSTALL = NO;

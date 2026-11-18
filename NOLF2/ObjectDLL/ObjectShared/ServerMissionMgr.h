@@ -60,6 +60,9 @@ class CServerMissionMgr : public IPlayerTrackerReceiver
 		int				GetCurrentLevel()	const {return m_nCurrentLevel;}
 		int				GetCurrentRound( ) const { return m_nCurrentRound; }
 		int				GetCurrentCampaignIndex( ) const { return m_nCurCampaignIndex; }
+		// macOS port: the world file the server is running, as SetMissionBasedOnLevel
+		// recorded it (e.g. "Worlds\RetailSinglePlayer\c08s04"); may be NULL or empty.
+		char const*		GetCurrentWorldName( ) const { return m_sCurrentWorldName.GetBuffer( ); }
 
 		char const*		GetLevelFromMission( int nMission, int nLevel );
 		bool			SetMissionBasedOnLevel( char const* pszFilename );

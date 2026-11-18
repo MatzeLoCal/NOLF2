@@ -22,6 +22,7 @@
 #include "ServerSoundMgr.h"
 #include <stdio.h>
 #include "AIUtils.h"
+#include "ServerMissionMgr.h"   // GetCurrentWorldName: the latch is scoped to one level
 
 LINKFROM_MODULE( Trigger );
 
@@ -384,13 +385,57 @@ void TrigTrace(const char *pMsg, ...)
 	fputc('\n', stderr);
 }
 
+// ⚠️ ROTATING BUFFERS, NOT ONE. The trace lines name two objects in a single
+// printf (`MSG trigger -> X (from Y)`), and with one static buffer both
+// arguments pointed at the same storage: every such line printed the SENDER's
+// name twice ("-> Player (from Player)"), which hid exactly which trigger a
+// message reached. Four is more than any one line uses.
 static const char *TrigName(HOBJECT hObj)
 {
-	static char s_szName[64];
-	s_szName[0] = 0;
+	static char s_aszName[4][64];
+	static int  s_nNext = 0;
+	char *pName = s_aszName[s_nNext];
+	s_nNext = (s_nNext + 1) & 3;
+	pName[0] = 0;
 	if (hObj && g_pLTServer)
-		g_pLTServer->GetObjectName(hObj, s_szName, sizeof(s_szName));
-	return s_szName[0] ? s_szName : "?";
+		g_pLTServer->GetObjectName(hObj, pName, sizeof(s_aszName[0]));
+	return pName[0] ? pName : "?";
+}
+
+// ★★ THE LATCH BELOW IS FOR c08s04 ONLY (GitHub issue #17, 2026-11-18).
+//
+// It shipped in 0.4.5 for EVERY level, and that broke levels whose designers
+// built state machines on the original rule that a locked trigger DROPS a
+// `trigger` message:
+//   * c03s03 (Misha, the pilot): talking to him sends `trigger` to a GROUP of
+//     ten triggers, of which exactly one is unlocked; each conversation step
+//     unlocks the next. With the latch the first conversation stored a trigger
+//     in all nine locked members, every later unlock replayed it at once, and
+//     the whole escort ran by itself -- Misha straight to the gate, and the
+//     soldier waves (locked until six guards die) all at the same moment.
+//   * c12s02 (the supercomputer): every use of the switch triggers
+//     dialog-A, dialog-B and S-hal9000Trig, only one unlocked. Picking up the
+//     manual unlocked B, which replayed -- the next reply and Spencer's break
+//     came early -- and picking up the addendum unlocked S-hal9000Trig, which
+//     replayed the Armstrong reveal and removed the switch.
+// Both were proven in the engine (LT_TRACE_TRIGGER, A/B with
+// LT_NO_TRIGGER_LATCH) with the levels' own messages sent through the console.
+// c08s04 was analysed object by object when the latch was written: the only
+// locked Triggers that receive `trigger` there are Pierre's p_trigger1..9, the
+// chain the latch repairs. So it is kept for that level and nowhere else.
+static bool TrigLatchAllowedHere()
+{
+	if (getenv("LT_NO_TRIGGER_LATCH"))
+		return false;
+	const char *pWorld = g_pServerMissionMgr ? g_pServerMissionMgr->GetCurrentWorldName() : LTNULL;
+	if (!pWorld || !pWorld[0])
+		return false;
+	const char *pBase = pWorld;
+	for (const char *p = pWorld; *p; ++p)
+		if (*p == '/' || *p == '\\')
+			pBase = p + 1;
+	// "c08s04", any case, optionally followed by an extension.
+	return _strnicmp(pBase, "c08s04", 6) == 0 && (pBase[6] == '\0' || pBase[6] == '.');
 }
 
 bool Trigger::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
@@ -431,7 +476,11 @@ bool Trigger::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 		// not through here), so a locked trigger still swallows a player who
 		// walks into it early. LT_NO_TRIGGER_LATCH=1 restores the original
 		// lose-it behaviour for an A/B.
-		if (m_bLocked && !getenv("LT_NO_TRIGGER_LATCH"))
+		//
+		// ⚠️ ONLY IN c08s04 -- see TrigLatchAllowedHere above. Everywhere else
+		// a locked trigger drops the message, as the retail game does, and as
+		// other levels' scripts depend on.
+		if (m_bLocked && TrigLatchAllowedHere())
 		{
 			m_bPendingMsgTrigger = LTTRUE;
 			if (g_bTraceTrigger)
