@@ -81,11 +81,17 @@ extern "C" bool LTMacWin_EngineWantsCursorLock(void) { return g_CV_CursorCenter 
 // (including "Cheat <code>") are reached; there is otherwise no way to set up
 // an in-world state (give a weapon, warp, toggle a var) from an automated run.
 // Commands run one per LT_TEST_CONSOLE_INTERVAL seconds (default 1).
+//
+// An entry may instead start with "@<seconds> " -- an exact time on the same
+// clock (e.g. "@30.5 Music I 2 Measure"); later entries without one follow it
+// at the interval. That is what a timing test needs: a 0.5 s blip followed by
+// ten quiet seconds cannot be written as evenly spaced commands. Up to 64.
 // --------------------------------------------------------------------------
 static void LTMacClient_TickTestConsole(void)
 {
     static bool   s_bParsed = false;
-    static char  *s_pCmds[16];
+    static char  *s_pCmds[64];
+    static double s_aAt[64];
     static unsigned s_nCmds = 0, s_nNext = 0;
     static double s_fStart = 60.0, s_fInterval = 1.0, s_fT0 = 0.0;
 
@@ -96,11 +102,28 @@ static void LTMacClient_TickTestConsole(void)
         if (pEnv)
         {
             char *pDup = strdup(pEnv);
-            for (char *p = strtok(pDup, ";"); p && s_nCmds < 16; p = strtok(NULL, ";"))
+            for (char *p = strtok(pDup, ";"); p && s_nCmds < 64; p = strtok(NULL, ";"))
                 s_pCmds[s_nCmds++] = p;
             if (const char *pS = getenv("LT_TEST_CONSOLE_START"))    s_fStart = atof(pS);
             if (const char *pI = getenv("LT_TEST_CONSOLE_INTERVAL")) s_fInterval = atof(pI);
             if (s_fInterval <= 0.0) s_fInterval = 1.0;
+            double fAt = s_fStart - s_fInterval;
+            for (unsigned i = 0; i < s_nCmds; ++i)
+            {
+                char *p = s_pCmds[i];
+                while (*p == ' ') ++p;
+                if (*p == '@')
+                {
+                    char *pEnd = 0;
+                    fAt = strtod(p + 1, &pEnd);
+                    p = pEnd;
+                    while (*p == ' ') ++p;
+                }
+                else
+                    fAt += s_fInterval;
+                s_pCmds[i] = p;
+                s_aAt[i]   = fAt;
+            }
             fprintf(stderr, "[con] %u test commands, start %.1fs, every %.1fs\n",
                     s_nCmds, s_fStart, s_fInterval);
         }
@@ -115,7 +138,7 @@ static void LTMacClient_TickTestConsole(void)
     if (s_fT0 == 0.0) { s_fT0 = fNow; return; }
 
     double fElapsed = fNow - s_fT0;
-    if (fElapsed < s_fStart + s_fInterval * (double)s_nNext)
+    if (fElapsed < s_aAt[s_nNext])
         return;
 
     const char *pCmd = s_pCmds[s_nNext++];

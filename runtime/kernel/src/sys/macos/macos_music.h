@@ -58,7 +58,21 @@ void LTMusic_SetVolume(long nVolume);
 // The mood system. Intensities are numbered from 1 and chain to each other
 // through their control-file `next` field, which is what gives the score its
 // variation without any extra logic here.
-void LTMusic_ChangeIntensity(int nNewIntensity);
+//
+// ★ WHEN a change takes effect -- the LTDMEnactTypes the game passes, mapped
+// by ltdirectmusic_impl.cpp. The game asks for "measure" and every one of the
+// 1346 authored transitions says MEASURE, so a change waits for the next bar
+// line of the playing segment, and a later request replaces a waiting one
+// (GitHub issue #19 -- see LTMusic_ChangeIntensity in macos_music.cpp).
+enum LTMusicWhen
+{
+	LTMUSIC_WHEN_DEFAULT = 0,   // the control file's TRANSITION timing; a bar line if none
+	LTMUSIC_WHEN_IMMEDIATE,
+	LTMUSIC_WHEN_BEAT,
+	LTMUSIC_WHEN_MEASURE,
+	LTMUSIC_WHEN_SEGMENT        // the end of the playing segment
+};
+void LTMusic_ChangeIntensity(int nNewIntensity, LTMusicWhen eWhen = LTMUSIC_WHEN_DEFAULT);
 int  LTMusic_GetCurIntensity();
 int  LTMusic_GetNumIntensities();
 int  LTMusic_GetInitialIntensity();

@@ -326,6 +326,18 @@ bool CMusicMgr::SetMood( Mood eMood )
 	uint32 iLevel = GetRandom(0, m_acMoods[eMood]-1);
 	sprintf(szMusic, "MUSIC I %d measure", m_aanMoods[eMood][iLevel]);
 
+	// LT_TRACE_MUSIC=1 (the switch the client's music player traces under too):
+	// every mood change the server makes, with its time, so a log shows whether
+	// the mood is stable or flapping. The original ShowMusicChange console
+	// variable does the same but is compiled out of _FINAL builds.
+	if ( getenv("LT_TRACE_MUSIC") )
+	{
+		fprintf(stderr, "[music] t=%.2f server mood %s -> %s, sends \"%s\"\n",
+			g_pLTServer->GetTime(),
+			(m_eLastMood >= 0 && m_eLastMood < kNumMoods) ? s_aszMusicMoods[m_eLastMood] : "-",
+			s_aszMusicMoods[eMood], szMusic);
+	}
+
 #ifndef _FINAL
 	if ( g_ShowMusicTrack.GetFloat() > 0 )
 	{

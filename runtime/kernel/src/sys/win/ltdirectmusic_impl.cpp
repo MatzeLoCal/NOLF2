@@ -119,15 +119,29 @@ LTRESULT CLTDirectMusicMgr::SetVolume(const long nVolume)
 	return LT_OK;
 }
 
-LTRESULT CLTDirectMusicMgr::ChangeIntensity(const int nNewIntensity, const LTDMEnactTypes /*nStart*/)
+LTRESULT CLTDirectMusicMgr::ChangeIntensity(const int nNewIntensity, const LTDMEnactTypes nStart)
 {
 #ifdef LT_MACOS
-	// The enact type (Immediate/Beat/Measure/Segment) selects WHEN DirectMusic
-	// would cut over. We always change at the end of the bridging transition
-	// segment, or immediately when none is authored -- see macos_music.cpp.
-	LTMusic_ChangeIntensity(nNewIntensity);
+	// The enact type selects WHEN DirectMusic cuts over, and it matters: this
+	// used to be dropped, every change happened at once, and a mood that
+	// flickered for half a second chopped the music into fragments (GitHub
+	// issue #19). Grid is finer than a beat and markers are not authored in
+	// this game's segments, so they map to the nearest thing we schedule.
+	LTMusicWhen eWhen = LTMUSIC_WHEN_DEFAULT;
+	switch (nStart)
+	{
+		case LTDMEnactImmediately:	eWhen = LTMUSIC_WHEN_IMMEDIATE;	break;
+		case LTDMEnactNextBeat:
+		case LTDMEnactNextGrid:		eWhen = LTMUSIC_WHEN_BEAT;		break;
+		case LTDMEnactNextMeasure:
+		case LTDMEnactNextMarker:	eWhen = LTMUSIC_WHEN_MEASURE;	break;
+		case LTDMEnactNextSegment:	eWhen = LTMUSIC_WHEN_SEGMENT;	break;
+		default:					eWhen = LTMUSIC_WHEN_DEFAULT;	break;
+	}
+	LTMusic_ChangeIntensity(nNewIntensity, eWhen);
 #else
 	(void)nNewIntensity;
+	(void)nStart;
 #endif
 	return LT_OK;
 }

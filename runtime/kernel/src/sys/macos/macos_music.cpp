@@ -61,9 +61,23 @@ namespace
 		MusicWave() : m_nTicks(0), m_fStartSec(0.0f) {}
 	};
 
+	// One entry of a segment's time-signature track (DMUS_IO_TIMESIGNATURE_ITEM).
+	struct MusicTimeSig
+	{
+		int32 m_nTicks;        // where it takes effect, in MUSIC_TIME ticks
+		int   m_nBeatsPerBar;  // bBeatsPerMeasure
+		int   m_nBeatNote;     // bBeat: 4 = a quarter-note beat
+	};
+
 	struct MusicSegment
 	{
 		std::vector<MusicWave> m_aWaves;
+		// ★ THE BAR LINES A CHANGE WAITS FOR. Every one of the 1542 segments
+		// carries a time signature, and many have long bars on purpose -- the
+		// Siberia search segments are 12/4 and 8/4 at 128 BPM, i.e. ONE bar
+		// per segment -- so "change at the next measure" means "finish this
+		// phrase". Empty only for a segment without the track (4/4 assumed).
+		std::vector<MusicTimeSig> m_aSigs;
 		double m_fTempo;       // BPM from the tempo track
 		uint32 m_nLenTicks;    // segh length
 		float  m_fLenSec;      // resolved
@@ -99,6 +113,7 @@ namespace
 	std::map<std::string, MusicSegment> s_Segments;    // parsed .SGT cache, keyed lowercase
 	std::map<int, MusicIntensity>       s_Intensities;
 	std::map<uint32, std::string>       s_Transitions; // from*4096+to -> segment ("" = none)
+	std::map<uint32, std::string>       s_TransitionWhen; // from*4096+to -> "MEASURE", "BEAT", ...
 
 	int  s_nNumIntensities   = 0;
 	int  s_nInitialIntensity = 0;
@@ -114,6 +129,20 @@ namespace
 	int   s_nPendingIntensity = -1; // queued behind a transition segment
 	float s_fSegmentEndsAt = 0.0f;  // when the current segment hands over
 	std::vector<MusicVoice> s_aVoices;
+
+	// The playing primary segment, for the bar lines a change waits for. The
+	// pointer is into s_Segments, a std::map, so it stays valid until the
+	// level's music is torn down (TermLevel clears both).
+	const MusicSegment *s_pCurSegment = 0;
+	float s_fSegmentStartedAt = 0.0f;
+
+	// ★ The intensity the GAME last asked for and got -- its mood -- as opposed
+	// to s_nCurIntensity, which follows the authored chain (31 -> 32 -> ... ->
+	// 49 -> 31 for Siberia's search music) while the mood stays put.
+	int   s_nTargetIntensity = 0;
+	// A request waiting for its bar line (-1 = none) and when that comes.
+	int   s_nQueuedIntensity = -1;
+	float s_fQueuedAt = 0.0f;
 
 	std::string mus_Lower(const std::string &s)
 	{
@@ -236,6 +265,24 @@ namespace
 				if (f > 1.0 && f < 1000.0)
 					cSeg.m_fTempo = f;
 			}
+			else if (!memcmp(pId, "tims", 4) && nSize >= 4)
+			{
+				// A DWORD item size, then DMUS_IO_TIMESIGNATURE_ITEMs:
+				// { long lTime; BYTE bBeatsPerMeasure; BYTE bBeat; WORD wGridsPerBeat; }
+				const uint32 nItem = mus_RdU32(pData + nBody);
+				if (nItem >= 8)
+				{
+					for (uint32 q = nBody + 4; q + nItem <= nStop; q += nItem)
+					{
+						MusicTimeSig cSig;
+						cSig.m_nTicks      = mus_RdI32(pData + q);
+						cSig.m_nBeatsPerBar = pData[q + 4];
+						cSig.m_nBeatNote    = pData[q + 5];
+						if (cSig.m_nBeatsPerBar > 0 && cSig.m_nBeatNote > 0)
+							cSeg.m_aSigs.push_back(cSig);
+					}
+				}
+			}
 			else if (!memcmp(pId, "waih", 4) && nSize >= 52)
 			{
 				nPendingTicks = mus_RdI32(pData + nBody + 48);
@@ -287,9 +334,11 @@ namespace
 
 		if (mus_Trace())
 		{
-			fprintf(stderr, "[music] segment '%s': tempo=%.0f len=%u ticks (%.2fs) %u waves\n",
+			fprintf(stderr, "[music] segment '%s': tempo=%.0f len=%u ticks (%.2fs) %u waves, bar %d/%d\n",
 			        sFile.c_str(), cSeg.m_fTempo, cSeg.m_nLenTicks, cSeg.m_fLenSec,
-			        (unsigned)cSeg.m_aWaves.size());
+			        (unsigned)cSeg.m_aWaves.size(),
+			        cSeg.m_aSigs.empty() ? 4 : cSeg.m_aSigs[0].m_nBeatsPerBar,
+			        cSeg.m_aSigs.empty() ? 4 : cSeg.m_aSigs[0].m_nBeatNote);
 			for (size_t i = 0; i < cSeg.m_aWaves.size(); ++i)
 				fprintf(stderr, "[music]     +%6.2fs  %s\n",
 				        cSeg.m_aWaves[i].m_fStartSec, cSeg.m_aWaves[i].m_sFile.c_str());
@@ -313,6 +362,7 @@ static void mus_ParseControlFile(const std::vector<uint8> &aData)
 {
 	s_Intensities.clear();
 	s_Transitions.clear();
+	s_TransitionWhen.clear();
 	s_nNumIntensities = s_nInitialIntensity = s_nInitialVolume = s_nVolumeOffset = 0;
 
 	std::string sText((const char*)&aData[0], aData.size());
@@ -378,6 +428,7 @@ static void mus_ParseControlFile(const std::vector<uint8> &aData)
 			// segment means "just switch", and the retail files use that form.
 			std::string sSeg = (aTok.size() >= 6) ? aTok[5] : std::string();
 			s_Transitions[(uint32)nFrom * 4096u + (uint32)nTo] = sSeg;
+			s_TransitionWhen[(uint32)nFrom * 4096u + (uint32)nTo] = mus_Lower(aTok[3]);
 		}
 	}
 }
@@ -507,14 +558,59 @@ static float mus_StartSegment(const std::string &sSegFile, bool bSecondary)
 	for (size_t i = 0; i < pSeg->m_aWaves.size(); ++i)
 		mus_QueueWave(pSeg->m_aWaves[i].m_sFile, fNow + pSeg->m_aWaves[i].m_fStartSec, bSecondary);
 
+	// The primary segment's clock is what bar lines are counted from.
+	if (!bSecondary)
+	{
+		s_pCurSegment       = pSeg;
+		s_fSegmentStartedAt = fNow;
+	}
+
 	// The live voice count is the leak canary: the driver has 32 stream voices
 	// and music must sit at a handful. A number that only ever grows means
 	// finished streams are not being retired in LTMusic_Update.
 	if (mus_Trace())
-		fprintf(stderr, "[music] play segment '%s' (%.2fs, %u waves)%s  [voices=%u]\n",
-		        sSegFile.c_str(), pSeg->m_fLenSec, (unsigned)pSeg->m_aWaves.size(),
+		fprintf(stderr, "[music] t=%.2f play segment '%s' (%.2fs, %u waves)%s  [voices=%u]\n",
+		        fNow, sSegFile.c_str(), pSeg->m_fLenSec, (unsigned)pSeg->m_aWaves.size(),
 		        bSecondary ? " [secondary]" : "", (unsigned)s_aVoices.size());
 	return pSeg->m_fLenSec;
+}
+
+// The first beat or bar line of the playing primary segment at or after fNow,
+// as an absolute time; the segment's end if none falls before it (which is
+// where the next segment's first bar line is). MUSIC_TIME is 768 ticks per
+// quarter note, so a beat of note value N is 3072/N ticks.
+static float mus_NextBoundary(float fNow, bool bBar)
+{
+	if (!s_pCurSegment || s_pCurSegment->m_fTempo <= 0.0 || s_pCurSegment->m_nLenTicks == 0)
+		return fNow;
+	const MusicSegment &cSeg = *s_pCurSegment;
+	const double fTickSec = 60.0 / (cSeg.m_fTempo * 768.0);
+	const double fElapsedTicks = (double)(fNow - s_fSegmentStartedAt) / fTickSec;
+
+	// Walk the bars (or beats) from the top of the segment; a time signature
+	// change starts a new bar where it takes effect.
+	int32 nTick = 0;
+	size_t nSig = 0;
+	int nBeats = 4, nNote = 4;
+	while (nTick < (int32)cSeg.m_nLenTicks)
+	{
+		while (nSig < cSeg.m_aSigs.size() && cSeg.m_aSigs[nSig].m_nTicks <= nTick)
+		{
+			nBeats = cSeg.m_aSigs[nSig].m_nBeatsPerBar;
+			nNote  = cSeg.m_aSigs[nSig].m_nBeatNote;
+			++nSig;
+		}
+		int32 nStep = (3072 / nNote) * (bBar ? nBeats : 1);
+		if (nStep <= 0) break;
+		// A signature change inside this bar cuts it short there.
+		if (nSig < cSeg.m_aSigs.size() && cSeg.m_aSigs[nSig].m_nTicks < nTick + nStep)
+			nStep = cSeg.m_aSigs[nSig].m_nTicks - nTick;
+		if (nStep <= 0) break;
+		if ((double)nTick >= fElapsedTicks)
+			return s_fSegmentStartedAt + (float)(nTick * fTickSec);
+		nTick += nStep;
+	}
+	return s_fSegmentEndsAt;
 }
 
 // Begins an intensity: its segment, and the point at which it hands over.
@@ -546,6 +642,7 @@ static void mus_EnterIntensity(int nIntensity)
 	{
 		// An unreadable segment must not wedge the chain — step on after a beat.
 		fLen = 2.0f;
+		s_pCurSegment = 0;   // no bar lines to wait for: a change may come at once
 	}
 	s_fSegmentEndsAt = time_GetTime() + fLen;
 }
@@ -598,6 +695,10 @@ bool LTMusic_InitLevel(const char *sWorkingDir, const char *sControlFile)
 	s_bLevelReady = !s_Intensities.empty();
 	s_nVolume     = s_nInitialVolume;
 
+	if (getenv("LT_MUSIC_IMMEDIATE"))
+		fprintf(stderr, "[music] LT_MUSIC_IMMEDIATE on -- intensity changes cut over the "
+		                "moment they are asked for (the behaviour before issue #19)\n");
+
 	fprintf(stderr, "[music] %s: %u intensities, %u transitions, initial=%d volume=%d offset=%d"
 	                " -> %.1f dB (headroom %.1f%+.1f) = %d/127\n",
 	        mus_Join(s_sDir, s_sControlFile).c_str(),
@@ -623,6 +724,12 @@ void LTMusic_TermLevel()
 	s_nCurIntensity = 0;
 	s_nPendingIntensity = -1;
 	s_fSegmentEndsAt = 0.0f;
+	s_TransitionWhen.clear();
+	s_pCurSegment = 0;            // pointed into s_Segments, cleared above
+	s_fSegmentStartedAt = 0.0f;
+	s_nTargetIntensity = 0;
+	s_nQueuedIntensity = -1;
+	s_fQueuedAt = 0.0f;
 }
 
 void LTMusic_Play()
@@ -633,6 +740,8 @@ void LTMusic_Play()
 	s_bPaused  = false;
 	if (s_nCurIntensity <= 0)
 		s_nCurIntensity = (s_nInitialIntensity > 0) ? s_nInitialIntensity : 1;
+	s_nTargetIntensity = s_nCurIntensity;
+	s_nQueuedIntensity = -1;
 	mus_EnterIntensity(s_nCurIntensity);
 }
 
@@ -640,6 +749,7 @@ void LTMusic_Stop()
 {
 	s_bPlaying = false;
 	s_nPendingIntensity = -1;
+	s_nQueuedIntensity = -1;
 	mus_StopAllVoices(true);
 }
 
@@ -666,19 +776,13 @@ void LTMusic_SetVolume(long nVolume)
 	mus_ApplyVolume();
 }
 
-void LTMusic_ChangeIntensity(int nNewIntensity)
+// Carries out an intensity change NOW: the authored transition segment as a
+// bridge with the destination queued behind it, or a direct cut. Only the
+// timing in front of this (LTMusic_ChangeIntensity, LTMusic_Update) is new;
+// this is what used to run the moment the game asked.
+static void mus_ExecuteChange(int nNewIntensity)
 {
-	// ⚠️ THE PENDING TARGET COUNTS AS "ALREADY THERE".
-	// While a transition segment bridges to nNewIntensity, s_nCurIntensity still
-	// holds the OLD intensity — so comparing against it alone lets every repeat
-	// of the same request restart the bridge. The game re-asserts its mood
-	// continuously, which turned into `23 -> 41 via TransOhioCE0` firing ~5x a
-	// second: 555 segments in 110s instead of ~15, with the stream churn to
-	// match. Only a request for a DIFFERENT destination may interrupt a
-	// transition.
-	if (!s_bLevelReady || nNewIntensity <= 0 ||
-	    nNewIntensity == s_nCurIntensity || nNewIntensity == s_nPendingIntensity)
-		return;
+	s_nTargetIntensity = nNewIntensity;
 
 	// A transition is itself a segment. When one is authored for this pair we
 	// play it now and queue the destination behind it; otherwise we cut across
@@ -696,14 +800,15 @@ void LTMusic_ChangeIntensity(int nNewIntensity)
 			s_nPendingIntensity = nNewIntensity;
 			s_fSegmentEndsAt    = time_GetTime() + fLen;
 			if (mus_Trace())
-				fprintf(stderr, "[music] intensity %d -> %d via '%s'\n",
-				        s_nCurIntensity, nNewIntensity, it->second.c_str());
+				fprintf(stderr, "[music] t=%.2f intensity %d -> %d via '%s'\n",
+				        time_GetTime(), s_nCurIntensity, nNewIntensity, it->second.c_str());
 			return;
 		}
 	}
 
 	if (mus_Trace())
-		fprintf(stderr, "[music] intensity %d -> %d (direct)\n", s_nCurIntensity, nNewIntensity);
+		fprintf(stderr, "[music] t=%.2f intensity %d -> %d (direct)\n",
+		        time_GetTime(), s_nCurIntensity, nNewIntensity);
 	s_nPendingIntensity = -1;
 	if (s_bPlaying)
 	{
@@ -713,6 +818,131 @@ void LTMusic_ChangeIntensity(int nNewIntensity)
 	else
 	{
 		s_nCurIntensity = nNewIntensity;
+	}
+}
+
+// LT_MUSIC_IMMEDIATE=1 -- the A/B arm: every change cuts over the moment it is
+// asked for, as before the fix for issue #19. Announced by LTMusic_InitLevel.
+static bool mus_Immediate()
+{
+	static int s_n = -1;
+	if (s_n < 0) s_n = getenv("LT_MUSIC_IMMEDIATE") ? 1 : 0;
+	return s_n != 0;
+}
+
+static const char *mus_WhenName(LTMusicWhen e)
+{
+	switch (e)
+	{
+		case LTMUSIC_WHEN_IMMEDIATE: return "immediately";
+		case LTMUSIC_WHEN_BEAT:      return "next beat";
+		case LTMUSIC_WHEN_SEGMENT:   return "segment end";
+		case LTMUSIC_WHEN_MEASURE:   return "next bar";
+		default:                     return "default";
+	}
+}
+
+void LTMusic_ChangeIntensity(int nNewIntensity, LTMusicWhen eWhen)
+{
+	if (!s_bLevelReady || nNewIntensity <= 0)
+		return;
+
+	if (mus_Immediate())
+	{
+		// The pre-#19 behaviour, kept whole for the A/B: the pending
+		// destination of a bridge counts as "already there" (the C01S01 fix
+		// of August), everything else cuts over at once.
+		if (nNewIntensity == s_nCurIntensity || nNewIntensity == s_nPendingIntensity)
+			return;
+		mus_ExecuteChange(nNewIntensity);
+		return;
+	}
+
+	// ★★ A CHANGE WAITS FOR ITS BAR LINE, AND A LATER REQUEST REPLACES IT
+	// (GitHub issue #19: "the search music repeats very short fragments").
+	//
+	// The game asks for every mood change with `MUSIC I <n> measure`, and all
+	// 1346 TRANSITION lines in all twelve control files say MEASURE: under
+	// DirectMusic a change took effect at the next bar line of the playing
+	// segment, never in the middle of one. Those bars are long -- the Siberia
+	// search segments are a single 12/4 or 8/4 bar of 5.6 s / 3.75 s -- so a
+	// change really waited for the end of the phrase.
+	//
+	// This player used to cut over the moment the request arrived. The server's
+	// mood is a per-frame vote that flickers: a guard who hears a shot holds
+	// "Aggressive" for 0.6 s and drops back (measured in c04s04, LT_TRACE_MUSIC).
+	// That cost two cuts -- the explore phrase stopped dead, 0.6 s of the
+	// combat bridge, then the explore chain restarted from its first segment --
+	// and a search, with several guards drifting between states, does it over
+	// and over: "2 seconds, sometimes even less, on repeat".
+	//
+	// So: queue the request for the next bar line (beat / segment end /
+	// at once when that is what was asked), let a later request replace it,
+	// and call it off when the mood comes back before the bar line.
+	//
+	// ⚠️ "ALREADY IN EFFECT" MEANS THE MOOD, NOT THE CHAIN POSITION. While the
+	// mood stays put the music walks its authored chain (31 -> 32 -> ... -> 49
+	// -> 31), so s_nCurIntensity moves on while the game keeps meaning 31. A
+	// repeated request for 31 compared against s_nCurIntensity looks like a
+	// change and restarts the chain at its first segment -- the same symptom by
+	// another road. s_nTargetIntensity is what the game asked for and got.
+	if (nNewIntensity == s_nTargetIntensity)
+	{
+		if (s_nQueuedIntensity > 0)
+		{
+			if (mus_Trace())
+				fprintf(stderr, "[music] t=%.2f intensity %d asked for again before the bar "
+				                "line -- the change to %d is called off\n",
+				        time_GetTime(), nNewIntensity, s_nQueuedIntensity);
+			s_nQueuedIntensity = -1;
+		}
+		return;
+	}
+
+	if (!s_bPlaying)
+	{
+		s_nQueuedIntensity = -1;
+		mus_ExecuteChange(nNewIntensity);
+		return;
+	}
+
+	// DEFAULT means what the control file authored for this pair -- MEASURE in
+	// every retail file -- and a bar line when the pair has no entry.
+	if (eWhen == LTMUSIC_WHEN_DEFAULT)
+	{
+		eWhen = LTMUSIC_WHEN_MEASURE;
+		std::map<uint32, std::string>::iterator itWhen =
+			s_TransitionWhen.find((uint32)s_nCurIntensity * 4096u + (uint32)nNewIntensity);
+		if (itWhen != s_TransitionWhen.end())
+		{
+			const std::string &s = itWhen->second;
+			if (s == "immediate" || s == "immediately")  eWhen = LTMUSIC_WHEN_IMMEDIATE;
+			else if (s == "beat" || s == "grid")         eWhen = LTMUSIC_WHEN_BEAT;
+			else if (s == "segment" || s == "end")       eWhen = LTMUSIC_WHEN_SEGMENT;
+		}
+	}
+
+	const float fNow = time_GetTime();
+	float fAt = fNow;
+	if (eWhen == LTMUSIC_WHEN_BEAT)          fAt = mus_NextBoundary(fNow, false);
+	else if (eWhen == LTMUSIC_WHEN_MEASURE)  fAt = mus_NextBoundary(fNow, true);
+	else if (eWhen == LTMUSIC_WHEN_SEGMENT)  fAt = s_fSegmentEndsAt;
+	if (fAt > s_fSegmentEndsAt) fAt = s_fSegmentEndsAt;
+	if (fAt < fNow) fAt = fNow;
+
+	if (mus_Trace())
+		fprintf(stderr, "[music] t=%.2f intensity %d asked for (%s)%s -- waits %.2fs "
+		                "[mood %d, chain at %d]\n",
+		        fNow, nNewIntensity, mus_WhenName(eWhen),
+		        (s_nQueuedIntensity > 0) ? " replacing a waiting change" : "",
+		        fAt - fNow, s_nTargetIntensity, s_nCurIntensity);
+
+	s_nQueuedIntensity = nNewIntensity;
+	s_fQueuedAt        = fAt;
+	if (fAt <= fNow)
+	{
+		s_nQueuedIntensity = -1;
+		mus_ExecuteChange(nNewIntensity);
 	}
 }
 
@@ -786,7 +1016,19 @@ void LTMusic_Update()
 		else ++i;
 	}
 
-	// 2. Hand over when the current segment's musical length has elapsed. The
+	// 2. A change the game asked for, at its bar line. Ahead of the chain step
+	//    below on purpose: the bar line can be the segment's end, and then the
+	//    change is what plays next, not the chain's next segment.
+	if (s_bPlaying && s_nQueuedIntensity > 0 && fNow >= s_fQueuedAt)
+	{
+		const int nNext = s_nQueuedIntensity;
+		s_nQueuedIntensity = -1;
+		if (mus_Trace())
+			fprintf(stderr, "[music] t=%.2f bar line: changing to intensity %d\n", fNow, nNext);
+		mus_ExecuteChange(nNext);
+	}
+
+	// 3. Hand over when the current segment's musical length has elapsed. The
 	//    tails of its waves deliberately keep playing underneath the new one —
 	//    that is what makes the score continuous.
 	if (s_bPlaying && fNow >= s_fSegmentEndsAt)
