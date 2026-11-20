@@ -136,6 +136,23 @@ public:
 	static float		GetHUDTextScale();
 	LTFLOAT             GetHUDFontRatio()                    {return GetFontRatio() * GetHUDTextScale();}
 
+	// ★★ BACKING PIXELS PER POINT -- 2.0 on a Retina display, 1.0 on any other
+	// (and always 1.0 off macOS). GitHub issue #21.
+	//
+	// Every size the shell computes is in BACKING pixels. That is right for
+	// anything laid out in the 640x480 reference space: XRatio/YRatio already
+	// carry the real resolution, Retina included. It is WRONG for the few
+	// things the original draws at a FIXED NUMBER OF SCREEN PIXELS whatever the
+	// resolution -- the crosshair is its 32x32 texture drawn as 32x32 pixels,
+	// and the scope hairs are 2 and 4 pixels thick. On Windows a pixel is a
+	// point, so those are 32 points; here they came out at 16, half the width
+	// and height ("the crosshair size is also quite different").
+	//
+	// ⚠️ ONLY for those fixed-pixel sizes: multiplying them by this puts them
+	// back in points. Anything already scaled by a ratio would be doubled.
+	// The engine hook is the one CCursorMgr's software cursor uses (#6).
+	static float		GetPointScale();
+
 	// ★★ THE 4:3 LETTERBOX FOR FULL-SCREEN AUTHORED ART (loading + postload).
 	//
 	// Screens whose backdrop is a single authored 640x480 image cannot use

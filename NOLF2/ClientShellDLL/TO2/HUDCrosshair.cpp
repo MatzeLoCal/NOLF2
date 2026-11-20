@@ -377,6 +377,11 @@ void CHUDCrosshair::RenderScope()
 {
 	g_pDrawPrim->SetTexture(LTNULL);
 
+	// The posts are 4 SCREEN PIXELS thick and the hairs 2 in the original, at
+	// every resolution -- fixed pixels, like the reticle, so in points here
+	// (GitHub issue #21; see ScalePolies). 1.0 off Retina: the original.
+	const float t = CInterfaceResMgr::GetPointScale();
+
 	g_pDrawPrim->SetRGBA(&m_Poly[2],argbBlack);
 
 	float cx = 320.0f * g_pInterfaceResMgr->GetXRatio();
@@ -390,38 +395,38 @@ void CHUDCrosshair::RenderScope()
 
 	//left post
 	float x = cx - hR;
-	float y = cy - 2.0f;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),4.0f);
+	float y = cy - 2.0f * t;
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),4.0f * t);
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//right post
 	x = cx + hGap;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),4.0f);
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),4.0f * t);
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//horizontal hair
 	x = cx - hGap;
-	y = cy - 1.0f;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hGap * 2.0f),2.0f);
+	y = cy - 1.0f * t;
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hGap * 2.0f),2.0f * t);
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 
 
 	//top post
-	x = cx - 2.0f;
+	x = cx - 2.0f * t;
 	y = cy - vR;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,4.0f,(vR-vGap));
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,4.0f * t,(vR-vGap));
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//bottom post
 	y = cy + vGap;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,4.0f,(vR-vGap));
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,4.0f * t,(vR-vGap));
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//vertical hair
-	x = cx - 1.0f;
+	x = cx - 1.0f * t;
 	y = cy - vGap;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f,(vGap * 2.0f));
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f * t,(vGap * 2.0f));
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 
@@ -430,24 +435,24 @@ void CHUDCrosshair::RenderScope()
 
 	//left highlight
 	x = cx - hR;
-	y = cy - 1.0f;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),2.0f);
+	y = cy - 1.0f * t;
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),2.0f * t);
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//right highlight
 	x = cx + vGap;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),2.0f);
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,(hR-hGap),2.0f * t);
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//top highlight
-	x = cx - 1.0f;
+	x = cx - 1.0f * t;
 	y = cy - vR;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f,(vR-vGap));
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f * t,(vR-vGap));
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 	//bottom highlight
 	y = cy + vGap;
-	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f,(vR-vGap));
+	g_pDrawPrim->SetXYWH(&m_Poly[2],x,y,2.0f * t,(vR-vGap));
 	g_pDrawPrim->DrawPrim(&m_Poly[2],1);
 
 
@@ -580,17 +585,31 @@ void CHUDCrosshair::SetStyle(uint8 style)
 
 void CHUDCrosshair::ScalePolies()
 {
+	// ★ THE RETICLE IS SIZED IN POINTS (GitHub issue #21 -- "the crosshair size
+	// is also quite different").
+	//
+	// The original draws each reticle at its texture's size in SCREEN PIXELS at
+	// every resolution -- 32x32 (accurate) and 64x64 (inaccurate); it is not
+	// part of the 640x480 layout and never scales. On Windows a pixel is a
+	// point. On a Retina display it is half of one, so the reticle came out at
+	// half the size: 32 pixels against the reporter's 64 from the original,
+	// which runs at the display's point resolution and is doubled by macOS.
+	// GetPointScale() puts it back in points; on an ordinary display it is 1.0
+	// and this is the original, untouched. Called again whenever the screen
+	// ratios change (Update), which a move to another display always does.
+	const float fPt = CInterfaceResMgr::GetPointScale();
+
 	float x = (float)g_pInterfaceResMgr->GetScreenWidth() / 2.0f;
 	float y = (float)g_pInterfaceResMgr->GetScreenHeight() / 2.0f;
-	float sz = m_fAccurateSz;
-	
+	float sz = m_fAccurateSz * fPt;
+
 	x -= sz/2.0f;
 	y -= sz/2.0f;
 	g_pDrawPrim->SetXYWH(&m_Poly[0],x,y,sz,sz);
 
 	x = (float)g_pInterfaceResMgr->GetScreenWidth() / 2.0f;
 	y = (float)g_pInterfaceResMgr->GetScreenHeight() / 2.0f;
-	sz = m_fInaccurateSz;
+	sz = m_fInaccurateSz * fPt;
 	
 	x -= sz/2.0f;
 	y -= sz/2.0f;

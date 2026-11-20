@@ -169,11 +169,26 @@ void CHUDHiding::Update()
 		return;
 	}
 	
-	float x = (float)m_BasePos.x * g_pInterfaceResMgr->GetXRatio();
-	float y = (float)m_BasePos.y * g_pInterfaceResMgr->GetYRatio();
+	// ★ THE ICON KEEPS ITS SHAPE (GitHub issue #21 -- "the hidden mode
+	// indicator distorted in 16:9").
+	//
+	// The original scales the width by XRatio and the height by YRatio. The
+	// icon is authored SQUARE -- HideIconSize (24,24) at HideIconPos (308,300),
+	// i.e. centred on x=320 -- so on 16:9 that drew round art 4/3 too wide:
+	// 154x115 pixels at 4096x2304, measured 147x110 in the report. (§106 kept
+	// this rect on purpose, reading it as a two-dimensional panel like a
+	// meter's bar. It is not: it is a picture, and a picture must not stretch.)
+	//
+	// So the SIZE takes GetFontRatio() for both sides, like every other HUD
+	// icon, and the POSITION keeps the authored CENTRE on XRatio/YRatio: the
+	// icon stays on the screen's centre line and just above its hiding bar.
+	// When XRatio == YRatio (any 4:3 mode) all of this is the original.
+	const float fSize = g_pInterfaceResMgr->GetFontRatio();
+	float w = (float)m_BaseSize.x * fSize;
+	float h = (float)m_BaseSize.y * fSize;
 
-	float w = (float)m_BaseSize.x * g_pInterfaceResMgr->GetXRatio();
-	float h = (float)m_BaseSize.y * g_pInterfaceResMgr->GetYRatio();
+	float x = ((float)m_BasePos.x + (float)m_BaseSize.x * 0.5f) * g_pInterfaceResMgr->GetXRatio() - w * 0.5f;
+	float y = ((float)m_BasePos.y + (float)m_BaseSize.y * 0.5f) * g_pInterfaceResMgr->GetYRatio() - h * 0.5f;
 
 	g_pDrawPrim->SetXYWH(&m_Poly[kHidePrim],x,y,w,h);
 	g_pDrawPrim->SetXYWH(&m_Poly[kHiddenPrim],x,y,w,h);

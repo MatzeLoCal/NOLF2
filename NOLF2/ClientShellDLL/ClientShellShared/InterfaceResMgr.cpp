@@ -127,6 +127,29 @@ float CInterfaceResMgr::GetHUDTextScale()
 	return s_fScale;
 }
 
+// See the banner on GetPointScale in the header. The same query, and the same
+// bounds, as CCursorMgr's GetSoftwareCursorScale (GitHub issue #6): the engine
+// hands out a pointer to a LIVE value, so one lookup follows the game view
+// across a move between displays of different density.
+float CInterfaceResMgr::GetPointScale()
+{
+#ifdef LT_MACOS
+	static const float *s_pScale = LTNULL;
+	static bool s_bAsked = false;
+	if (!s_bAsked)
+	{
+		s_bAsked = true;
+		void *pSlot = LTNULL;
+		if (g_pLTClient->GetEngineHook("MacPointScale", &pSlot) == LT_OK && pSlot)
+			s_pScale = (const float*)pSlot;
+	}
+	const float fScale = s_pScale ? *s_pScale : 1.0f;
+	return (fScale > 1.0f && fScale <= 8.0f) ? fScale : 1.0f;
+#else
+	return 1.0f;
+#endif
+}
+
 LTBOOL CInterfaceResMgr::Init()
 {
 
