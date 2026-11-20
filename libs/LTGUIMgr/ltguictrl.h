@@ -88,7 +88,8 @@ public:
 	// Both default to 1.0f, which is byte-for-byte the old behaviour, and that is
 	// also what a 4:3 mode sets them back to.
 	//
-	// ⚠️ Set from CInterfaceResMgr::SetupResolution ONLY. They are global because
+	// ⚠️ Set from CInterfaceResMgr::SetupResolution ONLY -- plus, for the length
+	// of one layout, CLTGUIUniformScale below. They are global because
 	// the resolution is: a per-control flag would not survive CLTGUIWindow and
 	// CLTGUIListCtrl forwarding a bare float to their children.
 	// ⚠️ Callers that pass 1.0f mean "measure me in base 640x480 space" and are
@@ -220,5 +221,32 @@ inline	uint32	CLTGUICtrl::GetCurrentColor()
 	if (IsDisabled()) return(m_argbDisabled);
 	return(m_argbNormal);
 }
+
+// ★ ONE SCALE FOR x, y AND THE FONT, FOR AS LONG AS THIS OBJECT LIVES
+// (GitHub issue #18 -- "the Information items are shorter than in original").
+//
+// SetLayoutRatios makes the scale a control is given the HORIZONTAL one and
+// derives y and character height from it. That is right for a screen laid out
+// across the full width. It is wrong for a PICTURE that must keep its shape --
+// a document sheet: CPopupText passed GetFontRatio() as a uniform scale, the
+// derivation applied YRatio/XRatio on top, and at 16:9 the 278x370 sheet came
+// out 278x277 with its text a quarter too small.
+//
+// Inside this scope SetScale(f) means f for x, y and the font -- exactly the
+// original uniform behaviour -- and the ratios are put back on exit.
+// ⚠️ Lay each control out COMPLETELY inside the scope (size, base position,
+// font, wrap width, scale). Render() only reads what SetScale computed, so the
+// result survives the scope; a SetScale made later, outside one, would not.
+class CLTGUIUniformScale
+{
+public:
+	CLTGUIUniformScale() : m_fYOverX(CLTGUICtrl::GetYOverX()), m_fFontOverX(CLTGUICtrl::GetFontOverX())
+		{ CLTGUICtrl::SetLayoutRatios(1.0f, 1.0f); }
+	~CLTGUIUniformScale()
+		{ CLTGUICtrl::SetLayoutRatios(m_fYOverX, m_fFontOverX); }
+private:
+	float	m_fYOverX;
+	float	m_fFontOverX;
+};
 
 #endif // _LTGUICTRL_H_

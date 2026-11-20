@@ -336,6 +336,18 @@ bool LTMacInput_IsVKDown(unsigned int nVK)
 		case 0x01: return g_aMouseDown[0];
 		case 0x02: return g_aMouseDown[1];
 		case 0x04: return g_aMouseDown[2];
+
+		// ★ COMMAND = VK_LWIN / VK_RWIN, ANSWERED AND NEVER SENT (GitHub #18).
+		// Cmd is not a game key here -- flagsChanged ignores it, so no binding
+		// and no "press any key" ever sees it, and that stays so. But the game
+		// must be able to ASK whether it is held: a key pressed with Cmd down is
+		// a macOS shortcut (Cmd+Shift+3/4 = screenshot), not a key press, and the
+		// document popup used to close on it before the picture was taken.
+		// Read LIVE from the hardware state, not from our last flagsChanged: a
+		// Cmd+Tab away releases Cmd in another app, and a remembered "held" would
+		// stick until the next modifier event. Left and right are not told apart.
+		case 0x5B:
+		case 0x5C: return ([NSEvent modifierFlags] & NSEventModifierFlagCommand) != 0;
 		default:   break;
 	}
 

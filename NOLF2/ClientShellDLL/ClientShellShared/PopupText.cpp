@@ -102,52 +102,65 @@ void CPopupText::DisplayPopup(uint8 nPopupId, char *pText, uint32 nTextId)
 	// either axis. The base position is then the real screen size divided back
 	// through that scale, because CLTGUICtrl::SetScale computes
 	// m_pos = m_basePos * fScale -- which lands the sheet truly centred.
-	float fScale = g_pInterfaceResMgr->GetFontRatio();
-	if (fScale <= 0.0f)
-		fScale = 1.0f;
-
-	LTIntPt pos( (int)(((float)g_pInterfaceResMgr->GetScreenWidth()  / fScale) - (float)pPopup->sSize.x) / 2,
-	             (int)(((float)g_pInterfaceResMgr->GetScreenHeight() / fScale) - (float)pPopup->sSize.y) / 2 );
-
-	m_Frame.SetFrame(g_pInterfaceResMgr->GetTexture(pPopup->szFrame));
-	m_Frame.SetSize(pPopup->sSize.x,pPopup->sSize.y);
-	m_Frame.SetBasePos(pos);
-	m_Frame.SetScale(fScale);
-
-
-	pos.x += pPopup->sTextOffset.x;
-	pos.y += pPopup->sTextOffset.y;
-
-	m_Text.SetScale(1.0f);
-
-	// If we were given a string use it, otherwise get the string from the ID...
-
-	if( pText )
+	//
+	// ★★ ...BUT ONLY WHILE THAT SCALE IS UNIFORM (GitHub issue #18). The
+	// widescreen layout ratios (CLTGUICtrl::SetLayoutRatios) later made every
+	// SetScale(f) mean "f across, f*YRatio/XRatio down and for the font". Fed
+	// GetFontRatio() here, that shrank the sheet's height and its characters a
+	// SECOND time: 278x370 drew as 278x277.5 and FontSize 13 as 9.75 at 16:9 --
+	// a square page, "shorter than in original". The reporter's original shows
+	// exactly 278x370 and 13 at YRatio. CLTGUIUniformScale makes f mean f again
+	// for everything laid out below; it is a no-op at 4:3.
 	{
-		m_Text.SetString( pText );
-	}
-	else
-	{
-		char szString[1024] = "";
-		LoadString(nTextId,szString,sizeof(szString));
+		CLTGUIUniformScale uniform;
 
-		char *pBody = strchr(szString,'@');
-		if (pBody)
+		float fScale = g_pInterfaceResMgr->GetFontRatio();
+		if (fScale <= 0.0f)
+			fScale = 1.0f;
+
+		LTIntPt pos( (int)(((float)g_pInterfaceResMgr->GetScreenWidth()  / fScale) - (float)pPopup->sSize.x) / 2,
+		             (int)(((float)g_pInterfaceResMgr->GetScreenHeight() / fScale) - (float)pPopup->sSize.y) / 2 );
+
+		m_Frame.SetFrame(g_pInterfaceResMgr->GetTexture(pPopup->szFrame));
+		m_Frame.SetSize(pPopup->sSize.x,pPopup->sSize.y);
+		m_Frame.SetBasePos(pos);
+		m_Frame.SetScale(fScale);
+
+
+		pos.x += pPopup->sTextOffset.x;
+		pos.y += pPopup->sTextOffset.y;
+
+		m_Text.SetScale(1.0f);
+
+		// If we were given a string use it, otherwise get the string from the ID...
+
+		if( pText )
 		{
-			++pBody;
-			m_Text.SetString(pBody);
+			m_Text.SetString( pText );
 		}
 		else
 		{
-			m_Text.SetString(szString);
-		}
-	}
+			char szString[1024] = "";
+			LoadString(nTextId,szString,sizeof(szString));
 
-	m_Text.SetFont(pFont,pPopup->nFontSize);
-	m_Text.SetColors(pPopup->argbTextColor,pPopup->argbTextColor,pPopup->argbTextColor);
-	m_Text.SetFixedWidth(pPopup->nTextWidth);
-	m_Text.SetBasePos(pos);
-	m_Text.SetScale(fScale);		// same ratio as the frame, or it drifts off it
+			char *pBody = strchr(szString,'@');
+			if (pBody)
+			{
+				++pBody;
+				m_Text.SetString(pBody);
+			}
+			else
+			{
+				m_Text.SetString(szString);
+			}
+		}
+
+		m_Text.SetFont(pFont,pPopup->nFontSize);
+		m_Text.SetColors(pPopup->argbTextColor,pPopup->argbTextColor,pPopup->argbTextColor);
+		m_Text.SetFixedWidth(pPopup->nTextWidth);
+		m_Text.SetBasePos(pos);
+		m_Text.SetScale(fScale);		// same ratio as the frame, or it drifts off it
+	}	// end of the uniform-scale layout: the ratios are back from here on
 
 	m_bVisible = LTTRUE;
 

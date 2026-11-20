@@ -384,6 +384,17 @@ static inline void GetSystemInfo(LPSYSTEM_INFO si) {
 #define VK_MENU 0x12
 #define VK_PAUSE 0x13
 #define VK_CAPITAL 0x14
+/* The sided modifiers and the Windows keys, with their Win32 values. The
+ * document popup tells modifiers from real key presses with them (GitHub #18),
+ * and LTMacInput_IsVKDown answers VK_LWIN/VK_RWIN with the Cmd key. */
+#define VK_LWIN 0x5B
+#define VK_RWIN 0x5C
+#define VK_LSHIFT 0xA0
+#define VK_RSHIFT 0xA1
+#define VK_LCONTROL 0xA2
+#define VK_RCONTROL 0xA3
+#define VK_LMENU 0xA4
+#define VK_RMENU 0xA5
 #define VK_ESCAPE 0x1B
 #define VK_SPACE 0x20
 #define VK_PRIOR 0x21

@@ -2956,17 +2956,52 @@ LTBOOL CInterfaceMgr::OnKeyDown(int key, int rep)
 		{
 			if(m_PopupText.IsVisible())
 			{
-				KeystrokeList::iterator iter = g_keys.begin();
-				while (iter != g_keys.end() && (*iter) != key)
-					iter++;
+				// ★ A MODIFIER, OR A KEY PRESSED WITH CMD/WIN HELD, IS NOT "A KEY"
+				// (GitHub issue #18: a document vanished on the screenshot
+				// shortcut). The original closes the sheet on any new key-down.
+				// On Windows the screenshot key, Print Screen, sends no key-down,
+				// so it never closed it. macOS's screenshot shortcut is a CHORD,
+				// Cmd+Shift+3/4/5: Cmd never reaches the game, but Shift did, and
+				// closed the sheet before the system took the picture. So Shift,
+				// Ctrl, Alt and the Win/Cmd keys leave it open, as does anything
+				// pressed while Cmd is held (a macOS shortcut, never a key press
+				// -- the engine reports Cmd as VK_LWIN/VK_RWIN for exactly this).
+				// Every other key, Escape and the mouse close it as before; the
+				// key goes on (LTFALSE below) exactly as it always did.
+				const char *pNotAKey = LTNULL;
+				switch (key)
+				{
+					case VK_SHIFT:  case VK_CONTROL:  case VK_MENU:
+					case VK_LSHIFT: case VK_RSHIFT:   case VK_LCONTROL:
+					case VK_RCONTROL: case VK_LMENU:  case VK_RMENU:
+					case VK_LWIN:   case VK_RWIN:     case VK_CAPITAL:
+						pNotAKey = "a modifier";
+						break;
+					default:
+						if (IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN))
+							pNotAKey = "pressed with Cmd held (a shortcut)";
+						break;
+				}
 
-				if (getenv("LT_TRACE_POPUP"))
-					PopupTrace("[popup] KEY 0x%02X rep=%d held=%d -> %s",
-						key, rep, (int)g_keys.size(),
-						(iter == g_keys.end()) ? "CLOSE" : "ignored (was held)");
+				if (pNotAKey)
+				{
+					if (getenv("LT_TRACE_POPUP"))
+						PopupTrace("[popup] KEY 0x%02X is %s -> stays open", key, pNotAKey);
+				}
+				else
+				{
+					KeystrokeList::iterator iter = g_keys.begin();
+					while (iter != g_keys.end() && (*iter) != key)
+						iter++;
 
-				if (iter == g_keys.end())
-					m_PopupText.Close();
+					if (getenv("LT_TRACE_POPUP"))
+						PopupTrace("[popup] KEY 0x%02X rep=%d held=%d -> %s",
+							key, rep, (int)g_keys.size(),
+							(iter == g_keys.end()) ? "CLOSE" : "ignored (was held)");
+
+					if (iter == g_keys.end())
+						m_PopupText.Close();
+				}
 
 				
 			}
