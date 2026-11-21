@@ -616,7 +616,17 @@ CUIFont* CInterfaceResMgr::CreateFont(char const* pszFontFile, char const* pszFo
 	//this will set the width of the space character for proportional fonts
 	if (pFont)
 	{
-		//[dlj] This is now handled programmatically in cuiformattedpolystring_impl		pFont->SetDefCharWidth((ptSize/4));
+		// ★ RESTORED (GitHub issue #20: "( 1 )" instead of "(1)"). The space
+		// is not in the font texture -- the set starts at 33 -- so every space
+		// is drawn at the font's default width. The shipped game set that to
+		// ptSize/4 HERE: retail CSHELL.DLL does `shr bl,2` and calls
+		// SetDefCharWidth right after CreateFont (0x1003ebb0). This source
+		// release had the call commented out with the note below, leaving the
+		// engine's own default, the font's full space ADVANCE: 0.609 em for
+		// Typist, twice the retail space. Every gap in the HUD text ("FMJ ( 18 )",
+		// "Can't use the Bandages!") was about a letter wide instead of a third.
+		//[dlj] This is now handled programmatically in cuiformattedpolystring_impl
+		pFont->SetDefCharWidth((ptSize/4));
 		pFont->SetDefColor(argbBlack);
 	}
 

@@ -81,7 +81,8 @@ static inline int glyph_PowerOfTwo(int nValue)
 class InstalledFontFace
 {
 public:
-	InstalledFontFace() : m_pFont(NULL), m_nHeight(0) {}
+	InstalledFontFace() : m_pFont(NULL), m_nHeight(0), m_bGdiCell(false),
+	                      m_fCellAscent(0.0f), m_fCellDescent(0.0f) {}
 	~InstalledFontFace()
 	{
 		if (m_pFont)
@@ -110,13 +111,88 @@ public:
 			}
 		}
 
+		if (m_pFont)
+			ApplyGdiCell(pszFontFace, nHeight);
+
 		return m_pFont != NULL;
 	}
 
 	CTFontRef GetCTFont() const { return m_pFont; }
 	int       GetHeight() const { return m_nHeight; }
 
+	// The GDI cell (see ApplyGdiCell): ascent and descent in pixels at the
+	// font's final size. False = no usable OS/2 table, or LT_FONT_HHEA=1, and
+	// the caller keeps CoreText's own ascent/descent.
+	bool      HasGdiCell() const     { return m_bGdiCell; }
+	CGFloat   GetCellAscent() const  { return m_fCellAscent; }
+	CGFloat   GetCellDescent() const { return m_fCellDescent; }
+
 private:
+	// ★★ THE FONT SIZE IS A GDI CELL HEIGHT, NOT AN EM (GitHub issue #20).
+	//
+	// The game asks for each font at a size from Layout.txt (Typist 60, Expo 60,
+	// Square 721 80, BethHand 60) and the Win32 build put that number into
+	// LOGFONT::lfHeight. A POSITIVE lfHeight is a CELL height: GDI scales the
+	// font so that usWinAscent + usWinDescent (the OS/2 table) spans exactly that
+	// many pixels, and tmHeight -- this font's CharTexHeight, the divisor every
+	// glyph and space is scaled by -- comes out equal to it. CoreText takes the
+	// same number as an EM size and measures its cell from the hhea table. Where
+	// the two tables agree (Square 721, BethHand) nothing differs; where they do
+	// not, every glyph came out larger than on Windows by win/hhea:
+	//     TYPIST  (4551 vs 3673 of 4096 units)  x1.239   pickups, subtitles, documents
+	//     EXPON   (5935 vs 4595 of 4096 units)  x1.292   menus, transmissions, chat
+	// -- the reporter's "HUD text at 80% looks like the original". (§117 compared
+	// against a GDI model that used hhea too, which is why it looked exact.)
+	//
+	// So: read the OS/2 win metrics, set the em to nHeight * upm / (winAscent +
+	// winDescent) and report the cell GDI would. LT_FONT_HHEA=1 keeps the
+	// CoreText sizing, for A/B runs; it announces itself.
+	void ApplyGdiCell(char const* pszFace, int nHeight)
+	{
+		static int s_nHhea = -1;
+		if (s_nHhea < 0)
+		{
+			const char* p = getenv("LT_FONT_HHEA");
+			s_nHhea = (p && *p && *p != '0') ? 1 : 0;
+			if (s_nHhea)
+				fprintf(stderr, "[font] LT_FONT_HHEA on -- fonts keep CoreText's hhea cell "
+				                "(the pre-#20 sizing), NOT the GDI cell the game was laid out with\n");
+		}
+		if (s_nHhea || nHeight <= 0)
+			return;
+
+		const unsigned nUpm = CTFontGetUnitsPerEm(m_pFont);
+		CFDataRef pOS2 = CTFontCopyTable(m_pFont, kCTFontTableOS2, kCTFontTableOptionNoOptions);
+		if (!pOS2)
+			return;
+		unsigned nWinAsc = 0, nWinDesc = 0;
+		if (CFDataGetLength(pOS2) >= 78)
+		{
+			const UInt8* b = CFDataGetBytePtr(pOS2);
+			nWinAsc  = ((unsigned)b[74] << 8) | b[75];
+			nWinDesc = ((unsigned)b[76] << 8) | b[77];
+		}
+		CFRelease(pOS2);
+		if (!nUpm || nWinAsc + nWinDesc == 0)
+			return;
+
+		const CGFloat fEm = (CGFloat)nHeight * (CGFloat)nUpm / (CGFloat)(nWinAsc + nWinDesc);
+		CTFontRef pSized = CTFontCreateCopyWithAttributes(m_pFont, fEm, NULL, NULL);
+		if (!pSized)
+			return;
+		CFRelease(m_pFont);
+		m_pFont = pSized;
+
+		m_fCellAscent  = (CGFloat)nWinAsc  * fEm / (CGFloat)nUpm;
+		m_fCellDescent = (CGFloat)nWinDesc * fEm / (CGFloat)nUpm;
+		m_bGdiCell = true;
+
+		if (getenv("LT_TRACE_FONT"))
+			fprintf(stderr, "[font] %s @%d: GDI cell %u/%u of %u units -> em %.2f px "
+			                "(CoreText alone would have used em %d)\n",
+			        pszFace ? pszFace : "?", nHeight, nWinAsc, nWinDesc, nUpm, (double)fEm, nHeight);
+	}
+
 	// Read the font file through the engine (loose file or .rez) and hand the
 	// bytes to CoreGraphics.
 	static CTFontRef CreateFontFromFile(char const* pszFontFile, int nHeight)
@@ -175,6 +251,9 @@ private:
 
 	CTFontRef m_pFont;
 	int       m_nHeight;
+	bool      m_bGdiCell;
+	CGFloat   m_fCellAscent;
+	CGFloat   m_fCellDescent;
 };
 
 // -------------------------------------------------------------------
@@ -286,9 +365,14 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 	std::vector<CGSize> aAdvances(nLen);
 	CTFontGetAdvancesForGlyphs(pFont, kCTFontOrientationHorizontal, &aGlyphs[0], &aAdvances[0], nLen);
 
-	const CGFloat fAscent = CTFontGetAscent(pFont);
-	const CGFloat fDescent = CTFontGetDescent(pFont);
-	const int nFontHeight = (int)ceil(fAscent + fDescent);
+	// The cell: GDI's when the face has one (see InstalledFontFace::ApplyGdiCell
+	// -- tmAscent/tmDescent are rounded separately, and tmHeight is their sum),
+	// otherwise CoreText's own ascent and descent as before.
+	const bool    bGdiCell = installedFontFace.HasGdiCell();
+	const CGFloat fAscent  = bGdiCell ? installedFontFace.GetCellAscent()  : CTFontGetAscent(pFont);
+	const CGFloat fDescent = bGdiCell ? installedFontFace.GetCellDescent() : CTFontGetDescent(pFont);
+	const int nFontHeight = bGdiCell ? (int)floor(fAscent + 0.5f) + (int)floor(fDescent + 0.5f)
+	                                 : (int)ceil(fAscent + fDescent);
 
 	// Integer, padded glyph boxes (a glyph can extend left of the origin, e.g.
 	// italics, so keep the box origin as well as the size).
@@ -323,7 +407,7 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 	// of a string then shares one baseline when MapCharacter draws whole
 	// cells. Top-aligning the raw glyph boxes instead rendered commas at
 	// apostrophe height and periods as middle dots.
-	const int nAscentInt = (int)ceil(fAscent);
+	const int nAscentInt = bGdiCell ? (int)floor(fAscent + 0.5f) : (int)ceil(fAscent);
 	std::vector<int> aCellOffY(nLen);
 	int nMaxCellH = 1;
 	for (int i = 0; i < nLen; ++i)
