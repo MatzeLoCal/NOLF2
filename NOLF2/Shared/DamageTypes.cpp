@@ -65,7 +65,25 @@ LTBOOL CDTButeMgr::Init(const char* szAttributeFile)
 
 	for (int i = 0; i < kNumDamageTypes; i++)
 	{
-		DTInfoArray[i].nDamageFlag = ( 1 << ( uint64 )i );
+		// ★ A 64-BIT SHIFT (GitHub issue #22: a policeman who slipped on a
+		// banana "starts burning and throwing flashes all around").
+		//
+		// This read `( 1 << ( uint64 )i )`. In standard C++ the result of a
+		// shift has the type of its LEFT operand, so that is a 32-bit int shift
+		// whatever the right side says, and clang compiles it exactly so:
+		//     mov w8,#1 / lsl w8,w8,i / sxtw x8,w8
+		//     DT_SLIPPERY  (31) -> 0xFFFFFFFF80000000   bits 31..63, sign-extended
+		//     DT_SWORD     (32) -> 1    DT_GADGET_TRACKER (33) -> 2
+		//     DT_DOOMSDAYBURN (34) -> 4                 (wrapped onto bits 0..2)
+		// The shipped Windows build did NOT do that: retail OBJECT.LTO loads
+		// EDX:EAX = 1 and calls __allshl (0x100a7629), a true 64-bit shift --
+		// the 2002 compiler widened the 1. The client builds its DamageFX flags
+		// with `(DamageFlags)1 << type` (DamageFXMgr.cpp), so on this port a
+		// slipped character's flags (bits 31..63) also matched the Sword,
+		// Tracker and DOOMSDAY BURN effects, and DoomsdayBurn_3rd -- energy fire
+		// with arcs -- played on him. Sword/Tracker/Doomsday also shared their
+		// flags with Unspecified/Bleeding/Bullet. Retail's values, explicitly:
+		DTInfoArray[i].nDamageFlag = ( (DamageFlags)1 << i );
 
 		DTInfoArray[i].bJarCamera = (LTBOOL)m_buteMgr.GetInt(pDTNames[i],"JarCamera",0);
 		DTInfoArray[i].bGadget = (LTBOOL)m_buteMgr.GetInt(pDTNames[i],"Gadget",0);
