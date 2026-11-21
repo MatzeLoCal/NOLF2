@@ -4,7 +4,7 @@
 #define _AI_NODE_H_
 
 #include "ltengineobjects.h"
-#include "IObjectPlugin.h"
+#include "iobjectplugin.h"
 #include "AnimationProp.h"
 #include "GameBase.h"
 #include "DebugLineSystem.h"

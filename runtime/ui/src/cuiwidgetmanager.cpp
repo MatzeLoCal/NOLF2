@@ -256,7 +256,7 @@ CUIBase* CUIWidgetManager::CreateWidget(
 	CUIGUID		guid   = GenerateGUID();
 	
 	CUIRECT		rect;
-	memcpy(&rect, pRect, sizeof(CUIRECT));
+	memcpy((void*)&rect, pRect, sizeof(CUIRECT));
 
 	if (!m_bInitted) {
 		CUI_ERR("WidgetManager was never Initialized!\n");

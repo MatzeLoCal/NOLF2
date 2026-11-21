@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenKeyboard.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"

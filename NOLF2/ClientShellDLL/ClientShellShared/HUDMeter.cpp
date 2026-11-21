@@ -12,7 +12,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "HUDMeter.h"
 
 

@@ -9,7 +9,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AICentralKnowledgeMgr.h"
 #include "AIUtils.h"
 
@@ -191,7 +191,7 @@ void CAICentralKnowledgeMgr::Term()
 void CAICentralKnowledgeMgr::Save(ILTMessage_Write *pMsg)
 {
 	AICENTRAL_KNOWLEDGE_MAP::iterator it;
-	SAVE_DWORD( m_mapCentralKnowledge.size() );
+	SAVE_DWORD( (uint32)m_mapCentralKnowledge.size() );
 	for( it = m_mapCentralKnowledge.begin(); it != m_mapCentralKnowledge.end(); ++it )
 	{
 		SAVE_DWORD( it->first );
@@ -520,7 +520,7 @@ uint32 CAICentralKnowledgeMgr::CountMatches(EnumAICentralKnowledgeType eKnowledg
 uint32 CAICentralKnowledgeMgr::CountMatches(EnumAICentralKnowledgeType eKnowledgeType)
 {
 	AIASSERT( eKnowledgeType != kCK_InvalidType, LTNULL, "CountTargetMatches::CountMatchingKnowledge: Query needs a valid type." );
-	return m_mapCentralKnowledge.count( eKnowledgeType );
+	return (uint32)m_mapCentralKnowledge.count( eKnowledgeType );
 }
 
 // ----------------------------------------------------------------------- //

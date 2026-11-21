@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "StartupCommand.h"
 	#include "VersionMgr.h"
 	#include "ServerMissionMgr.h"

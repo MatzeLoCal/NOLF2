@@ -8,14 +8,14 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenHost.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "CommonUtilities.h"
 #include "ClientRes.h"
 #include "MissionMgr.h"
-#include "clientmultiplayermgr.h"
+#include "ClientMultiplayerMgr.h"
 #include "WinUtil.h"
 #include "ClientSaveLoadMgr.h"
 #include "GameClientShell.h"
@@ -271,6 +271,7 @@ uint32 CScreenHost::OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dw
 			case eGameTypeDoomsDay:
 				g_pInterfaceMgr->SwitchToScreen(SCREEN_ID_HOST_DD_OPTIONS);
 				break;
+			default: break;
 			};
 		} break;
 	case CMD_WEAPONS:
@@ -661,6 +662,7 @@ void CScreenHost::UpdateGameType()
 				pProfile->m_ServerGameOptions.GetDoomsday().m_sCampaignName = DEFAULT_CAMPAIGN;
 				break;
 				
+			default: break;
 			}
 			isDefault = true;
 		}
@@ -712,6 +714,7 @@ void CScreenHost::SaveOptions()
 		pProfile->m_ServerGameOptions.GetDoomsday().m_sCampaignName = m_sCampaignName;
 		break;
 		
+	default: break;
 	};
 
 	pProfile->ApplyMultiplayer(g_bLAN);

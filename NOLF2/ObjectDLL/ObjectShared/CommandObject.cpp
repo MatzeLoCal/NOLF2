@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "ObjectMsgs.h"
 	#include "ParsedMsg.h"
 	#include "CommandObject.h"
@@ -460,7 +460,7 @@ void CommandObject::Save( ILTMessage_Write *pMsg )
 
 	// Save every Event command struct...
 
-	SAVE_INT( m_lstEventCmds.size() );
+	SAVE_INT( (int32)m_lstEventCmds.size() );
 
 	EVENT_CMD_LIST::iterator iter;
 	EVENT_CMD_STRUCT	*pEvntCmdStruct = LTNULL;

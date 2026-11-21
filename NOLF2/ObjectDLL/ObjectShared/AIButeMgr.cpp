@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIButeMgr.h"
 #include "ButeTools.h"
 #include "CommonUtilities.h"

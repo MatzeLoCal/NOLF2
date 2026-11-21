@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2HUDMgr.h"
 #include "HUDRespawn.h"
 #include "TO2PlayerStats.h"

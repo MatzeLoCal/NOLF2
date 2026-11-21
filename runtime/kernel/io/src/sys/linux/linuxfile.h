@@ -37,7 +37,7 @@
 	#define DFOPEN_READ		0
 
 
-	typedef struct LTFindInfo
+	struct LTFindInfo
 	{
 		int				m_Type;			// Is this a directory or file?
 		char			m_Name[256];

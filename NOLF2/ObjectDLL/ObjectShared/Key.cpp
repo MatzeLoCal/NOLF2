@@ -8,8 +8,8 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
-#include "key.h"
+#include "Stdafx.h"
+#include "Key.h"
 
 LINKFROM_MODULE( Key );
 

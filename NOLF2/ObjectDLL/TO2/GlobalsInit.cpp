@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2GameServerShell.h"
 
 const char* g_sPlayerClass = "CPlayerObj";

@@ -4,7 +4,7 @@
 #define __AI_TARGET_H__
 
 #include "AIClassFactory.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "RelationChangeObserver.h"
 
 

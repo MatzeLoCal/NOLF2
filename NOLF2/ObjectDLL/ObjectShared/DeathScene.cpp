@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __DEATHSCENE_H__
 #include "DeathScene.h"		

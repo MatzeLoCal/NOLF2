@@ -77,9 +77,12 @@
 #define RAND(min,max)               ((rand() % ((max)-(min))) + (min))
 
 #define DIFF(x,y)                   ((x)<(y) ? ((y)-(x)) : ((x)-(y)))
+#undef ABS
 #define ABS(x)                      ((x)<0 ? (-(x)) : (x))
 
+#undef MIN
 #define MIN(x,y)                    (((x)<(y)) ? (x) : (y))
+#undef MAX
 #define MAX(x,y)                    (((x)>(y)) ? (x) : (y))
 
 #define ROUND(x)                    ((int)(x+0.5))

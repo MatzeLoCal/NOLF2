@@ -9,7 +9,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalSpecialDamage.h"
 #include "AIGoalMgr.h"
 #include "AIHuman.h"
@@ -216,6 +216,7 @@ void CAIGoalSpecialDamage::ActivateGoal()
 			bLoopingSound = LTTRUE;
 			m_bProgressiveDamage = LTTRUE;
 			break;
+		default: break;
 	}
 
 
@@ -615,6 +616,7 @@ void CAIGoalSpecialDamage::HandleStateAware()
 			m_pGoalMgr->UnlockGoal( this );
 			m_fCurImportance = 0.f;
 			break;
+		default: break;
 	}
 }
 
@@ -701,6 +703,7 @@ void CAIGoalSpecialDamage::HandleStateUseObject()
 				m_pAI->GetDestructible()->HandleDestruction( m_hDamager );
 			}
 			break;
+		default: break;
 	}
 
 	// Handle the StateStatus.
@@ -929,6 +932,7 @@ LTBOOL CAIGoalSpecialDamage::HandleDamage(const DamageStruct& damage)
 						m_pAI->GetDestructible()->HandleDestruction( damage.hDamager );
 					}
 					break;
+				default: break;
 			}
 		}
 
@@ -1031,6 +1035,7 @@ HMODELANIM CAIGoalSpecialDamage::GetAlternateDeathAnimation()
 					case DT_SLEEPING:
 					case DT_SLIPPERY:
 						return g_pLTServer->GetModelAnimation( m_pAI->m_hObject );
+					default: break;
 				}
 			}
 

@@ -11,7 +11,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "VolumeEffect.h"
 #include "DEditColors.h"
 

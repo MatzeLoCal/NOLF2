@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 #ifndef __NODELINE_H__
-#define __NODLINE_H__
+#define __NODELINE_H__
 
 #include "ltengineobjects.h"
 #include "ClientServerShared.h"

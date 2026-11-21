@@ -20,7 +20,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIHUMANSTATEOBSTRUCT_H__
 #include "AIHumanStateObstruct.h"		

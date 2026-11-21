@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "SoundFX.h"
 #include "iltclient.h"
 #include "ClientSoundMgr.h"
@@ -63,7 +63,7 @@ LTBOOL CSoundFX::CreateObject(ILTClient *pClientDE)
 LTBOOL CSoundFX::Update()
 {
 	// Stay around as long as we have a valid sound...
-	return (LTBOOL) m_hSnd;
+	return (m_hSnd != LTNULL);	// was (LTBOOL)m_hSnd: truncated the pointer to 32 bits
 }
 
 

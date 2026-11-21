@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIStimulusMgr.h"
 #include "AISenseRecorderAbstract.h"
 #include "AI.h"
@@ -153,7 +153,7 @@ void CAIStimulusRecord::Save(ILTMessage_Write *pMsg)
 	SAVE_TIME(m_fExpirationTime);
 
 	SAVE_BYTE(m_nMaxResponders);
-	SAVE_DWORD(m_lstCurResponders.size());
+	SAVE_DWORD((uint32)m_lstCurResponders.size());
 	RESPONDER_LIST::iterator rlit;
 	for( rlit = m_lstCurResponders.begin(); rlit != m_lstCurResponders.end(); ++rlit )
 	{
@@ -164,7 +164,7 @@ void CAIStimulusRecord::Save(ILTMessage_Write *pMsg)
 
 	// Save the number of Alignments in the list so we know how many
 	// to restore on load
-	SAVE_DWORD(m_RequiredAlignment.size());
+	SAVE_DWORD((uint32)m_RequiredAlignment.size());
 	_listAlignments::iterator it = m_RequiredAlignment.begin();
 	while ( it != m_RequiredAlignment.end() )
 	{
@@ -350,7 +350,7 @@ void CAIStimulusMgr::Term()
 void CAIStimulusMgr::Save(ILTMessage_Write *pMsg)
 {	
 	AISTIMULUS_MAP::iterator it;
-	SAVE_DWORD(m_stmStimuliMap.size());
+	SAVE_DWORD((uint32)m_stmStimuliMap.size());
 	for(it = m_stmStimuliMap.begin(); it != m_stmStimuliMap.end(); ++it)
 	{
 		SAVE_BYTE(it->first);
@@ -358,7 +358,7 @@ void CAIStimulusMgr::Save(ILTMessage_Write *pMsg)
 	}
 
 	SAVE_DWORD(m_nNextTargetMatchID);
-	SAVE_DWORD(m_mapTargetMatch.size());
+	SAVE_DWORD((uint32)m_mapTargetMatch.size());
 	AITARGET_MATCH_MAP::iterator mit;
 	for(mit = m_mapTargetMatch.begin(); mit != m_mapTargetMatch.end(); ++mit)
 	{
@@ -967,7 +967,7 @@ uint32 CAIStimulusMgr::GetNumResponders(EnumAIStimulusID eStimulusID)
 		pRecord = it->second;
 		if( pRecord->m_eStimulusID == eStimulusID )
 		{
-			return pRecord->m_lstCurResponders.size();
+			return (uint32)pRecord->m_lstCurResponders.size();
 		}
 	}
 

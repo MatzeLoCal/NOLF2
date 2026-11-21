@@ -183,6 +183,7 @@ public:
 				m_pButeMgr->m_ARangeBank.Free( data.range );
 				data.range = NULL;
 				break;
+			default: break;
 			}
 		}
 
@@ -537,7 +538,7 @@ inline bool CButeMgr::Parse( istream& iCrypt, streamsize nLen, const char* crypt
 #if _MSC_VER >= 1300
 	std::ostrstream* pOss = new std::ostrstream(buf2, nLen);
 #else
-	ostrstream* pOss = new ostrstream(buf2, nLen);
+	ostrstream* pOss = new ostrstream(buf2, (int)nLen);
 #endif // VC7
 	m_cryptMgr.Decrypt(iCrypt, *pOss);
 
@@ -554,7 +555,7 @@ inline bool CButeMgr::Parse( istream& iCrypt, streamsize nLen, const char* crypt
 	bool retVal = Parse( *pIStream );
 
 	delete pIStream;
-	delete buf2;
+	delete [] buf2;	// allocated with new char[]
 	return retVal;
 }
 
@@ -638,7 +639,7 @@ inline bool CButeMgr::Parse(void* pData, unsigned long size, const char* cryptKe
 	if (!pData)
 		return false;
 	char* buf1 = (char*)pData;
-	int len = size;
+	int len = (int)size;
 #if _MSC_VER >= 1300
 	std::istrstream* pIss = new std::istrstream(buf1, len);
 #else

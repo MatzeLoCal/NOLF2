@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "WorldModelDebris.h"
 #include "ServerUtilities.h"
 #include <stdio.h>

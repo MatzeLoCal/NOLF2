@@ -31,7 +31,7 @@
 #include "PlayerMgr.h"
 #include "VersionMgr.h"
 #include "ClientSoundMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 
 class CSpecialFX;
 class CCameraFX;

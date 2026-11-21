@@ -56,7 +56,7 @@ LTRESULT ps_SetTexture(LTParticleSystem *pSystem, const char *pName)
 	ref.m_FileType = FILE_CLIENTFILE;
 	ref.m_pFilename = pName;
 
-	len = strlen(pName);
+	len = (int)strlen(pName);
 	if(len > 3)
 	{
 		endChars[0] = pName[len-3];

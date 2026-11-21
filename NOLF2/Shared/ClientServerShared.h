@@ -13,7 +13,7 @@
 #ifndef __CLIENT_SERVER_SHARED_H__
 #define __CLIENT_SERVER_SHARED_H__
 
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include <list>
 #include "ltobjectcreate.h"
 #include "CommonUtilities.h"

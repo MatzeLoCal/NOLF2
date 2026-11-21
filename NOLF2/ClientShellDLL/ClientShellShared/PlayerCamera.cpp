@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PlayerCamera.h"
 #include "iltclient.h"
 #include <stdio.h>

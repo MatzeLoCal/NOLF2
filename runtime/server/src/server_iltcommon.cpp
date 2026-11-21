@@ -114,6 +114,7 @@ LTRESULT CLTCommonServer::SetObjectFlags(HOBJECT hObj, const ObjFlagType nFlagTy
             }
 		}
 		break;
+		default: break;
 	}
 
 	// Change the flags
@@ -145,6 +146,7 @@ LTRESULT CLTCommonServer::SetObjectFlags(HOBJECT hObj, const ObjFlagType nFlagTy
             SetObjectChangeFlags(hObj, CF_FLAGS);
 		}
 		break;
+		default: break;
     }
 
     return LT_OK;

@@ -14,11 +14,11 @@
 #define __PLAYERSTATS_H
 
 #include "ltbasedefs.h"
-#include "overlays.h"
+#include "Overlays.h"
 #include "IDList.h"
 #include "IntelItemList.h"
 #include "SkillsButeMgr.h"
-#include "weaponmgr.h"
+#include "WeaponMgr.h"
 
 class CGameClientShell;
 struct MissionStats;

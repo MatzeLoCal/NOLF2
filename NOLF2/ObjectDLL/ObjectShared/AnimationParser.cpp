@@ -1,5 +1,5 @@
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AnimationParser.h"
 #include "AnimationParse.h"
 #include "AnimationLex.h"

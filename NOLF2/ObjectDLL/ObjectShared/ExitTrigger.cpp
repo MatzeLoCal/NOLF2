@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ExitTrigger.h"
 #include "iltserver.h"
 #include "GameServerShell.h"

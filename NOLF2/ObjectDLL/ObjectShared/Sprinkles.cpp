@@ -1,7 +1,7 @@
 
-#include "stdafx.h"
-#include "sprinkles.h"
-#include "sfxmsgids.h"
+#include "Stdafx.h"
+#include "Sprinkles.h"
+#include "SFXMsgIds.h"
 
 LINKFROM_MODULE( Sprinkles );
 

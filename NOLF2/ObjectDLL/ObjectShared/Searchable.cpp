@@ -10,11 +10,11 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include <stdio.h>
 #include "Searchable.h"
 #include "iltserver.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ServerUtilities.h"
 #include "PlayerObj.h"
 #include "GameServerShell.h"

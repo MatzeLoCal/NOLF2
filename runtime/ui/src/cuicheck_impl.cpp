@@ -149,6 +149,7 @@ CUI_RESULTTYPE CUICheck_Impl::SetColors(CUI_ELEMENTTYPE elm,
 			break;
 
 		//default:			
+		default: break;
 	}
 
 	return CUIButton_Impl::SetColors(elm, argb0, argb1, argb2, argb3);	
@@ -201,9 +202,9 @@ CUI_RESULTTYPE	CUICheck_Impl::SetTexture(CUI_ELEMENTTYPE elm,
 
 
 	// if no rect is provided, gracefully set texture size to 0
-	memset (&r, 0, sizeof(CUIRECT));
+	memset ((void*)&r, 0, sizeof(CUIRECT));
 	if (pRect) {
-		memcpy(&r, pRect, sizeof(CUIRECT));
+		memcpy((void*)&r, pRect, sizeof(CUIRECT));
 	}
 
 	if (hTex) {
@@ -286,7 +287,7 @@ CUI_RESULTTYPE CUICheck_Impl::SetText(const char* pText)
 	float y		= m_Rect.y + m_GutterTop; 
 	uint32 wrap	= (uint32) (m_Rect.width - m_GutterRight - m_GutterLeft);
 
-	int32 len = strlen(pText);
+	int32 len = (int32)strlen(pText);
 
 	// if not polystring exists, make one
 	if (!m_pPolyStr) {
@@ -457,6 +458,7 @@ void CUICheck_Impl::AlignTextInWidget()
 				ypos = m_Rect.y + (m_Rect.height - h - m_GutterBottom);
 				break;
 
+			default: break;
 		}
 
 		switch (m_Halign) {
@@ -473,6 +475,7 @@ void CUICheck_Impl::AlignTextInWidget()
 				xpos = m_Rect.x + m_GutterLeft;
 				break;
 
+			default: break;
 		}
 
 		m_pPolyStr->SetPosition(xpos, ypos);

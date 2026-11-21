@@ -20,7 +20,7 @@
 #include "SurfaceMgr.h"
 #include "VarTrack.h"
 #include "CameraOffsetMgr.h"
-#include "timer.h"
+#include "Timer.h"
 
 class CGameClientShell;
 class CCharacterFX;

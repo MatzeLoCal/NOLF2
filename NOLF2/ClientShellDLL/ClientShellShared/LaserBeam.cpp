@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "LaserBeam.h"
 #include "GameClientShell.h"
 #include "ClientUtilities.h"

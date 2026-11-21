@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AI.h"
 #include "AITarget.h"
 #include "AISenseRecorderAbstract.h"

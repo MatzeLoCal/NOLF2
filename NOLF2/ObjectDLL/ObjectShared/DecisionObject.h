@@ -14,7 +14,7 @@
 #define __DECISIONOBJECT_H__
 
 #include "ltengineobjects.h"
-#include "clientservershared.h"
+#include "ClientServerShared.h"
 #include "GameBase.h"
 
 LINKTO_MODULE( DecisionObject );

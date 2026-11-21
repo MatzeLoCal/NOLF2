@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AIPath.h"
 #include "AI.h"
 #include "AIVolumeMgr.h"
@@ -177,7 +177,7 @@ void CAIPath::Load(ILTMessage_Read *pMsg)
 
 void CAIPath::Save(ILTMessage_Write *pMsg)
 {
-	SAVE_INT(m_lstWaypoints.size());
+	SAVE_INT((int32)m_lstWaypoints.size());
 	SAVE_INT(m_iWaypoint);
 
 	AI_WAYPOINT_LIST::iterator it;
@@ -292,6 +292,7 @@ void CAIPath::GetFinalDir(LTVector* pvDir)
 					rit = m_lstWaypoints.rend() - 1;
 				}
 				break;
+			default: break;
 		}
 	}
 

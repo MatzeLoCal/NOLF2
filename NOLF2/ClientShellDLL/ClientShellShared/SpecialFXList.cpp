@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // Implementation of the CSpecialFXList class
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "SpecialFXList.h"
 
 #include "SFXMgr.h"

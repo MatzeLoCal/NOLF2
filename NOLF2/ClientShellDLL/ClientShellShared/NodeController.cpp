@@ -15,12 +15,12 @@
 #include "NodeController.h"
 #include "iltmodel.h"
 #include "ilttransform.h"
-#include "CharacterFx.h"
+#include "CharacterFX.h"
 #include "SoundMgr.h"
 #include "VarTrack.h"
-#include "HudMgr.h"
+#include "HUDMgr.h"
 #include "GameClientShell.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 
 //Lip sync file version information
 #define LIPSYNC_FILE_ID				(('L' << 24) | ('I' << 16) | ('P' << 8) | 'S')
@@ -105,7 +105,7 @@ LTBOOL CNodeController::Init(CCharacterFX* pCharacterFX)
 		{
 			_ASSERT(eModelNode < kMaxNodes);
 
-			if (eModelNode < kMaxNodes)
+			if ((int)eModelNode < (int)kMaxNodes)
 			{
 				m_aNodes[eModelNode].eModelNode = eModelNode;
 				m_aNodes[eModelNode].hModelNode = hCurNode;

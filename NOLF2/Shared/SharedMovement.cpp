@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "SharedMovement.h"
 
 #if !defined(_CLIENTBUILD) || defined(__PSX2)

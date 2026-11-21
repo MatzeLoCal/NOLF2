@@ -1,5 +1,5 @@
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AnimationMgr.h"
 
 #include "AnimationPropStrings.h"
@@ -29,11 +29,11 @@ void VerifyAnimation( HOBJECT hObject, const char* const pszAnimationName, CAnim
 {
 	// No matches were found.
 
-	if( pszAnimationName == "" )
+	if( pszAnimationName && !pszAnimationName[0] )	// was == "": compared ADDRESSES
 	{
 		char szBuffer[256];
 		sprintf(szBuffer, "Could not find anim with props:\n");
-		pProps->GetString(szBuffer + strlen(szBuffer), 256 - strlen(szBuffer));
+		pProps->GetString(szBuffer + strlen(szBuffer), (uint)(256 - strlen(szBuffer)));
 		AIASSERT(0, hObject, szBuffer);
 	}
 
@@ -550,7 +550,7 @@ void CAnimationContext::Update()
 							
 							char szBuffer[256];
 							sprintf(szBuffer, "%s: Failed to set anim with props:\n", szModelName );
-							m_Props.GetString(szBuffer + strlen(szBuffer), 256 - strlen(szBuffer));				
+							m_Props.GetString(szBuffer + strlen(szBuffer), (uint)(256 - strlen(szBuffer)));				
 							AIASSERT(g_pLTServer->GetModelAnimation(m_hObject) == AnimationInstance.GetAni(), m_hObject, szBuffer);
 						}
 //#endif
@@ -592,7 +592,7 @@ void CAnimationContext::Update()
 						{
 							char szBuffer[256];
 							sprintf(szBuffer, "Failed to set transition '%s' with props:\n", Transition.GetName());
-							m_Props.GetString(szBuffer + strlen(szBuffer), 256 - strlen(szBuffer));		
+							m_Props.GetString(szBuffer + strlen(szBuffer), (uint)(256 - strlen(szBuffer)));		
 							AIASSERT(g_pLTServer->GetModelAnimation(m_hObject) == TransitionInstance.GetAni(), m_hObject, szBuffer);
 						}
 //#endif
@@ -623,7 +623,7 @@ void CAnimationContext::Update()
 						{
 							char szBuffer[256];
 							sprintf(szBuffer, "Failed to set anim with props:\n");
-							m_Props.GetString(szBuffer + strlen(szBuffer), 256 - strlen(szBuffer));				
+							m_Props.GetString(szBuffer + strlen(szBuffer), (uint)(256 - strlen(szBuffer)));				
 							AIASSERT(g_pLTServer->GetModelAnimation(m_hObject) == AnimationInstance.GetAni(), m_hObject, szBuffer);
 
 							// Play ExplosionDeath when animation not found, to make problem very obvious.
@@ -868,6 +868,7 @@ LTBOOL CAnimationContext::IsPlayingSpecial()
 		case eStateSpecialLoop:
 		case eStateSpecialLinger:
 			return LTTRUE;
+		default: break;
 	}
 
 	return LTFALSE;
@@ -1098,7 +1099,7 @@ LTBOOL CAnimationMgr::Init(const char* szFilename)
 		return LTTRUE;
 	}
 
-	m_szFilename = debug_newa(char, strlen(szFilename) + 1);
+	m_szFilename = debug_newa(char, (int)(strlen(szFilename) + 1));
 	strcpy(m_szFilename, szFilename);
 
 	Animation::CAnimationParser AnimationParser;
@@ -1366,7 +1367,7 @@ const CAnimation& CAnimationMgr::FindAnimation(const CAnimationProps& Props,
 
 	// Do a search.
 
-	uint32 cAnims = m_mapAnimationProps.count(props);
+	uint32 cAnims = (uint32)m_mapAnimationProps.count(props);
 
 	// No matches were found, so do a linear search for wildcard matches (with kAP_Any).
 	// STL maps use the LessThan operator, which cannot handle wildcards.
@@ -1388,7 +1389,7 @@ const CAnimation& CAnimationMgr::FindAnimation(const CAnimationProps& Props,
 		if( iAnimation < m_cAnimations )
 		{
 			props = m_aAnimations[iAnimation].GetProps();
-			cAnims = m_mapAnimationProps.count(props);
+			cAnims = (uint32)m_mapAnimationProps.count(props);
 		}
 	}
 
@@ -1429,7 +1430,7 @@ const CAnimation& CAnimationMgr::FindAnimation(const CAnimationProps& Props,
 	{
 	  char szBuffer[256];
 	  sprintf(szBuffer, "Could not find anim with props:\n");
-	  props.GetString(szBuffer + strlen(szBuffer), 256 - strlen(szBuffer));				
+	  props.GetString(szBuffer + strlen(szBuffer), (uint)(256 - strlen(szBuffer)));				
 	  AIASSERT(0, hObject, szBuffer);
 	}
 
@@ -1452,7 +1453,7 @@ const CAnimation& CAnimationMgr::GetAnimation(uint32 iAnimation, HOBJECT hObject
 uint32 CAnimationMgr::CountAnimations(const CAnimationProps& Props)
 {
 	// This does NOT count wildcards.
-	return m_mapAnimationProps.count(Props);
+	return (uint32)m_mapAnimationProps.count(Props);
 }
 
 const CTransition& CAnimationMgr::FindTransition(const CAnimationProps& PropsFrom, const CAnimationProps& PropsTo) const

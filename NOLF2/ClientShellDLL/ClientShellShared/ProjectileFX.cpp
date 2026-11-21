@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ProjectileFX.h"
 #include "GameClientShell.h"
 #include "ParticleTrailFX.h"
@@ -626,7 +626,7 @@ void CProjectileFX::Detonate(CollisionInfo* pInfo)
             LTFLOAT fDot1 = VEC_DOT(pInfo->m_Plane.m_Normal, vP0) - pInfo->m_Plane.m_Dist;
             LTFLOAT fDot2 = VEC_DOT(pInfo->m_Plane.m_Normal, vP1) - pInfo->m_Plane.m_Dist;
 
-			if (fDot1 < 0.0f && fDot2 < 0.0f || fDot1 > 0.0f && fDot2 > 0.0f)
+			if ((fDot1 < 0.0f && fDot2 < 0.0f) || (fDot1 > 0.0f && fDot2 > 0.0f))
 			{
 				VEC_COPY(vPos, vP1);
 			}

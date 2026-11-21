@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "iltdirectmusic.h"
 #include "iltclient.h"
 #include "ClientServerShared.h"

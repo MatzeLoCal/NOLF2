@@ -13,7 +13,7 @@
 
 // Includes...
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Sparam.h"
 
 
@@ -46,7 +46,7 @@ BOOL Sparam_Get(char* sDest, const char* sSource, const char* sId)
 
 	// Move to the start of the param...
 
-	int nLen = strlen(sRealId);
+	int nLen = (int)strlen(sRealId);
 	sStart = &sStart[nLen];
 	if (strlen(sStart) < 2) return(FALSE);
 

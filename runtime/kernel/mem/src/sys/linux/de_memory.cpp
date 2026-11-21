@@ -135,7 +135,7 @@ void* dalloc(size_t size)   // match de_memory.h prototype (size_t, not uint32 â
 	// Try to allocate the memory.
 	{
 		CountAdder cntAdd(&g_PD_Malloc);
-		LT_MEM_TRACK_ALLOC(ptr = (char*)LTMemAlloc((size_t)fullAllocSize),LT_MEM_TYPE_UNKNOWN);
+		LT_MEM_TRACK_ALLOC(ptr = (char*)LTMemAlloc((uint32)((size_t)fullAllocSize)),LT_MEM_TYPE_UNKNOWN);
 	}
 
 	if(!ptr)
@@ -211,7 +211,7 @@ void dfree(void *ptr)
 		return dalloc(size);
 	}
 
-	void operator delete(void *ptr)
+	void operator delete(void *ptr) noexcept
 	{
 		dfree(ptr);
 	}

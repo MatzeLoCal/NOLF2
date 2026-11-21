@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerButeMgr.h"
 
 #define SBMGR_PLAYER_TAG				"Player"

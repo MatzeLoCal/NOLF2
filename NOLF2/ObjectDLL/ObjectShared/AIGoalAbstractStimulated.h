@@ -13,7 +13,7 @@
 #define __AIGOAL_ABSTRACT_STIMULATED_H__
 
 #include "AIGoalAbstract.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "RelationChangeObserver.h"
 
 // Forward declarations.

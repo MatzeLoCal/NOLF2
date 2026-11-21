@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "DebugLineFX.h"
 #include "ClientUtilities.h"
 #include "MsgIDs.h"
@@ -219,7 +219,7 @@ LTBOOL CDebugLineFX::Update()
 	// Trim the list to max lines or less (from the front, as they are the oldest).
 	if( !lines.empty() && lines.size() > m_nMaxLines )
 	{
-		const uint32 nNumOver = lines.size() - m_nMaxLines;
+		const uint32 nNumOver = (uint32)(lines.size() - m_nMaxLines);
 
 		lines.erase(lines.begin(), lines.begin() + nNumOver);
 	}
@@ -275,7 +275,7 @@ void CDebugLineFX::Render(HOBJECT hCamera)
 	// Draw all the lines.
 	if( !lines.empty() )
 	{
-		g_pDrawPrim->DrawPrim( &lines[0], lines.size() );
+		g_pDrawPrim->DrawPrim( &lines[0], (uint32)lines.size() );
 		m_pStr->Render();
 	}
 }

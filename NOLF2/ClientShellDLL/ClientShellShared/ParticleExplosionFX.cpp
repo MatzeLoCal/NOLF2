@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ParticleExplosionFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"
@@ -224,7 +224,7 @@ LTBOOL CParticleExplosionFX::Update()
 		if (m_ActiveEmitters[i])
 		{
             LTBOOL bBounced = LTFALSE;
-			if (bBounced = UpdateEmitter(&m_Emitters[i]))
+			if ((bBounced = UpdateEmitter(&m_Emitters[i])))
 			{
 				if (!(m_Emitters[i].m_dwPhysicsFlags & MO_LIQUID) && (m_hDebris[i]))
 				{

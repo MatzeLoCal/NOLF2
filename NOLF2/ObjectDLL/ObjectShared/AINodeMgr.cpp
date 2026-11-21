@@ -1,13 +1,13 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerUtilities.h"
 #include "AINodeMgr.h"
 #include "AINode.h"
 #include "VolumeBrushTypes.h"
 #include "SurfaceFunctions.h"
 #include "ctype.h"
-#include "SFXMsgIDs.h"
+#include "SFXMsgIds.h"
 #include "NodeLine.h"
 #include "AIUtils.h"
 #include "AIVolume.h"
@@ -160,7 +160,7 @@ void CAINodeMgr::Save(ILTMessage_Write *pMsg)
 {
 	SAVE_BOOL( m_bInitialized );
 
-	SAVE_DWORD( m_mapAINodes.size() );
+	SAVE_DWORD( (uint32)m_mapAINodes.size() );
 
 	EnumAINodeType eNodeType;
 	AINode* pNode;
@@ -266,7 +266,7 @@ AINodeTail* CAINodeMgr::FindTailNode(CAI* pAI, const LTVector& vTargetPos, const
 
 	if ( iTailerNode > iTailedNode )
 	{
-		iTailNode = Min<uint32>( m_mapAINodes.count(kNode_Tail)-1, iTailedNode+1);
+		iTailNode = Min<uint32>( (unsigned int)(m_mapAINodes.count(kNode_Tail)-1), iTailedNode+1);
 	}
 
 	// If the tail node is equal to the tailednode, then there is no good node to go to.
@@ -704,7 +704,7 @@ AINode* CAINodeMgr::FindRandomNodeFromThreat(CAI* pAI, EnumAINodeType eNodeType,
 
 	if( !s_lstTempNodes.empty() )
 	{
-		pNode = s_lstTempNodes[ GetRandom( 0, s_lstTempNodes.size() - 1 ) ];
+		pNode = s_lstTempNodes[ GetRandom( 0, (int)(s_lstTempNodes.size() - 1) ) ];
 		s_lstTempNodes.clear();
 	}
 	else {
@@ -1188,7 +1188,7 @@ AINode* CAINodeMgr::FindRandomOwnedNode(CAI* pAI, EnumAINodeType eNodeType, HOBJ
 
 	if( !s_lstTempNodes.empty() )
 	{
-		pNode = s_lstTempNodes[ GetRandom( 0, s_lstTempNodes.size() - 1 ) ];
+		pNode = s_lstTempNodes[ GetRandom( 0, (int)(s_lstTempNodes.size() - 1) ) ];
 		s_lstTempNodes.clear();
 	}
 	else {

@@ -36,7 +36,7 @@ class CInventoryButeMgr : public CGameButeMgr
 		void	Term();
 
 		// Templates
-		uint32 GetNumItems() const { return m_lstItems.size(); }
+		uint32 GetNumItems() const { return (uint32)m_lstItems.size(); }
 		int GetItemIndex(const char* szItem);
 
 		char* GetItemName(const uint32 iItem);

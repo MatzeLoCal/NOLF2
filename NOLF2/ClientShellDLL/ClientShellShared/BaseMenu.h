@@ -11,7 +11,7 @@
 #if !defined(_BASE_MENU_H_)
 #define _BASE_MENU_H_
 
-#include "LTGUIMgr.h"
+#include "ltguimgr.h"
 #include "LTPoly.h"
 
 

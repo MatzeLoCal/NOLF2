@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "BaseParticleSystemFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"

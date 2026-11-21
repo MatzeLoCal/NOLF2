@@ -437,7 +437,7 @@ LTRESULT CSoundBuffer::LoadData()
                     pTempBuffer = (uint8*)GetSoundSys()->MemAllocLock(m_dwFileSize - m_WaveHeader.m_dwDataSize);
 
                     // Copy in part before sound data.
-                    dwTemp = m_pSoundData - m_pFileData;
+                    dwTemp = (uint32)(m_pSoundData - m_pFileData);
                     memcpy(pTempBuffer, m_pFileData, dwTemp);
                     // Copy in sound data.
                     CopySoundData16to8(pTempBuffer + dwTemp, m_pSoundData, m_WaveHeader.m_dwDataSize);

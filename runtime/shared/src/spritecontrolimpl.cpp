@@ -22,8 +22,8 @@ LTRESULT SpriteControlImpl::GetCurPos(uint32 &iAnim, uint32 &iFrame)
 	SpriteAnim *pCurAnim;
 
 	pCurAnim = m_pSprite->m_SpriteTracker.m_pCurAnim;
-	iAnim = pCurAnim - m_pSprite->GetSprite()->m_Anims;
-	iFrame = m_pSprite->m_SpriteTracker.m_pCurFrame - pCurAnim->m_Frames;
+	iAnim = (uint32)(pCurAnim - m_pSprite->GetSprite()->m_Anims);
+	iFrame = (uint32)(m_pSprite->m_SpriteTracker.m_pCurFrame - pCurAnim->m_Frames);
 	return LT_OK;
 }
 

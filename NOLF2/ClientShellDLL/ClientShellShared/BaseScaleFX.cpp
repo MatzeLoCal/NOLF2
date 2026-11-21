@@ -10,13 +10,13 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "BaseScaleFX.h"
 #include "iltclient.h"
 #include "GameClientShell.h"
 #include "VarTrack.h"
 #ifndef __PSX2
-#include "winutil.h"
+#include "WinUtil.h"
 #endif
 
 extern CGameClientShell* g_pGameClientShell;

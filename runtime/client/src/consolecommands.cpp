@@ -692,7 +692,7 @@ static void con_ReadHistory(int argc, char *argv[])
 		// Read a line from the file
 		if ( fgets( aBuffer, MAX_CONSOLE_TEXTLEN, fInput ) != NULL )
 		{
-			int iLength = strlen( aBuffer );
+			int iLength = (int)strlen( aBuffer );
 			// Remove trailing newlines
 			if ( (iLength > 0) && (aBuffer[iLength - 1] == '\n') )
 				aBuffer[--iLength] = 0;

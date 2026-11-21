@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PlayerLureFX.h"
 #include "GameClientShell.h"
 #include "CMoveMgr.h"

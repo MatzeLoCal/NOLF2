@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Intelligence.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"

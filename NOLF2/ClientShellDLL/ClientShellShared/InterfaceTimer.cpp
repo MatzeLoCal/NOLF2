@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <stdio.h>
 #include "InterfaceTimer.h"
 #include "GameClientShell.h"

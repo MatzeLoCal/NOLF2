@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "GameBase.h"
 #include "CVarTrack.h"
 #include "ObjectMsgs.h"
@@ -806,6 +806,7 @@ bool GameBase::ReadProp( ObjectCreateStruct* pStruct )
 				return false;
 		}
 		break;
+		default: break;
 	}
 
 	return true;

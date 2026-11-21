@@ -136,7 +136,7 @@ class CCharacterFX : public CSpecialFX
 		bool	IsUnconscious() { return !!(m_cs.nDamageFlags & DamageTypeToFlag( DT_SLEEPING )); }
 		bool	Slipped() { return !!(m_cs.nDamageFlags & DamageTypeToFlag( DT_SLIPPERY ));	}
 
-		static uint32 GetNumPlayersInGame() { return m_lstPlayersInGame.size(); }
+		static uint32 GetNumPlayersInGame() { return (uint32)m_lstPlayersInGame.size(); }
 
 		uint8	GetCarrying() { return m_cs.nCarrying; }
 		

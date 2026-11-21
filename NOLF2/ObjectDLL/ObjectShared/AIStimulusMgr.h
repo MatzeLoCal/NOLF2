@@ -14,7 +14,7 @@
 
 #include "AIButeMgr.h"
 #include "AIClassFactory.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 
 #pragma warning (disable : 4786)

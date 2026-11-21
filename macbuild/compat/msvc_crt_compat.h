@@ -170,7 +170,7 @@ static inline void lt_splitpath_(const char* path, char* drive, char* dir,
 
 // MSVC crt debug report hook (AssertMgr): accept and ignore.
 typedef int (*_CRT_REPORT_HOOK)(int, char*, int*);
-static inline _CRT_REPORT_HOOK _CrtSetReportHook(_CRT_REPORT_HOOK) { return 0; }
+static inline _CRT_REPORT_HOOK _CrtSetReportHook(_CRT_REPORT_HOOK pfnNewHook) { (void)pfnNewHook; return 0; }
 
 // _ftime / _timeb (millisecond wall clock — GameClientShell frame timing).
 #include <sys/time.h>

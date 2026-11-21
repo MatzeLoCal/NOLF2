@@ -1,6 +1,6 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStateLaunch.h"
 #include "AIHuman.h"
 #include "AIMovement.h"
@@ -91,6 +91,7 @@ void CAIHumanStateLaunch::Update()
 				m_eStateStatus = kSStat_StateComplete;
 			}
 			break;
+		default: break;
 	}
 }
 

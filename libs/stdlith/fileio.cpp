@@ -64,7 +64,7 @@ LTBOOL CMoFileIO::Open( const char *pFilename, const char *pAccess )
 		return FALSE;
 
 	fseek( m_pFile, 0, SEEK_END );
-	m_FileLen = ftell( m_pFile );
+	m_FileLen = (uint32)ftell( m_pFile );
 	fseek( m_pFile, 0, SEEK_SET );
 
 	m_FileMin = 0;
@@ -177,7 +177,7 @@ LTBOOL CMoFileIO::Read( void *pBlock, uint32 blockSize )
 uint32 CMoFileIO::GetCurPos()
 {
 	ASSERT( m_pFile );
-	return ftell( m_pFile ) - m_FileMin;
+	return (uint32)(ftell( m_pFile ) - m_FileMin);
 }
 	
 		

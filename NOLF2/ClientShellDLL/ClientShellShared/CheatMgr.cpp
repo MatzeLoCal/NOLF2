@@ -12,7 +12,7 @@
 //
 //-------------------------------------------------------------------------
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GameClientShell.h"
 #include "CheatMgr.h"
 #include "HUDMgr.h"

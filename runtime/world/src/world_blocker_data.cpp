@@ -328,7 +328,7 @@ bool CWorldBlockerData::GetPolysInSphere(const LTVector &vCenter, float fRadius,
 {
 	ASSERT(pResults);
 
-	uint nOldSize = pResults->size();
+	uint nOldSize = (uint)pResults->size();
 
 	TBlockerPolyList::iterator iCurPoly = m_aPolys.begin();
 	for (int nIndex = 0; iCurPoly != m_aPolys.end(); ++iCurPoly, ++nIndex)
@@ -809,7 +809,7 @@ bool CWorldBlockerData::CollidePlayer(
 			vMoveDir = vMoveOffset / fMoveMag;
 
 			// Remove the intersected poly from the set
-			*iEarliestIndex = m_aPolys.size();
+			*iEarliestIndex = (int)m_aPolys.size();
 		}
 		--nMaxIterations;
 	} while (bIntersect && nMaxIterations);

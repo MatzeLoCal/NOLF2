@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ParticleSystem.h"
 #include "iltserver.h"
 #include "SFXMsgIds.h"

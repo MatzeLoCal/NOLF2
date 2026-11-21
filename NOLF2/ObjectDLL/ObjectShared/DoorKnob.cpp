@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DoorKnob.h"
 
 LINKFROM_MODULE( DoorKnob );

@@ -108,7 +108,7 @@ extern ObjectBank<LTLink> g_DLinkBank;
 
 // Use these to access ID link IDs.
 inline uint32 GetLinkID(LTLink *pLink) {return (uint32)(uintptr_t)pLink->m_pData;}
-inline void SetLinkID(LTLink *pLink, uint32 id) {pLink->m_pData = (void*)id;}
+inline void SetLinkID(LTLink *pLink, uint32 id) {pLink->m_pData = (void*)(uintptr_t)id;}
 
 
 

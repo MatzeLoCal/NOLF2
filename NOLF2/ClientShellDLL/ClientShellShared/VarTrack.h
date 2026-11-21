@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include "iltclient.h"
-#include "ILTStream.h"
+#include "iltstream.h"
 
 class VarTrack
 {
@@ -68,7 +68,7 @@ class VarTrack
 
 		if(m_pClientDE && m_hVar)
 		{
-			if(pRet = m_pClientDE->GetVarValueString(m_hVar))
+			if((pRet = m_pClientDE->GetVarValueString(m_hVar)))
 				return pRet;
 		}
 		return pDefault;

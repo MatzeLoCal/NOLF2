@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2ScreenMgr.h"
 
 //screens
@@ -251,6 +251,7 @@ void CTO2ScreenMgr::AddScreen(eScreenID screenID)
 		pScreen = debug_new(CScreenPostload);
 		break;
 
+	default: break;
 	}
 
 	if (pScreen)

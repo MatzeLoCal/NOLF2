@@ -29,7 +29,7 @@ public:
   BOOL DeleteApp();
   BOOL DeleteSubKey();
   BOOL DeleteUnderSubKey(const char* sKey);
-  BOOL IsValid() { return (this != NULL); };
+  BOOL IsValid() { return TRUE; };	// was (this != NULL): always true for a call on an object
 
 private:
 

@@ -17,7 +17,7 @@
 // Includes...
 //
 
-	#include "door.h"
+	#include "Door.h"
 
 LINKTO_MODULE( RotatingDoor );
 

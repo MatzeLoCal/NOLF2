@@ -181,7 +181,7 @@ void ctik_ShowTickStatus()
 	if ((g_ShowTickCounts & CLIENT_TICKS_SUMMARY) != 0)
 	{
 		static STickStat sTicksGlobal;
-		sTicksGlobal.Update(nUpdateCount, g_TotalGlobalTime);
+		sTicksGlobal.Update(nUpdateCount, (int)g_TotalGlobalTime);
 		con_Printf(CONRGB(192,192,255), 0, "---- Summary (%6.2ffps /%7u /%7u /%7u) ----", g_pClientMgr->m_FramerateTracker.GetRate(), sTicksGlobal.GetAveTicks(nUpdateCount), sTicksGlobal.m_nMaxTicks, sTicksGlobal.m_nCurTicks);
 		con_WhitePrintf("     Render: (%3d%% /%6u /%6u /%6u)", TICK_PARAMS(sTicksRender, g_TotalGlobalTime));
 		con_WhitePrintf("       Game: (%3d%% /%6u /%6u /%6u)", TICK_PARAMS(sTicksGame, g_TotalGlobalTime));

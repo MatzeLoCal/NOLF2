@@ -192,7 +192,7 @@ inline void str_CalcSize(uint8 *pString, int *pNumBytes, int *pNumChars)
 	}
 
 	// Number of bytes we've traversed + 1 for null terminating character.
-	*pNumBytes = (pCur - (char*)pString) + 1;
+	*pNumBytes = (int)((pCur - (char*)pString) + 1);
 }
 
 
@@ -236,7 +236,7 @@ HSTRING str_CreateStringAnsi(const char *pStringData)
 		return (HSTRING)&g_ZeroLengthStringWrapper;
 	}
 
-	nChars = strlen(pStringData);
+	nChars = (int)strlen(pStringData);
 	nBytes = nChars+1;
 	
 	pString = AllocateStringWrapper(nBytes);

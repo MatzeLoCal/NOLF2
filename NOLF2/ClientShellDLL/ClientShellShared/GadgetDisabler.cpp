@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "MsgIDs.h"
 	#include "GadgetTargetTypes.h"
 	#include "GadgetDisabler.h"
@@ -278,7 +278,7 @@ void CGadgetDisabler::OnGadgetTargetMessage( ILTMessage_Read *pMsg )
 
 		char szCharSet[512] = {0};
 		LoadString( IDS_DECODEMSG_CHARSET, szCharSet, ARRAY_LEN(szCharSet) );
-		uint32 nCharSetLen = strlen( szCharSet );
+		uint32 nCharSetLen = (uint32)strlen( szCharSet );
 			
 		for( uint32 i = 0; i < strlen( szString ); ++i )
 		{

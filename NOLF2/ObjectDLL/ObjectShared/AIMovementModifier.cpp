@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "AIMovementModifier.h"		
 #include "AIAssert.h"

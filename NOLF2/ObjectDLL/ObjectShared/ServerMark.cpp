@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerMark.h"
 #include "WeaponMgr.h"
 #include "ilttransform.h"

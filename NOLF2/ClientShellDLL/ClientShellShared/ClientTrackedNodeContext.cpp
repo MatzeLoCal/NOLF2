@@ -12,7 +12,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientTrackedNodeContext.h"
 
 
@@ -103,6 +103,7 @@ void CClientTrackedNodeContext::HandleSetTarget(ILTMessage_Read *pMsg)
 		case kTrackTarget_Position:
 			SetTrackedTarget( eGroup, vTarget );
 			break;
+		default: break;
 	}
 }
 

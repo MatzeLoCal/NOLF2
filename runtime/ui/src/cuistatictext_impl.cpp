@@ -63,7 +63,7 @@ CUI_RESULTTYPE CUIStaticText_Impl::SetText(const char* pText)
 	float y		= m_Rect.y + m_GutterTop; 
 	uint32 wrap	= (uint32) (m_Rect.width - m_GutterRight - m_GutterLeft);
 
-	int32 len = strlen(pText);
+	int32 len = (int32)strlen(pText);
 
 	// make sure there's a font
 	if (!m_pFont) return CUIR_NO_FONT;
@@ -312,6 +312,7 @@ void CUIStaticText_Impl::AlignTextInWidget()
 				ypos = m_Rect.y + (m_Rect.height - h - m_GutterBottom);
 				break;
 
+			default: break;
 		}
 
 		switch (m_Halign) {
@@ -328,6 +329,7 @@ void CUIStaticText_Impl::AlignTextInWidget()
 			case CUI_HALIGN_RIGHT:
 				xpos = m_Rect.x + m_Rect.width - m_GutterRight;
 				break;
+			default: break;
 		}
 
 		m_pPolyStr->SetPosition(xpos, ypos);

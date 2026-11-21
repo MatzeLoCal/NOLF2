@@ -10,7 +10,14 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "ModelButeMgr.h"
 #include "CommonUtilities.h"
 #include "UberAssert.h"
@@ -587,11 +594,11 @@ LTBOOL CModelButeMgr::Init(const char* szAttributeFile)
 		m_buteMgr.GetString(s_aTagName, MODELBMGR_MODEL_ANIMATION, MODELBMGR_MODEL_DEFAULT_ANIMATION, s_szBuffer, ARRAY_LEN(s_szBuffer) );
 		if(s_szBuffer[0] == '\0')
 		{
-			m_aModels[iModel].m_szAnimationMgr = debug_newa(char, strlen(MODELBMGR_MODEL_DEFAULT_ANIMATION) + 1);
+			m_aModels[iModel].m_szAnimationMgr = debug_newa(char, (int)(strlen(MODELBMGR_MODEL_DEFAULT_ANIMATION) + 1));
 			strcpy(m_aModels[iModel].m_szAnimationMgr, MODELBMGR_MODEL_DEFAULT_ANIMATION);
 		}
 		else {
-			m_aModels[iModel].m_szAnimationMgr = debug_newa(char, strlen(s_szBuffer) + 1);
+			m_aModels[iModel].m_szAnimationMgr = debug_newa(char, (int)(strlen(s_szBuffer) + 1));
 			strcpy(m_aModels[iModel].m_szAnimationMgr, s_szBuffer);
 		}
 
@@ -662,11 +669,11 @@ LTBOOL CModelButeMgr::Init(const char* szAttributeFile)
 				break;
 
 			tok = strtok( szTemp, ", ");
-			das.szAttachmentPosition = debug_newa( char, strlen(tok) + 1 );
+			das.szAttachmentPosition = debug_newa( char, (int)(strlen(tok) + 1) );
 			strcpy( das.szAttachmentPosition, tok );
 
 			tok = strtok( LTNULL, ", ");
-			das.szAttachment = debug_newa( char, strlen(tok) + 1 );
+			das.szAttachment = debug_newa( char, (int)(strlen(tok) + 1) );
 			strcpy( das.szAttachment, tok );
 
 			m_aModels[iModel].m_lstDefaultAttachments.push_back( das );
@@ -687,11 +694,11 @@ LTBOOL CModelButeMgr::Init(const char* szAttributeFile)
 				break;
 
 			tok = strtok( szTemp, ", ");
-			pas.szPVAttachmentPosition = debug_newa( char, strlen( tok ) + 1 );
+			pas.szPVAttachmentPosition = debug_newa( char, (int)(strlen( tok ) + 1) );
 			strcpy( pas.szPVAttachmentPosition, tok );
 
 			tok = strtok( LTNULL, ", " );
-			pas.szPVAttachment = debug_newa( char, strlen( tok ) + 1 );
+			pas.szPVAttachment = debug_newa( char, (int)(strlen( tok ) + 1) );
 			strcpy( pas.szPVAttachment, tok );
 
 			m_aModels[iModel].m_lstPVAttachments.push_back( pas );

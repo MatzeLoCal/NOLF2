@@ -13,7 +13,7 @@
 #define __AICENTRAL_KNOWLEDGE_MGR_H__
 
 #include "AIClassFactory.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 
 // Forward declarations.

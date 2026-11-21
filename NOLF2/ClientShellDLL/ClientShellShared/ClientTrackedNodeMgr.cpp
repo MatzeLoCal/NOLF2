@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientTrackedNodeMgr.h"
 
 // Global pointer to client tracked node mgr...

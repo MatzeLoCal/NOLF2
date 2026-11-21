@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "RelationButeMgr.h"
 #include "ButeTools.h"
@@ -320,7 +320,7 @@ LTBOOL CRelationButeMgr::Init(const char* const szAttributeFile)
 	char szTagName[RELATION_VALUE_LENGTH];
 
 	// Read the Collectives.
-	sprintf(szTagName, "%s%d", "Collective", m_listpCollectiveTemplates.size());
+	sprintf(szTagName, "%s%d", "Collective", (int)m_listpCollectiveTemplates.size());
 	while (m_buteMgr.Exist(szTagName))
 	{
 		Collective_Template* pCC_Template = debug_new( Collective_Template );
@@ -329,11 +329,11 @@ LTBOOL CRelationButeMgr::Init(const char* const szAttributeFile)
 		m_mapCollectiveNameToID.insert( _mapNameToID::value_type(std::string(pCC_Template->m_szKey), m_listpCollectiveTemplates.size()) );
 		m_listpCollectiveTemplates.push_back( pCC_Template );
 
-		sprintf(szTagName, "%s%d", "Collective", m_listpCollectiveTemplates.size());
+		sprintf(szTagName, "%s%d", "Collective", (int)m_listpCollectiveTemplates.size());
 	}
 
 	// Read the ObjectRelationMgrs.
-	sprintf(szTagName, "%s%d", "RelationalObject", m_listpObjectRelationMgrTemplates.size());
+	sprintf(szTagName, "%s%d", "RelationalObject", (int)m_listpObjectRelationMgrTemplates.size());
 	while (m_buteMgr.Exist(szTagName))
 	{
 		ObjectRelationMgr_Template* pORM_Template = debug_new( ObjectRelationMgr_Template );
@@ -342,11 +342,11 @@ LTBOOL CRelationButeMgr::Init(const char* const szAttributeFile)
 		m_mapObjectRelationMgrNameToID.insert( _mapNameToID::value_type(std::string(pORM_Template->m_szKey), m_listpObjectRelationMgrTemplates.size()) );
 		m_listpObjectRelationMgrTemplates.push_back( pORM_Template );
 
-		sprintf(szTagName, "%s%d", "RelationalObject", m_listpObjectRelationMgrTemplates.size());
+		sprintf(szTagName, "%s%d", "RelationalObject", (int)m_listpObjectRelationMgrTemplates.size());
 	}
 
 	// Read Relation Maintainers.
-	sprintf(szTagName, "%s%d", "RelationSet", m_listpRelationUserTemplates.size());
+	sprintf(szTagName, "%s%d", "RelationSet", (int)m_listpRelationUserTemplates.size());
 	while (m_buteMgr.Exist(szTagName))
 	{
 		RelationUser_Template* pRU_Template = debug_new(RelationUser_Template);
@@ -355,11 +355,11 @@ LTBOOL CRelationButeMgr::Init(const char* const szAttributeFile)
 		m_mapRelationNameToID.insert( _mapNameToID::value_type(std::string(pRU_Template->m_szKey), m_listpRelationUserTemplates.size()) );
 		m_listpRelationUserTemplates.push_back( pRU_Template );
 
-		sprintf(szTagName, "%s%d", "RelationSet", m_listpRelationUserTemplates.size());
+		sprintf(szTagName, "%s%d", "RelationSet", (int)m_listpRelationUserTemplates.size());
 	}
 
 	// Read the Relational Data Sets.
-	sprintf(szTagName, "%s%d", "RelationData", m_listpRelationDataTemplates.size());
+	sprintf(szTagName, "%s%d", "RelationData", (int)m_listpRelationDataTemplates.size());
 	while (m_buteMgr.Exist(szTagName))
 	{
 		DataUser_Template* pDU_Template = debug_new(DataUser_Template);
@@ -368,7 +368,7 @@ LTBOOL CRelationButeMgr::Init(const char* const szAttributeFile)
 		m_mapDataNameToID.insert( _mapNameToID::value_type(std::string(pDU_Template->m_szKey), m_listpRelationDataTemplates.size()) );
 		m_listpRelationDataTemplates.push_back(pDU_Template);
 
-		sprintf(szTagName, "%s%d", "RelationData", m_listpRelationDataTemplates.size());
+		sprintf(szTagName, "%s%d", "RelationData", (int)m_listpRelationDataTemplates.size());
 	}
 
 	m_buteMgr.Term();
@@ -582,7 +582,7 @@ void CRelationButeMgr::ReadTemplate(const char* const szTagName,
 	CButeTools::GetValidatedString(m_buteMgr, szTagName, "RelationSet", pCC_Template->m_szRelationSet, sizeof(pCC_Template->m_szRelationSet), "" );
 
 	// Keep track of the template ID, for lookups later without a string compare.
-	pCC_Template->m_nTemplateID = m_listpCollectiveTemplates.size();
+	pCC_Template->m_nTemplateID = (int)m_listpCollectiveTemplates.size();
 }
 
 //----------------------------------------------------------------------------
@@ -602,7 +602,7 @@ void CRelationButeMgr::ReadTemplate(const char* const szTagName,
 	CButeTools::GetValidatedString(m_buteMgr, szTagName, "RelationData", pORM_Template->m_szDataSet, sizeof(pORM_Template->m_szDataSet), "" );
 
 	// Keep track of the template ID, for lookups later without a string compare.
-	pORM_Template->m_nTemplateID = m_listpObjectRelationMgrTemplates.size();
+	pORM_Template->m_nTemplateID = (int)m_listpObjectRelationMgrTemplates.size();
 }
 
 //----------------------------------------------------------------------------
@@ -618,7 +618,7 @@ void CRelationButeMgr::ReadTemplate(const char* const szTagName, RelationUser_Te
 	CButeTools::GetValidatedString(m_buteMgr, szTagName, "Name", pRU_Template->m_szKey, sizeof(pRU_Template->m_szKey) );
 
 	// Keep track of the template ID, for lookups later without a string compare.
-	pRU_Template->m_nTemplateID = m_listpRelationUserTemplates.size();
+	pRU_Template->m_nTemplateID = (int)m_listpRelationUserTemplates.size();
 
 	// Fill the new relation Maintainer with all relations listed under it.
 	int		nRelation = 0;
@@ -659,7 +659,7 @@ void CRelationButeMgr::ReadTemplate(const char* const szTagName, DataUser_Templa
 	CButeTools::GetValidatedString(m_buteMgr, szTagName, "Name", pRD_Template->m_szKey, sizeof(pRD_Template->m_szKey) );
 
 	// Keep track of the template ID, for lookups later without a string compare.
-	pRD_Template->m_nTemplateID = m_listpRelationDataTemplates.size();
+	pRD_Template->m_nTemplateID = (int)m_listpRelationDataTemplates.size();
 
 	// Fill the new relation Maintainer with all relations listed under it.
 
@@ -865,7 +865,7 @@ int CRelationUser::Save(ILTMessage_Write *pMsg)
 {
 	m_RelationSet.Save(pMsg);
 
-	SAVE_INT( m_Momentos.size() );
+	SAVE_INT( (int32)m_Momentos.size() );
 
 	// Save each of the Active Relationships
 	std::for_each( m_Momentos.begin(),

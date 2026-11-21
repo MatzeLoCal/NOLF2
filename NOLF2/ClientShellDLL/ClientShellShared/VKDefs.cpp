@@ -8,7 +8,7 @@
 //
 //----------------------------------------------------------
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "iltclient.h"
 
 char VKToASCII (int nKey)

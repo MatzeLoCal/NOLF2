@@ -598,7 +598,7 @@ LTRESULT CLTServer::FindNamedObjects(const char *pName,
 	objArray.Reset();
 
 	// Go thru the hash table and find all matches.
-	uint32 keyLen = strlen(pName) + 1;
+	uint32 keyLen = (uint32)(strlen(pName) + 1);
 	HHashElement *hElement = hs_FindElement(g_pServerMgr->m_hNameTable, pName, keyLen);
 	uint32 tmpTotalFound = 0;
 	while (hElement)
@@ -1887,7 +1887,7 @@ LPBASECLASS si_CreateObjectProps(HCLASS hClass, ObjectCreateStruct *pStruct, con
 				uint32 nLength = 0;
 				for (int i = 1; i < parse.m_nArgs; i++)
 				{
-					uint32 nCurLength = strlen(parse.m_Args[i]);
+					uint32 nCurLength = (uint32)strlen(parse.m_Args[i]);
 					nLength += nCurLength;
 					if (nLength >= MAX_GP_STRING_LEN)
 					{
@@ -1999,13 +1999,13 @@ void si_BPrint(const char *pMsg, ...)
 
 LTRESULT si_GetSkyDef(SkyDef *pDef)
 {
-	memcpy(pDef, &g_pServerMgr->m_SkyDef, sizeof(SkyDef));
+	memcpy((void*)pDef, &g_pServerMgr->m_SkyDef, sizeof(SkyDef));
 	return LT_OK;
 }
 
 LTRESULT si_SetSkyDef(SkyDef *pDef)
 {
-	memcpy(&g_pServerMgr->m_SkyDef, pDef, sizeof(SkyDef));
+	memcpy((void*)&g_pServerMgr->m_SkyDef, pDef, sizeof(SkyDef));
 	sm_SetSendSkyDef();
 	return LT_OK;
 }

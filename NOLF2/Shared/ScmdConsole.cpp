@@ -11,13 +11,13 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ScmdConsole.h"
 #include "ScmdShared.h"
 #include "ParsedMsg.h"
-#include "resshared.h"
+#include "ResShared.h"
 #include "DebugNew.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "CommonUtilities.h"
 #include "AutoMessage.h"
 #include "NetDefs.h"
@@ -35,6 +35,9 @@
 class ScmdConsoleCommandHandler
 {
 	public:
+
+		// Handlers are deleted through this base (debug_delete), so the destructor must be virtual.
+		virtual ~ScmdConsoleCommandHandler( ) { }
 
 		// String token.
 		virtual CParsedMsg::CToken const& Token( ) = 0;

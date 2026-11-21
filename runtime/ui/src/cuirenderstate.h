@@ -37,4 +37,4 @@ public:
 };
 
 
-#endif __CUIRENDERSTATE_H__
+#endif // __CUIRENDERSTATE_H__

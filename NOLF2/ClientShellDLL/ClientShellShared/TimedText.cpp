@@ -1,5 +1,5 @@
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "TimedText.h"
 #include "GameClientShell.h"
 
@@ -78,7 +78,7 @@ void CTimedText::Init( TIMED_TEXT_INIT_STRUCT const &initData )
 		CLEARFLAG( m_flags, CTIMEDTEXTFLAG_USE_CLIP_RECT );
 	}
 	
-	m_textLen = strlen( m_text->GetText() );
+	m_textLen = (int)(strlen( m_text->GetText() ));
 	m_numberOfLinesBeforeScroll = initData.numberOfLinesBeforeScroll;
 		
 	// Timing Information

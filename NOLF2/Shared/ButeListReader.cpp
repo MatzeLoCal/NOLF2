@@ -11,9 +11,16 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "ButeListReader.h"
-#include "ButeMgr.h"
+#include "butemgr.h"
 
 char CButeListReader::ms_aAttName[100];
 
@@ -102,7 +109,7 @@ void CButeListReader::Read(CButeMgr* pButeMgr, const char* pszTagName, const cha
 			sprintf(ms_aAttName, "%s%d", pszAttName, iItem);
 			pButeMgr->GetString(pszTagName, ms_aAttName, szTemp, sizeof(szTemp));
 			ASSERT(strlen(szTemp) < nStrLen);
-			m_szItems[iItem] = debug_newa(char, strlen(szTemp) + 1);
+			m_szItems[iItem] = debug_newa(char, (int)(strlen(szTemp) + 1));
 			strcpy(m_szItems[iItem], szTemp);
 		}
 	}	
@@ -174,7 +181,7 @@ void CButeListReader::SetItem(uint8 iItem, const char* szItem, const uint32 nStr
 		ASSERT( 0 == m_szItems );
 		m_cItems = 1;
 		m_szItems = debug_newa(char*, 1);
-		m_szItems[0] = debug_newa(char, strlen(szItem) + 1);
+		m_szItems[0] = debug_newa(char, (int)(strlen(szItem) + 1));
 	}
 
 	ASSERT(iItem < m_cItems);

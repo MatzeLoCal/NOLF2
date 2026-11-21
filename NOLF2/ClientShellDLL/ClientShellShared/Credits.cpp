@@ -14,7 +14,7 @@
 
 // Includes...
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GameClientShell.h"
 #include "Credits.h"
 #include <stdio.h>
@@ -95,7 +95,7 @@ LTBOOL CCredit::Init(char* sBuf)
 		}
 		else
 		{
-			int nCount = _mbsnbcnt((const unsigned char*)sBuf,1);
+			int nCount = (int)(_mbsnbcnt((const unsigned char*)sBuf,1));
 			memcpy(&sString[i], sBuf, nCount);
 			i += nCount;
 			sBuf = (char*)_mbsinc((const unsigned char*)sBuf);
@@ -233,6 +233,7 @@ void CCredit::FormatStrings()
 	case CP_UL:
 		offset = 0.0f;
 		break;
+	default: break;
 	}
 
 	if (offset > 0.0f)

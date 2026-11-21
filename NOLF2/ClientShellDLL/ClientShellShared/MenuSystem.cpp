@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MenuSystem.h"
 #include "InterfaceMgr.h"
 #include "ClientResShared.h"
@@ -125,6 +125,7 @@ uint32 CMenuSystem::OnCommand(uint32 nCommand, uintptr_t nParam1, uintptr_t nPar
 		case eGameTypeDoomsDay:
 			g_pInterfaceMgr->SwitchToScreen(SCREEN_ID_HOST_DD_OPTIONS);
 			break;
+		default: break;
 		};
 		break;
 	case MC_PLAYER:

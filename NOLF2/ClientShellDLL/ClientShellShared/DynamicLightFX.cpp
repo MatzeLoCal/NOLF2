@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "DynamicLightFX.h"
 #include "iltclient.h"
 #include "VarTrack.h"

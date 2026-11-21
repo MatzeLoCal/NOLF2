@@ -10,14 +10,14 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "CharacterHitBox.h"
 #include "Character.h"
 #include "Body.h"
 #include "Projectile.h"
 #include "ServerUtilities.h"
 #include "CVarTrack.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ObjectMsgs.h"
 #include "Attachments.h"
 #include "GameServerShell.h"
@@ -601,6 +601,7 @@ static LTVector GetNodeModelColor(ModelSkeleton eModelSkeleton, ModelNode eModel
 		case HL_LEG :
 			vColor = LTVector(0, 0, 1);
 		break;
+		default: break;
 	}
 
 	return vColor;

@@ -13,7 +13,7 @@
 #ifndef __KEY_DATA_H__
 #define __KEY_DATA_H__
 
-#include "key.h"
+#include "Key.h"
 
 #define POSITION_KEY	(1<<0)		// Use position info
 #define SOUND_KEY		(1<<1)		// Play sound

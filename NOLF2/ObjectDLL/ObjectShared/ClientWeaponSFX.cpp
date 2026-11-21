@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "WeaponMgr.h"
 #include "ClientWeaponSFX.h"
 #include "SFXMsgIds.h"

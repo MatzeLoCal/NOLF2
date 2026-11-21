@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PlayerMgr.h"
 #include "AttachButeMgr.h"
 #include "BodyFX.h"
@@ -42,7 +42,7 @@
 #include "PolyGridFX.h"
 #include "PlayerViewAttachmentMgr.h"
 #include "LTEulerAngles.h"
-#include "DoomsDayPieceFX.h"
+#include "DoomsdayPieceFX.h"
 
 CPlayerMgr* g_pPlayerMgr = NULL;
 
@@ -1354,7 +1354,7 @@ void CPlayerMgr::HandleMsgPlayerDamage (ILTMessage_Read *pMsg)
 	
 
 /*******************************
-/****** Damage Sector Map ******
+ ****** Damage Sector Map ******
 	            3
 		     4     2
 
@@ -5477,6 +5477,7 @@ uint8 CPlayerMgr::CanCarryObject()
 			case kDoomsDay_Core:
 				return (CFX_CARRY_DD_CORE);
 				break;
+			default: break;
 			}
 		}
 

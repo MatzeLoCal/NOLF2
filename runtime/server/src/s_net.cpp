@@ -853,7 +853,7 @@ CServerEvent* CreateServerEvent(int type)
 		return LTNULL;
 
     CServerEvent *pRet = (CServerEvent*)sb_Allocate(&g_pServerMgr->m_ServerEventBank);
-    memset(pRet, 0, sizeof(*pRet));
+    memset((void*)pRet, 0, sizeof(*pRet));
     dl_InitList(&pRet->m_ClientStructNodeList);
 
     // Add the events to the client structs.
@@ -891,7 +891,7 @@ CServerEvent* CreateServerToClientEvent(int type, Client *pClient)
         return LTNULL;
 
     pRet = (CServerEvent*)sb_Allocate(&g_pServerMgr->m_ServerEventBank);
-    memset(pRet, 0, sizeof(*pRet));
+    memset((void*)pRet, 0, sizeof(*pRet));
 
     dl_InitList(&pRet->m_ClientStructNodeList);
 

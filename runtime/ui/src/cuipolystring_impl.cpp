@@ -79,7 +79,7 @@ CUIPolyString_Impl::CUIPolyString_Impl(CUIFont* pFont,
 	m_X = x;
 	m_Y = y;
 
-	memset(&m_Rect, 0, sizeof(CUIRECT));
+	memset((void*)&m_Rect, 0, sizeof(CUIRECT));
 
 	// must be valid before we call settext!
 	m_Valid = true;

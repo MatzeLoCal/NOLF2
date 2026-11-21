@@ -1073,7 +1073,7 @@ bool ClipPolyToYRange(WorldPoly *pPoly, LTVector *aPolyVerts, uint32 nMaxVerts, 
 		return false;
 
 	// Return the clipped result
-	*pNumVerts = pResultOut - aPolyVerts;
+	*pNumVerts = (uint32)(pResultOut - aPolyVerts);
 	return true;
 }
 
@@ -1621,7 +1621,7 @@ static uint32 ClipOutline(const LTVector *pInput, LTVector *pOutput, uint32 nNum
 		bPrevClip = bCurClip;
 	}
 
-	return pCurOutput - pOutput;
+	return (uint32)(pCurOutput - pOutput);
 }
 
 // Calculate the maximum Y value of the poly clipped to the box

@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2InterfaceMgr.h"
 #include "GameClientShell.h"
 

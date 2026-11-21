@@ -14,7 +14,7 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "PlayerObj.h"
 #include "WorldProperties.h"
 #include "TransitionArea.h"

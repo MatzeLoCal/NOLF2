@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ObjectMsgs.h"
 #include "MsgIDs.h"
 #include "SFXMsgIds.h"
@@ -1474,5 +1474,7 @@ LTBOOL CAnimatorPlayer::IsAnimatingDirectionDone(Direction eDirection) const
 
 LTBOOL CAnimatorPlayer::IsAnimatingLeanDone(Lean eLean) const
 {
-	return ( m_eLastWeapon == eLean && IsAniTrackerDone(m_eAniTrackerUpper) );
+	// Compares the last WEAPON with a lean value (m_eLastLean was meant). Kept as shipped:
+	// it decides when a lean counts as finished, and retail behaves this way.
+	return ( (int)m_eLastWeapon == (int)eLean && IsAniTrackerDone(m_eAniTrackerUpper) );
 }

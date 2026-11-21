@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AINodeGuard.h"
 #include "AINodeMgr.h"
 #include "AIUtils.h"
@@ -147,7 +147,7 @@ void AINodeGuard::Save(ILTMessage_Write *pMsg)
 
 	HSTRING hstrNodeName;
 	HSTRING_LIST::iterator hstr_it;
-	SAVE_DWORD( m_lstGuardedNodeNames.size() );
+	SAVE_DWORD( (uint32)m_lstGuardedNodeNames.size() );
 	for ( hstr_it = m_lstGuardedNodeNames.begin(); hstr_it != m_lstGuardedNodeNames.end(); ++hstr_it )
 	{
 		hstrNodeName = *hstr_it;
@@ -158,7 +158,7 @@ void AINodeGuard::Save(ILTMessage_Write *pMsg)
 
 	HOBJECT hNode;
 	HOBJECT_LIST::iterator h_it;
-	SAVE_DWORD( m_lstGuardedNodes.size() );
+	SAVE_DWORD( (uint32)m_lstGuardedNodes.size() );
 	for ( h_it = m_lstGuardedNodes.begin(); h_it != m_lstGuardedNodes.end(); ++h_it )
 	{
 		hNode = *h_it;

@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "VolumeBrushTypes.h"
 #include "Character.h"
 #include "SFXMsgIds.h"

@@ -8,8 +8,8 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
-#include "gameclientshell.h"
+#include "StdAfx.h"
+#include "GameClientShell.h"
 #include "InterfaceResMgr.h"
 #include "ClientButeMgr.h"
 

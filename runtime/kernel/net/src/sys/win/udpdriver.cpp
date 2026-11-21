@@ -20,7 +20,7 @@
 #endif
 
 #ifndef DE_SERVER_COMPILE
-#include "ConsoleCommands.h"
+#include "consolecommands.h"
 #endif // DE_SERVER_COMPILE
 
 #ifdef _WIN32
@@ -1117,8 +1117,8 @@ bool CUDPConn::FlushOutgoingQueues()
 
 	// Jump out if there's nothing to do
 	if ((m_bPauseGuaranteed ||
-		(m_nOutgoingGCount == 0) &&
-		(m_nOutgoingUCount == 0)) &&
+		((m_nOutgoingGCount == 0) &&
+		(m_nOutgoingUCount == 0))) &&
 		!bSendHeartbeat &&
 		!bSendEmptyFrame)
 		return true;
@@ -1800,7 +1800,7 @@ bool udp_RecvFromSocket(SOCKET theSocket, CPacket_Read *pPacket, sockaddr_in *pS
 
 	// Get the data.
 	socklen_t fromSize = sizeof(sockaddr_in);
-	int status = recvfrom(theSocket, (char*)aRecvBuffer, k_nMaxUDPPacketSize, 0, (struct sockaddr*)pSender, &fromSize);
+	int status = (int)(recvfrom(theSocket, (char*)aRecvBuffer, k_nMaxUDPPacketSize, 0, (struct sockaddr*)pSender, &fromSize));
 	if (pResultStatus)
 		*pResultStatus = status;
 	if (status == SOCKET_ERROR)
@@ -2004,7 +2004,7 @@ bool CUDPDriver::SendTo(SOCKET theSocket, const CPacket_Read &cPacket, sockaddr_
 		}
 	}
 
-	status = sendto(theSocket, (char*)aSendBuffer, nDataLen,
+	status = (int)sendto(theSocket, (char*)aSendBuffer, nDataLen,
 		0, (sockaddr*)pSendTo, sizeof(*pSendTo));
 
 	return status != SOCKET_ERROR;
@@ -2235,7 +2235,7 @@ LTRESULT CUDPDriver::UpdateQuery()
 		if (iQuery == -1)
 		{
 			CUDPQuery newQuery;
-			memset(&newQuery, 0, sizeof(newQuery));
+			memset((void*)&newQuery, 0, sizeof(newQuery));
 			newQuery.m_Addr = senderAddr;
 			if (m_Queries.Append(newQuery))
 			{
@@ -3441,7 +3441,7 @@ LTRESULT CUDPDriver::SendTcpIp(const CPacket_Read &cMsg, const char *sAddr, uint
 	uint8 *aSendBuffer = (uint8 *)alloca(nDataLen);
 	cMsg.PeekData(aSendBuffer, nDataLen * 8);
 
-	int status = sendto(m_Socket, (char*)aSendBuffer, nDataLen,
+	int status = (int)sendto(m_Socket, (char*)aSendBuffer, nDataLen,
 		0, (sockaddr*)&addr, sizeof(addr));
 	
 	if (status == (int)nDataLen)
@@ -3822,7 +3822,7 @@ uint32 CUDPDriver::ThreadBootstrap_Listen(void *pUserData)
 {
 	CUDPDriver *pDriver = (CUDPDriver *)pUserData;
 
-	return (unsigned long)pDriver->Thread_Listen();
+	return (uint32)((unsigned long)pDriver->Thread_Listen());
 }
 
 uint32 CUDPDriver::Thread_Listen()

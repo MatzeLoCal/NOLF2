@@ -18,7 +18,7 @@
 #include "SFXMsgIds.h"
 #include "TemplateList.h"
 #include "BankedList.h"
-#include "ILTDrawPrim.h"
+#include "iltdrawprim.h"
 
 struct PLFXCREATESTRUCT : public SFXCREATESTRUCT
 {

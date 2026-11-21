@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "BodyState.h"
 #include "Body.h"
 #include "AIVolume.h"

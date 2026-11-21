@@ -1181,7 +1181,7 @@ void CLTClient::CPrint(const char *pMsg, ...)
 	LTVSNPrintF(str, knBufferSize, pMsg, marker);
 	va_end(marker);
 
-	uint32 len = strlen(str);
+	uint32 len = (uint32)strlen(str);
 	if (str[len-1] != '\n')
 	{
 		str[len] = '\n';
@@ -1268,8 +1268,8 @@ uint32 CLTClient::GetContainedObjects(HOBJECT hContainer,
 	if (!pObj)
 		return 0;
 
-	// Must be a container
-	if (pObj->m_ObjType != OT_CONTAINER)
+	// Must be a container (m_ObjectType: m_ObjType is the world-tree node type)
+	if (pObj->m_ObjectType != OT_CONTAINER)
 		return 0;
 
 	ContainerInstance *pContainer = (ContainerInstance*)pObj;
@@ -2482,7 +2482,7 @@ float ci_GetGameFrameTime()
 
 LTRESULT ci_GetSkyDef(SkyDef *pDef)
 {
-	memcpy(pDef, &g_pClientMgr->m_SkyDef, sizeof(SkyDef));
+	memcpy((void*)pDef, &g_pClientMgr->m_SkyDef, sizeof(SkyDef));
 	return LT_OK;
 }
 

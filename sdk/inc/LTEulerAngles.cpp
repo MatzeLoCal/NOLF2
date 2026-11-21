@@ -5,7 +5,7 @@
 
 #include <math.h>
 #include <float.h>
-#include "lteulerangles.h"
+#include "LTEulerAngles.h"
 
 inline void EulGetOrd(int ord, int &i, int &j, int &k, int &h, int &n, int &s, int &f)
 {

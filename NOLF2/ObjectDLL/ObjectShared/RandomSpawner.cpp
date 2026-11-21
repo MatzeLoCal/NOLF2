@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "RandomSpawner.h"
 #include "ServerUtilities.h"
 #include "ObjectMsgs.h"

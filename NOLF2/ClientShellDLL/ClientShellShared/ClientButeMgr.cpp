@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientButeMgr.h"
 
 #define CBMGR_CHEATS_TAG				"Cheats"

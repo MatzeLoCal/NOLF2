@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStrategyToggleLights.h"
 #include "AIHumanStrategy.h"
 #include "AIHuman.h"
@@ -436,6 +436,7 @@ LTBOOL CAIHumanStrategyToggleLights::UpdateAnimation()
 			GetAnimationContext()->Lock();
 
 			break;
+		default: break;
 	}
 
 	return LTTRUE;

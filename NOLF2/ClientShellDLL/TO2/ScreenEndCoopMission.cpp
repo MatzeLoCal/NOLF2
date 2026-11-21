@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenEndCoopMission.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -160,7 +160,7 @@ void CScreenEndCoopMission::OnFocus(LTBOOL bFocus)
 				if (pStats->dwNumShotsFired)
 				{
 					float fAccuracy = 100.0f * (float)pStats->dwNumHits / (float) pStats->dwNumShotsFired;
-					sprintf(szTmp,"%0.1f%",fAccuracy);
+					sprintf(szTmp,"%0.1f%%",fAccuracy);
 				}
 				else
 				{

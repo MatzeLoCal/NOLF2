@@ -17,13 +17,13 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __BUTETOOLS_H__
 #include "ButeTools.h"		
 #endif
 
-#include "ButeMgr.h"
+#include "butemgr.h"
 #include "AIUtils.h"
 
 // Forward declarations

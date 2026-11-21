@@ -126,7 +126,7 @@ void ic_StartCounter(LTCounter *pCounter)
 
 uint32 ic_EndCounter(LTCounter *pCounter)
 {
-	return cnt_EndCounterFinal(reinterpret_cast<CounterFinal&>(*pCounter));
+	return (uint32)(cnt_EndCounterFinal(reinterpret_cast<CounterFinal&>(*pCounter)));
 }
 
 

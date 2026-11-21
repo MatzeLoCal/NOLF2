@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerAssetMgr.h"
 
 // define this to print out all of the files that assetmgr loads

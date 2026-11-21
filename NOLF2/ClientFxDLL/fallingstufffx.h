@@ -13,7 +13,7 @@
 
 	// Includes....
 
-	#include "basefx.h"
+	#include "BaseFx.h"
 	#include "linklist.h"
 	#include "spritesystemfx.h"
 

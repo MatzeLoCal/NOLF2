@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "PlayerVehicle.h"
 #include "PlayerButes.h"
 #include "ServerButeMgr.h"

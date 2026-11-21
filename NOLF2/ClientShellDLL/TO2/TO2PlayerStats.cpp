@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include <stdio.h>
 #include "TO2PlayerStats.h"
 #include "GameClientShell.h"
@@ -20,7 +20,7 @@
 #include "ClientWeaponMgr.h"
 #include "MissionMgr.h"
 #include "KeyMgr.h"
-#include "clientres.h"
+#include "ClientRes.h"
 
 void ArmorFn(int argc, char **argv)
 {

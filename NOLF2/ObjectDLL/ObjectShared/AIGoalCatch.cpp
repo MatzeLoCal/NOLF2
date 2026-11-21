@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIGOALCATCH_H__
 #include "AIGoalCatch.h"		

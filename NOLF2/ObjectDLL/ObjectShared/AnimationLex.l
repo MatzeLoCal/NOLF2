@@ -92,7 +92,7 @@ LTBOOL CAnimationLex::Lex(const char* szFile)
 
 	// Read the file...
 
-	unsigned long uLen = pDStream->GetLen();
+	uint32 uLen = pDStream->GetLen();	// GetLen() is uint32; unsigned long is 64-bit here
 
 	char* pData = debug_newa(char, uLen+2);
 	if (!pData)

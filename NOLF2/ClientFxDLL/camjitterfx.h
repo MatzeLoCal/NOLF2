@@ -15,7 +15,7 @@
 
 	// Includes....
 
-	#include "basefx.h"
+	#include "BaseFx.h"
 
 	class CCamJitterProps : public CBaseFXProps
 	{

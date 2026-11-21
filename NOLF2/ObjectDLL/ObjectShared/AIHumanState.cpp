@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanState.h"
 #include "AIHuman.h"
 #include "AITarget.h"
@@ -2505,6 +2505,7 @@ void CAIHumanStateUseObject::Update()
 			}
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -2626,6 +2627,7 @@ void CAIHumanStateUseObject::UpdateAnimation()
 			}
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -2819,6 +2821,7 @@ void CAIHumanStateUseObject::HandleDamage(const DamageStruct& damage)
 			case DT_POISON:
 				SendTriggerMsgToObject(GetAI(), GetAI()->GetObject(), LTFALSE, "DESTROY");
 				break;
+			default: break;
 		}
 	}
 }
@@ -3069,6 +3072,7 @@ void CAIHumanStateTail::UpdateAnimation()
 			m_pStrategyFollowPath->UpdateAnimation();
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -5477,6 +5481,7 @@ void CAIHumanStateAttack::Update()
 			case CAIHumanStrategyDodge::eStateFleeing:
 				m_eStateStatus = kSStat_Flee;
 				break;
+			default: break;
 		}
 
 		return;
@@ -5548,6 +5553,7 @@ void CAIHumanStateAttack::Update()
 				case CAIHumanStrategyDodge::eStateFleeing:
 					m_eStateStatus = kSStat_Flee;
 					return;
+				default: break;
 			}
 
 			switch ( m_pStrategyDodge->GetStatus() )
@@ -6352,6 +6358,7 @@ void CAIHumanStateAttackFromCover::Update()
 			UpdateUseCover();
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -7019,6 +7026,7 @@ void CAIHumanStateAttackFromVantage::UpdateAnimation()
 		case kSStat_Attacking:
 			m_pStrategyShoot->UpdateAnimation();
 			break;
+		default: break;
 	}
 }
 
@@ -7385,6 +7393,7 @@ void CAIHumanStateAttackFromView::Update()
 			UpdateAttacking();
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -7406,6 +7415,7 @@ void CAIHumanStateAttackFromView::UpdateAnimation()
 		case kSStat_Attacking:
 			m_pStrategyShoot->UpdateAnimation();
 			break;
+		default: break;
 	}
 }
 
@@ -7986,6 +7996,7 @@ void CAIHumanStatePanic::UpdateAnimation()
 			}
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -9304,6 +9315,7 @@ void CAIHumanStateFollow::SetMovement(EnumAnimProp eMovement)
 		case kAP_Swim:
 			m_pStrategyFollowPath->SetMedium(CAIHumanStrategyFollowPath::eMediumUnderwater);
 			break;
+		default: break;
 	}
 }
 
@@ -9560,6 +9572,7 @@ void CAIHumanStateLongJump::Update()
 				m_eStateStatus = kSStat_StateComplete;
 			}
 			break;
+		default: break;
 	}
 }
 
@@ -9737,5 +9750,6 @@ void CAIHumanStateLongJump::UpdateAnimation()
 				}
 			}
 			break;
+		default: break;
 	}
 }

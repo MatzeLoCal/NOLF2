@@ -19,7 +19,7 @@
 
 #include "GameBase.h"
 #include "DestructibleModel.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "ActivateTypeMgr.h"
 
 LINKTO_MODULE( WorldModel );

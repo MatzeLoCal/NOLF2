@@ -59,7 +59,7 @@ void sb_FreeAll(StructBank *pBank)
 		#endif
 
 		pDataPos = (uint8*)pPage->m_Data;
-		count = pPage->m_nObjects;
+		count = (uint32)pPage->m_nObjects;
 		while(count--)
 		{
 			pStruct = (StructLink*)pDataPos;
@@ -128,7 +128,7 @@ int32 sb_AllocateNewStructPage(StructBank *pBank, uint32 nAllocations)
 		return 1;
 
 	// Allocate a new page.
-	pPage = (StructBankPage*)g_DefAlloc.Alloc((pBank->m_AlignedStructSize*nAllocations) + (sizeof(StructBankPage)-sizeof(uint32)));
+	pPage = (StructBankPage*)g_DefAlloc.Alloc((uint32)((pBank->m_AlignedStructSize*nAllocations) + (sizeof(StructBankPage)-sizeof(uint32))));
 	if(!pPage)
 		return 0;
 
@@ -167,7 +167,7 @@ LTBOOL sb_IsObjectAllocated(StructBank *pBank, void *pObj)
 
 	if(pBank->m_StructSize > sizeof(StructLink*))
 	{
-		count = pBank->m_StructSize - sizeof(StructLink*);
+		count = (uint32)(pBank->m_StructSize - sizeof(StructLink*));
 		while(count--)
 		{
 			if(*pBytes != 0xEA)

@@ -2,7 +2,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PopupText.h"
 #include "InterfaceMgr.h"
 #include "GameClientShell.h"

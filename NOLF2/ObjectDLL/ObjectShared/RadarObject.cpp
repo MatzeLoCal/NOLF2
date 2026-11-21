@@ -14,8 +14,8 @@
 // Includes...
 //
 
-	#include "stdafx.h"
-	#include "MsgIds.h"
+	#include "Stdafx.h"
+	#include "MsgIDs.h"
 	#include "ParsedMsg.h"
 	#include "RadarObject.h"
 	#include "VersionMgr.h"

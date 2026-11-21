@@ -314,7 +314,7 @@ LTRESULT dsi_InitClientShellDE()
 #endif
 
 	// have the user's cshell and the clientMgr exchange info
-	if ((i_client_shell == NULL ))
+	if (i_client_shell == NULL )
     {
 		CRITICAL_ERROR("dsys_interface", "Can't create CShell\n");
 	}

@@ -2,7 +2,7 @@
 #include "bdefs.h"
 #include "ilttexinterface.h"
 #include "d3dtexinterface.h"
-#include "Render.h"
+#include "render.h"
 #include "dtxmgr.h"
 #include "colorops.h"
 #include "clientmgr.h"
@@ -103,7 +103,7 @@ LTRESULT CSysTexInterface::CreateTextureFromName(HTEXTURE &hTexture, const char 
 		
 		if (hTexture) 
 		{
-			memset(hTexture, 0, sizeof(*hTexture));
+			memset((void*)hTexture, 0, sizeof(*hTexture));	// (void*): zeroing also clears m_Format's vtable pointer -- harmless, nothing calls PFormat::Init virtually
 			hTexture->m_pFile = pIdent;
 			pIdent->m_pData	  = hTexture;
 
@@ -182,7 +182,7 @@ LTRESULT CSysTexInterface::CreateTextureFromData(HTEXTURE &hTexture, ETextureTyp
 		return LT_ERROR;
 
 	//clear the texture out, and add it to the global list of shared textures
-	memset(hTexture, 0, sizeof(*hTexture)); 
+	memset((void*)hTexture, 0, sizeof(*hTexture));	// (void*): zeroing also clears m_Format's vtable pointer -- harmless, nothing calls PFormat::Init virtually
 	dl_AddHead(&g_pClientMgr->m_SharedTextures, &hTexture->m_Link, hTexture);
 
 	//there is no file reference for this shared texture since it is entirely user created

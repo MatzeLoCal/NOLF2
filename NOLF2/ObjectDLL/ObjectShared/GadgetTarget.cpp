@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "ObjectMsgs.h"
 	#include "ParsedMsg.h"
 	#include "MsgIDs.h"
@@ -789,7 +789,7 @@ void GadgetTarget::HandleGadgetMsg( const CParsedMsg &cMsg, HOBJECT hSender )
 {
 	if( cMsg.GetArgCount() < 2 ) return;
 
-	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo( atol(cMsg.GetArg(1)) );
+	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo( (int)(atol(cMsg.GetArg(1))) );
 	if( !pAmmo ) return;
 
 	DamageType	eType = pAmmo->eInstDamageType;

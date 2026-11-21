@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "iltserver.h"
 #include "Attachments.h"
 #include "ServerUtilities.h"
@@ -10,7 +10,7 @@
 #include "iltmodel.h"
 #include "ilttransform.h"
 #include "HHWeaponModel.h"
-#include "prop.h"
+#include "Prop.h"
 #include "Spawner.h"
 #include "Body.h"
 #include "WeaponItems.h"

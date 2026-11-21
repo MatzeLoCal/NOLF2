@@ -18,7 +18,7 @@
 #include "iltclient.h"
 #include "iltserver.h"
 #include "iltmessage.h"
-#include "globals.h"
+#include "Globals.h"
 
 #include "iltmodel.h"
 #include "ilttransform.h"

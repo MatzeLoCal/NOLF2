@@ -597,9 +597,9 @@ unsigned long GetRendererTextureMemory()
 void r_InitRenderStruct(bool bFullClear)
 {
 	if(bFullClear)
-		memset(&g_Render, 0, sizeof(g_Render));
+		memset((void*)&g_Render, 0, sizeof(g_Render));
 	else
-		memset(&g_Render, 0, offsetof(RenderStruct, m_DontClearMarker));
+		memset((void*)&g_Render, 0, offsetof(RenderStruct, m_DontClearMarker));
 	
 	g_Render.ProcessAttachment			= r_ProcessAttachment;	
 	g_Render.GetSharedTexture			= r_GetSharedTexture;

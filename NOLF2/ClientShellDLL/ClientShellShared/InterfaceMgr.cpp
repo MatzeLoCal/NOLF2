@@ -11,7 +11,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "InterfaceMgr.h"
 #include "GameClientShell.h"
 #include "MsgIDs.h"
@@ -31,7 +31,7 @@
 #include "ClientSaveLoadMgr.h"
 #include "ScreenPreload.h"
 #include "ScreenPostload.h"
-#include "timer.h"
+#include "Timer.h"
 #include "WaveFn.h"
 
 CInterfaceMgr*  g_pInterfaceMgr = LTNULL;
@@ -48,7 +48,7 @@ CInterfaceMgr*  g_pInterfaceMgr = LTNULL;
 #define MAX_INTERFACE_LIGHTS	5
 #define INVALID_ANI			((HMODELANIM)-1)
 
-static enum MovieOrderEnum 
+enum MovieOrderEnum 
 {
 	eSierra,
 	eFox,
@@ -936,6 +936,7 @@ LTBOOL CInterfaceMgr::Update()
 		break;
 
 
+		default: break;
 	}
 
 	//in playing state, message box is drawn in InterfaceMgr::Draw(),
@@ -1661,7 +1662,7 @@ LTBOOL CInterfaceMgr::OnMessage(uint8 messageID, ILTMessage_Read *pMsg)
 			{
 				CLIENT_INFO *pClient;
 
-				if(pClient = m_ClientInfo.GetClientByID(nID))
+				if((pClient = m_ClientInfo.GetClientByID(nID)))
 					pClient->sStats.ReadData(pMsg);
 
 			}
@@ -1677,7 +1678,7 @@ LTBOOL CInterfaceMgr::OnMessage(uint8 messageID, ILTMessage_Read *pMsg)
             uint32 nID = pMsg->Readuint32();
 			CLIENT_INFO *pClient;
 
-			if(pClient = m_ClientInfo.GetClientByID(nID))
+			if((pClient = m_ClientInfo.GetClientByID(nID)))
 			{
 				pClient->sScore.ReadData(pMsg);
 				m_ClientInfo.UpdateClientSort(pClient);
@@ -1923,7 +1924,7 @@ LTBOOL CInterfaceMgr::OnMessage(uint8 messageID, ILTMessage_Read *pMsg)
 					break;
 
                 ping = pMsg->Readuint16();
-				if(pClient = m_ClientInfo.GetClientByID(id,false))
+				if((pClient = m_ClientInfo.GetClientByID(id,false)))
 					pClient->nPing = ping;
 			}
 
@@ -3160,6 +3161,7 @@ LTBOOL CInterfaceMgr::OnKeyUp(int key)
 			g_bLockPopup &= bKeepLocked;
 		} break;
 
+	default: break;
 	}
 
     return LTFALSE;
@@ -4497,6 +4499,7 @@ void CInterfaceMgr::OnLButtonUp(int x, int y)
 			}
 			g_bLockPopup = false;
 		} break;
+	default: break;
 	}
 }
 
@@ -4546,6 +4549,7 @@ void CInterfaceMgr::OnLButtonDown(int x, int y)
 		}	
 		break;
 
+		default: break;
 	}
 }
 
@@ -4573,6 +4577,7 @@ void CInterfaceMgr::OnLButtonDblClick(int x, int y)
 			m_MenuMgr.OnLButtonDblClick(x,y);
 		} 
 		break;
+		default: break;
 	}
 
 }
@@ -4604,6 +4609,7 @@ void CInterfaceMgr::OnRButtonUp(int x, int y)
 			}
 			g_bLockPopup = false;
 		} break;
+		default: break;
 	}
 
 
@@ -4654,6 +4660,7 @@ void CInterfaceMgr::OnRButtonDown(int x, int y)
 		}	
 		break;
 	
+		default: break;
 	}
 }
 
@@ -4680,6 +4687,7 @@ void CInterfaceMgr::OnRButtonDblClick(int x, int y)
 			m_MenuMgr.OnRButtonDblClick(x,y);
 		} 
 		break;
+		default: break;
 	}
 
 }
@@ -4719,6 +4727,7 @@ void CInterfaceMgr::OnMouseMove(int x, int y)
 			m_MenuMgr.OnMouseMove(x,y);
 		} 
 		break;
+		default: break;
 	}
 }
 
@@ -5644,7 +5653,7 @@ void CInterfaceMgr::UpdateInterfaceSFX()
 	}
 	s_oldPos = m_CursorPos;
 
-    uint32 numSfx = m_InterfaceSFX.size();
+    uint32 numSfx = (uint32)m_InterfaceSFX.size();
 	HLOCALOBJ objs[kMaxFX];
 
 	int next = 0;

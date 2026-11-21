@@ -13,9 +13,9 @@
 
 	// Includes....
 
-	#include "basefx.h"
+	#include "BaseFx.h"
 	#include "linklist.h"
-	#include "fastlist.h"
+	#include "FastList.h"
 	#include "swaplist.h"
 
 	// Structures....

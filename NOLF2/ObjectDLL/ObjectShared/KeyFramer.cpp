@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "KeyFramer.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
@@ -53,6 +53,7 @@ LTFLOAT GetKFWaveValue(LTFLOAT fSpeed, LTFLOAT fPercent, KFWaveType eWaveType)
 		case KFWAVE_SLOWON:
 			fNewSpeed = MATH_HALFPI * fSpeed * (LTFLOAT)sin( fPercent * MATH_HALFPI ) + fScalePercent;
 		break;
+		default: break;
 	}
 
 	return fNewSpeed;
@@ -669,13 +670,13 @@ LTBOOL KeyFramer::CreateKeyList()
 			LTVector vObjPos;
 			g_pLTServer->GetObjectPos(pLink->m_hObject, &vObjPos);
 
-			m_pOffsets[i] = vObjPos - vKeyPos;
+			m_pOffsets[(int)i] = vObjPos - vKeyPos;
 
 			LTRotation rObjRot;
 			g_pLTServer->GetObjectRotation(pLink->m_hObject, &rObjRot);
 
 			SubtractRotationValues(
-				&m_pRotations[i],
+				&m_pRotations[(int)i],
 				&rObjRot,
 				&rKeyRot);
 
@@ -1133,7 +1134,7 @@ void KeyFramer::DeferCommand(const CParsedMsg &cMsg)
 		strcat(m_pCommands,";");
 	}
 
-	uint32 nCurLen = strlen(m_pCommands);
+	uint32 nCurLen = (uint32)strlen(m_pCommands);
 	cMsg.ReCreateMsg(&m_pCommands[nCurLen], k_nCommandBufferLen - nCurLen, 0);
 }
 
@@ -1536,7 +1537,7 @@ void KeyFramer::UpdateObjects(LTBOOL bInterpolate, LTBOOL bTeleport)
 
 		if (!m_bIgnoreOffsets)
 		{
-			vPos += m_pOffsets[i];
+			vPos += m_pOffsets[(int)i];
 		}
 
 		if (m_bPushObjects && !bTeleport)
@@ -1614,7 +1615,7 @@ void KeyFramer::UpdateObjects(LTBOOL bInterpolate, LTBOOL bTeleport)
 				AddRotationValues(
 					&rRot1,
 					&rRot1,
-					&m_pRotations[i]);
+					&m_pRotations[(int)i]);
 			}
 
 
@@ -2017,14 +2018,14 @@ KEYNODE* KeyFramer::FindKey(const char* pKeyName, KEYNODE* pTest, LTBOOL* pbAtOr
 	if( !baseKeyName )
 		return LTNULL;
 
-	uint32 baseKeyNameLen = strlen( baseKeyName );
+	uint32 baseKeyNameLen = (uint32)strlen( baseKeyName );
 
 	// don't bother comparing if the bases don't even match
 	if( strnicmp( baseKeyName, pKeyName, baseKeyNameLen ) != 0 )
 		return LTNULL;
 
 	// make sure there's more to the test name
-	uint32 keyNameLen = strlen( pKeyName );
+	uint32 keyNameLen = (uint32)strlen( pKeyName );
 	if( keyNameLen <= baseKeyNameLen )
 		return LTNULL;
 

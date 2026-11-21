@@ -14,7 +14,7 @@
 	// Includes....
 
 	#include "iltclient.h"
-	#include "basefx.h"
+	#include "BaseFx.h"
 	#include "FxFlags.h"
 	#include "FxDefs.h"
 

@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "AI.h"
 #include "ObjectMsgs.h"
@@ -1467,7 +1467,7 @@ void CAI::InitialUpdate()
 			// back search for the extention indicator
 			const char *szExt   = strrchr(createstruct.m_SkinNames[BODY_SKIN_INDEX],'.');
 			// get the position of the extention
-			uint32 pos = szExt - (char*)(createstruct.m_SkinNames[BODY_SKIN_INDEX]) + 1 ;
+			uint32 pos = (uint32)(szExt - (char*)(createstruct.m_SkinNames[BODY_SKIN_INDEX]) + 1) ;
 
 			// add the headextension.
 			SAFE_STRCPY( createstruct.m_SkinNames[BODY_SKIN_INDEX] +pos -1, ext_val);
@@ -1504,7 +1504,7 @@ void CAI::InitialUpdate()
 			// back search for the extention indicator
 			const char *szExt   = strrchr(createstruct.m_SkinNames[HEAD_SKIN_INDEX],'.');
 			// get the position of the extention
-			uint32 pos = szExt - (char*)(createstruct.m_SkinNames[HEAD_SKIN_INDEX]) + 1 ;
+			uint32 pos = (uint32)(szExt - (char*)(createstruct.m_SkinNames[HEAD_SKIN_INDEX]) + 1) ;
 
 			// add the headextension.
 			SAFE_STRCPY( createstruct.m_SkinNames[HEAD_SKIN_INDEX] +pos -1, ext_val);
@@ -3171,6 +3171,7 @@ EnumAnimProp CAI::GetWeaponProp(EnumAIWeaponType eWeaponType)
 // HACK: for TO2 AIs with grenades, comment out Thrown weapons so AI choose correct animations.
 //		case kAIWeap_Thrown:
 			return kAP_Weapon2;
+		default: break;
 	}
 
 	return kAP_Weapon3;
@@ -4782,7 +4783,7 @@ void CAI::Save(ILTMessage_Write *pMsg, uint32 dwSaveFlags)
 	// save the defense variables
 	SAVE_BOOL(m_bDefenseOn);
 
-	SAVE_INT( m_InvalidNodeList.size() );
+	SAVE_INT( (int32)m_InvalidNodeList.size() );
 
 	std::vector<INVALID_NODE*>::iterator it;
 	for( it = m_InvalidNodeList.begin(); it != m_InvalidNodeList.end(); ++it )

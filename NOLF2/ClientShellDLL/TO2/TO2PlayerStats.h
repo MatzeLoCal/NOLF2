@@ -14,8 +14,8 @@
 #define __TO2PLAYERSTATS_H
 
 #include "ltbasedefs.h"
-#include "weaponmgr.h"
-#include "overlays.h"
+#include "WeaponMgr.h"
+#include "Overlays.h"
 #include "IDList.h"
 #include "IntelItemList.h"
 #include "SkillsButeMgr.h"

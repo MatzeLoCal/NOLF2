@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "SecurityCamera.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
@@ -1148,7 +1148,7 @@ void SecurityCamera::HandleGadgetMsg(const CParsedMsg &cMsg)
 {
 	if (cMsg.GetArgCount() < 2) return;
 
-	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo(atol(cMsg.GetArg(1)));
+	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo((int)(atol(cMsg.GetArg(1))));
 	if (!pAmmo) return;
 
 	if (pAmmo->eInstDamageType == DT_CAMERA_DISABLER)

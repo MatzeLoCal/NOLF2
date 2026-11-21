@@ -132,7 +132,7 @@ LTRESULT ModelSetTexture(FileRef *pRef, ModelInstance* pInstance, uint32 index)
     
 
     pName = client_file_mgr->GetFilename(pRef);
-    len = strlen(pName);
+    len = (int)strlen(pName);
 
     if (len > 3)
     {
@@ -175,7 +175,7 @@ LTRESULT ModelSetRenderStyle(FileRef *pRef, ModelInstance* pInstance, uint32 ind
 		return LT_OK;
 
 	const char* pName = client_file_mgr->GetFilename(pRef);
-	uint32 len = strlen(pName);
+	uint32 len = (uint32)strlen(pName);
 	if (len > 3)
 	{
 		char endChars[4];

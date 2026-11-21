@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "RagDoll.h"
 #include "RagDollNode.h"
 #include "RagDollConstraint.h"

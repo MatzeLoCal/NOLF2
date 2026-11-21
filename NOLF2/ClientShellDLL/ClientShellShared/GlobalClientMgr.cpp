@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GlobalClientMgr.h"
 #include "ClientButeMgr.h"
 #include "ClientSoundMgr.h"

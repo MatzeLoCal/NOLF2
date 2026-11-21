@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Lightning.h"
 #include "ClientServerShared.h"
 #include "ObjectMsgs.h"

@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Attachments.h"
 #include "Body.h"
 #include "iltserver.h"
@@ -22,7 +22,7 @@
 #include "ParsedMsg.h"
 #include "SoundMgr.h"
 #include "MsgIDs.h"
-#include "SFXMsgIDs.h"
+#include "SFXMsgIds.h"
 #include "SharedFXStructs.h"
 #include "CharacterHitBox.h"
 #include "AIVolumeMgr.h"
@@ -871,6 +871,7 @@ void Body::Init(const BODYINITSTRUCT& bi)
 		case kState_BodyFade:
 			m_BCS.eBodyState = eBodyStateFade;
 			break;	
+		default: break;
 	}
 	
 	if (IsPlayer(bi.pCharacter->m_hObject))
@@ -902,6 +903,7 @@ void Body::Init(const BODYINITSTRUCT& bi)
 			m_eDeathType = CD_GIB;
 		}
 		break;
+		default: break;
 	}
 
 	CDestructible* pDest = bi.pCharacter->GetDestructible();
@@ -1015,7 +1017,7 @@ void Body::Init(const BODYINITSTRUCT& bi)
 	bool bRemoveWeapons		= IsMultiplayerGame() ? !IsPlayer( m_hCharacter ) : true;
 	bool bCanSearch			= IsMultiplayerGame() ? !IsPlayer( m_hCharacter ) : true;
 
-	if (!m_pAttachments && bi.eBodyState != eBodyStateLaser)
+	if (!m_pAttachments && (int)bi.eBodyState != (int)eBodyStateLaser)	// two enum types, compared by value as shipped
 	{
 		bi.pCharacter->TransferWeapons(this, bRemoveWeapons);
 	}
@@ -1358,7 +1360,7 @@ void Body::Update()
 
 		//if we are in an active hiding volume, do not create the stimulus.
 		//if body is going to go away on its own, do not create the stimulus.
-		if ( !pPlayerInfoVol || !pPlayerInfoVol->IsHiding() || !pPlayerInfoVol->IsOn() && ( m_fLifetime == -1.f ) && !g_pModelButeMgr->AIIgnoreBody(m_eModelId) )
+		if ( !pPlayerInfoVol || !pPlayerInfoVol->IsHiding() || (!pPlayerInfoVol->IsOn() && ( m_fLifetime == -1.f ) && !g_pModelButeMgr->AIIgnoreBody(m_eModelId)) )
 		{
 			m_eDeathStimID = g_pAIStimulusMgr->RegisterStimulus( kStim_AllyDeathVisible, 1, m_hObject, LTNULL, m_DeathScene.GetRelationData(), vPos, 1.f, 1.f );
 		}
@@ -2005,6 +2007,7 @@ LTBOOL Body::CanCheckPulse()
 				// Plus we avoid some squirrely animation issues.
 				return (g_pLTServer->GetTime() > m_fStartTime + 4.0f);
 				break;
+			default: break;
 		}
 	}
 
@@ -2126,7 +2129,7 @@ void Body::CapNumberOfBodies( )
 	}
 
 	// Get the number of bodies that will be removed by the radius check.
-	int nNumCapByRadius = queRadius.size( ) - nBodyCapRadiusCount;
+	int nNumCapByRadius = (int)(queRadius.size( ) - nBodyCapRadiusCount);
 	nNumCapByRadius = Max( 0, nNumCapByRadius );
 
 	// Remove all the farthest bodies until the density is good.
@@ -2148,7 +2151,7 @@ void Body::CapNumberOfBodies( )
 
 	// Keep the whole level capped by removing the very farthest bodies.  Consider
 	// bodies removed by radius as not part of the total count.
-	int nTotalCount = queTotal.size( ) - nNumCapByRadius - nBodyCapTotalCount;
+	int nTotalCount = (int)(queTotal.size( ) - nNumCapByRadius - nBodyCapTotalCount);
 	while( nTotalCount > 0 )
 	{
 		// Get the farthest body.

@@ -12,7 +12,7 @@
 #define __MISSION_MGR_H__
 
 #include "ClientServerShared.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 
 class CMissionMgr 
 {

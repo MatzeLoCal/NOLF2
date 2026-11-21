@@ -7,7 +7,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 //
 // ----------------------------------------------------------------------- //
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "HUDMgr.h"
 #include "HUDDecision.h"
 #include "InterfaceResMgr.h"

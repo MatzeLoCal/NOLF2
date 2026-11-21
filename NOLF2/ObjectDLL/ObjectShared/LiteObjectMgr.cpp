@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "LiteObjectMgr.h"
 #include "GameBaseLite.h"
 
@@ -343,7 +343,7 @@ void CLiteObjectMgr::Update()
 
 	// Update the active objects
 	// Note : This can't use an iterator, since the update might add objects or something like that...
-	uint32 nActiveObjectSize = m_aActiveObjects.size();
+	uint32 nActiveObjectSize = (uint32)m_aActiveObjects.size();
 	for (uint32 nCurObj = 0; nCurObj < nActiveObjectSize; ++nCurObj)
 	{
 		GameBaseLite *pCurObj = m_aActiveObjects[nCurObj];

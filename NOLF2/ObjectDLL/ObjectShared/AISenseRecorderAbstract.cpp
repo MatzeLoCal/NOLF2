@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AISenseRecorderAbstract.h"
 #include "AI.h"
 #include "AIState.h"
@@ -147,7 +147,7 @@ CAISenseRecorderAbstract::~CAISenseRecorderAbstract()
 
 void CAISenseRecorderAbstract::Save(ILTMessage_Write *pMsg)
 {
-	SAVE_DWORD(m_mapSenseRecords.size());
+	SAVE_DWORD((uint32)m_mapSenseRecords.size());
 
 	AISENSE_RECORD_MAP::iterator it;
 	for(it = m_mapSenseRecords.begin(); it != m_mapSenseRecords.end(); ++it)
@@ -157,7 +157,7 @@ void CAISenseRecorderAbstract::Save(ILTMessage_Write *pMsg)
 
 	SAVE_BOOL( m_bDoneProcessingStimuli );
 
-	SAVE_DWORD( m_mapProcessedStimuli.size() );
+	SAVE_DWORD( (uint32)m_mapProcessedStimuli.size() );
 	AI_PROCESSED_STIMULI_MAP::iterator psit;
 	for( psit = m_mapProcessedStimuli.begin(); psit != m_mapProcessedStimuli.end(); ++psit )
 	{

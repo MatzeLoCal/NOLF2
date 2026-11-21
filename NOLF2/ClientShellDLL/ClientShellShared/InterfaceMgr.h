@@ -39,9 +39,9 @@
 #include "ProfileMgr.h"
 #include "PopupText.h"
 #include "PlayerStats.h"
-#include "ClientFxMgr.h"
+#include "ClientFXMgr.h"
 #include "CursorMgr.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 
 extern ILTModelClient*	g_pILTModelClient;

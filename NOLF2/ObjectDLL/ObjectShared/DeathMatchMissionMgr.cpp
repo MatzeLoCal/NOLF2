@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DeathMatchMissionMgr.h"
 #include "PlayerObj.h"
 #include "ServerSaveLoadMgr.h"

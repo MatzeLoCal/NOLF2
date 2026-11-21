@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AISenseRecorderGame.h"
 #include "AI.h"
 #include "AIBrain.h"
@@ -424,6 +424,7 @@ LTBOOL CAISenseRecorderGame::HandleSpecificStimuli(CAIStimulusRecord* pStimulusR
 		case kStim_AllySpecialDamageVisible:	return HandleAllySpecialDamageVisible(pStimulusRecord);
 		case kStim_AllyDeathVisible:			return HandleAllyDeathVisible(pStimulusRecord);
 		case kStim_UndeterminedVisible:			return HandleUndeterminedVisible(pStimulusRecord, pfRateModifier);
+		default: break;
 	}
 
 	return LTTRUE;

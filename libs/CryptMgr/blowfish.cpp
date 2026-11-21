@@ -692,8 +692,8 @@ short InitializeBlowfish(UBYTE_08bits key[], short keybytes)
   memcpy(bf_P, bf_P_Orig, (bf_N + 2) * sizeof(UWORD_32bits));
   memcpy(bf_S, bf_S_Orig, 4 * 256 * sizeof(UWORD_32bits));
 
-/*  fprintf (stderr, "0x%x 0x%x ", bf_P[0], bf_P[1]); /* DEBUG */
-/*  fprintf (stderr, "%d %d\n", bf_P[0], bf_P[1]); /* DEBUG */
+//  fprintf (stderr, "0x%x 0x%x ", bf_P[0], bf_P[1]); /* DEBUG */
+//  fprintf (stderr, "%d %d\n", bf_P[0], bf_P[1]); /* DEBUG */
 
   j = 0;
   for (i = 0; i < bf_N + 2; ++i) {

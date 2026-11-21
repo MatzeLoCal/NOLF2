@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MenuMission.h"
 #include "InterfaceMgr.h"
 #include "MissionButeMgr.h"
@@ -176,7 +176,7 @@ void CMenuMission::OnFocus(LTBOOL bFocus)
 			}
 		}
 
-		for (int i = pObj->m_IDArray.size()-1; i >= 0 ; i--)
+		for (int i = (int)(pObj->m_IDArray.size()-1); i >= 0 ; i--)
 		{
 			CObjectiveCtrl* pCtrl = LTNULL;
 			uint32 objID = pObj->m_IDArray[i];
@@ -220,7 +220,7 @@ void CMenuMission::OnFocus(LTBOOL bFocus)
 				m_pObjLabel = (CLTGUITextCtrl *)m_List.GetControl(ndx);
 			}
 		}
-		for (int i = pObj->m_IDArray.size()-1; i >= 0 ; i--)
+		for (int i = (int)(pObj->m_IDArray.size()-1); i >= 0 ; i--)
 		{
 			CObjectiveCtrl* pCtrl = LTNULL;
 			uint32 objID = pObj->m_IDArray[i];
@@ -269,7 +269,7 @@ void CMenuMission::OnFocus(LTBOOL bFocus)
 			}
 		}
 
-		for (int i = pObj->m_IDArray.size()-1; i >= 0 ; i--)
+		for (int i = (int)(pObj->m_IDArray.size()-1); i >= 0 ; i--)
 		{
 			CObjectiveCtrl* pCtrl = LTNULL;
 			uint32 objID = pObj->m_IDArray[i];
@@ -313,7 +313,7 @@ void CMenuMission::OnFocus(LTBOOL bFocus)
 				m_pParameters = (CLTGUITextCtrl *)m_List.GetControl(ndx);
 			}
 		}
-		for (int i = pObj->m_IDArray.size()-1; i >= 0 ; i--)
+		for (int i = (int)(pObj->m_IDArray.size()-1); i >= 0 ; i--)
 		{
 			CObjectiveCtrl* pCtrl = LTNULL;
 			uint32 objID = pObj->m_IDArray[i];

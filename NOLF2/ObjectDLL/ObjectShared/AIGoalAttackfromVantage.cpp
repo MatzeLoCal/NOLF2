@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalAttackFromVantage.h"
 #include "AIHumanState.h"
 #include "AINodeMgr.h"

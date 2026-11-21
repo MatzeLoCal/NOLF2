@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ParticleShowerFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"

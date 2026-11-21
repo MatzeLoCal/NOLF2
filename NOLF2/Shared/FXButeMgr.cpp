@@ -10,13 +10,20 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "FXButeMgr.h"
 #include "WeaponFXTypes.h"
 #include "CommonUtilities.h"
 #include "SurfaceFunctions.h"
 #include "WeaponMgr.h"
-#include "FXFlags.h"
+#include "FxFlags.h"
 
 #ifdef _CLIENTBUILD
 #include "ParticleShowerFX.h"
@@ -4692,7 +4699,7 @@ LTBOOL CFXButeMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStrings
 		_ASSERT(cMaxStrings > (*pcStrings) + 1);
 
 		pImpactFX = g_pFXButeMgr->GetImpactFX(i);
-        uint32 dwImpactFXNameLen = strlen(pImpactFX->szName);
+        uint32 dwImpactFXNameLen = (uint32)strlen(pImpactFX->szName);
 
 		if (pImpactFX && pImpactFX->szName[0] &&
 			dwImpactFXNameLen < cMaxStringLength &&

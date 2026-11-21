@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "BasePolyDrawFX.h"
 
 void BasePolyDrawFn(HLOCALOBJ hObj, void *pUser)

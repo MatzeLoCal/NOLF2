@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MenuIntel.h"
 #include "InterfaceMgr.h"
 #include "ClientResShared.h"
@@ -169,7 +169,7 @@ void CMenuIntel::GetIntelName(uint32 nTextId, char *pBuf, int nBufSize)
 	{
 		char* pTok = strtok(pBuf,"\n\t,");
 		int i = 24;
-		int len = strlen(pBuf);
+		int len = (int)strlen(pBuf);
 		if (len <= i) i = len;
 		int j;
 		for (j = 0; j < 3; j++)

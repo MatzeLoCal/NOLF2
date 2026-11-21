@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ObjectiveSprite.h"
 #include "iltserver.h"
 #include "ObjectMsgs.h"

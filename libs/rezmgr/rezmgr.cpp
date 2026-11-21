@@ -816,7 +816,7 @@ CRezDir* CRezDir::CreateDir(REZDIRNAME sDir) {
   m_haDir.Insert(&pDir->m_heDir);
 
   // update largest variables
-  DWORD sNameLen = strlen(sDir);
+  DWORD sNameLen = (DWORD)strlen(sDir);
   if (m_pRezMgr->m_nLargestDirNameSize <= sNameLen) m_pRezMgr->m_nLargestDirNameSize = sNameLen+1;
 
   return pDir;
@@ -851,7 +851,7 @@ CRezItm* CRezDir::CreateRez(REZID nID, REZNAME sName, REZTYPE nType) {
   pTyp->m_haName.Insert(&pItm->m_heName);
 
   // update largest variables
-  DWORD sNameLen = strlen(sName);
+  DWORD sNameLen = (DWORD)strlen(sName);
   if (m_pRezMgr->m_nLargestRezNameSize <= sNameLen) m_pRezMgr->m_nLargestRezNameSize = sNameLen+1;
 
   return pItm;
@@ -873,7 +873,7 @@ CRezItm* CRezDir::CreateRezInternal(REZID nID, REZNAME sName, CRezTyp* pTyp, CBa
   pTyp->m_haName.Insert(&pItm->m_heName);
 
   // update largest variables
-  DWORD sNameLen = strlen(sName);
+  DWORD sNameLen = (DWORD)strlen(sName);
   if (m_pRezMgr->m_nLargestRezNameSize <= sNameLen) m_pRezMgr->m_nLargestRezNameSize = sNameLen+1;
 
   return pItm;
@@ -1528,7 +1528,7 @@ BOOL CRezMgr::ReadEmulationDirectory(CRezFileDirectoryEmulation* pRezFileEmulati
         // figure out the ID for this file (if name is all digits use it as ID number, otherwise assign a number)
         REZID nID;
         {
-          int nNameLen = strlen(sName);
+          int nNameLen = (int)strlen(sName);
           int i;
           for (i = 0; i < nNameLen; i++) {
             if ((sName[i] < '0') || (sName[i] > '9')) break;
@@ -1538,7 +1538,7 @@ BOOL CRezMgr::ReadEmulationDirectory(CRezFileDirectoryEmulation* pRezFileEmulati
             m_nNextIDNumToUse++;
           }
           else {
-            nID = atol(sName);
+            nID = (REZID)atol(sName);
           }
         }
         
@@ -1595,7 +1595,7 @@ BOOL CRezMgr::ReadEmulationDirectory(CRezFileDirectoryEmulation* pRezFileEmulati
 		  pItm->SetTime((REZTIME)fileinfo.time_write);
 
 		  // store the size of the file in the resource
-		  pItm->m_nSize = fileinfo.size;
+		  pItm->m_nSize = (REZSIZE)fileinfo.size;
 
   		  // set the file pointer for the item
 		  pItm->m_pRezFile = new CRezFileSingleFile(this, sFileName, pRezFileEmulation);
@@ -1669,7 +1669,7 @@ REZTYPE CRezMgr::StrToType(char* pStr) {
   BYTE* pType = (BYTE*)&nType;
 
   // figure out length of string
-  int nStrLen = strlen(pStr);
+  int nStrLen = (int)strlen(pStr);
 
   // store string in type
   if (nStrLen > 0) pType[nStrLen-1] = pStr[0];
@@ -1775,7 +1775,7 @@ BOOL CRezMgr::Flush() {
     Header.RootDirPos             = m_nRootDirPos; 			
     Header.RootDirSize            = m_nRootDirSize;              
     Header.RootDirTime            = m_nRootDirTime;           
-    Header.NextWritePos           = nSaveWritePos;           
+    Header.NextWritePos           = (DWORD)nSaveWritePos;           
     Header.Time                   = m_nLastTimeModified; 					
     Header.LargestKeyAry          = m_nLargestKeyAry;			
     Header.LargestDirNameSize     = m_nLargestDirNameSize;    
@@ -1844,7 +1844,7 @@ BOOL CRezDir::WriteDirBlock(CBaseRezFile* pRezFile, DWORD Pos, DWORD* Size) {
       nCurPos += pRezFile->Write(nCurPos,0,sizeof(Header.Dir.Size),&Header.Dir.Size);
       nCurPos += pRezFile->Write(nCurPos,0,sizeof(Header.Dir.Time),&Header.Dir.Time);
       if (pRezDir->m_sDirName == NULL) nCurPos += pRezFile->Write(nCurPos,0,1,&Zero);
-      else nCurPos += pRezFile->Write(nCurPos,0,strlen(pRezDir->m_sDirName)+1,pRezDir->m_sDirName);
+      else nCurPos += pRezFile->Write(nCurPos,0,(DWORD)(strlen(pRezDir->m_sDirName)+1),pRezDir->m_sDirName);
 
       pDir = pDir->Next();
     }
@@ -1881,7 +1881,7 @@ BOOL CRezDir::WriteDirBlock(CBaseRezFile* pRezFile, DWORD Pos, DWORD* Size) {
         nCurPos += pRezFile->Write(nCurPos,0,sizeof(Header.Rez.Type),&Header.Rez.Type);
         nCurPos += pRezFile->Write(nCurPos,0,sizeof(Header.Rez.NumKeys),&Header.Rez.NumKeys);
         if (pRezItm->m_sName == NULL) nCurPos += pRezFile->Write(nCurPos,0,1,&Zero);
-        else nCurPos += pRezFile->Write(nCurPos,0,strlen(pRezItm->m_sName)+1,pRezItm->m_sName);
+        else nCurPos += pRezFile->Write(nCurPos,0,(DWORD)(strlen(pRezItm->m_sName)+1),pRezItm->m_sName);
         nCurPos += pRezFile->Write(nCurPos,0,1,&Zero);
 
         // advance to next item
@@ -2021,7 +2021,7 @@ REZTIME CRezMgr::GetCurTime() {
 //---------------------------------------------------------------------------------------------------
 void CRezMgr::SetDirSeparators(const char* sDirSeparators) {
 	if (m_sDirSeparators != NULL) delete [] m_sDirSeparators;
-	int nLen = strlen(sDirSeparators);
+	int nLen = (int)strlen(sDirSeparators);
 	LT_MEM_TRACK_ALLOC(m_sDirSeparators = new char[nLen+1],LT_MEM_TYPE_MISC);
 	strcpy(m_sDirSeparators,sDirSeparators);
 };
@@ -2050,7 +2050,7 @@ CRezDir* CRezDir::GetDirFromPath(REZCDIRNAME sPath)
 {
 	// Strip off leading slash...
 
-	int len = strlen(sPath);
+	int len = (int)strlen(sPath);
 
 	if (len > 1)
 	{
@@ -2113,7 +2113,7 @@ CRezItm* CRezDir::GetRezFromDosPath(const char* sPath)
 
 	// Strip off leading slash...
 
-	int len = strlen(sPath);
+	int len = (int)strlen(sPath);
 
 	if (len >= 1023) return NULL;
 
@@ -2180,7 +2180,7 @@ CRezItm* CRezDir::GetRezFromPath(const char* sPath, REZTYPE type)
 
 	// Strip off leading slash...
 
-	int len = strlen(sPath);
+	int len = (int)strlen(sPath);
 
 	if (len >= 1023) return NULL;
 

@@ -8,11 +8,11 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "HUDMgr.h"
 #include "InterfaceMgr.h"
 #include "GameClientShell.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ClientSoundMgr.h"
 #include "ScmdConsole.h"
 

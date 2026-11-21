@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Lock.h"
 #include "SoundMgr.h"
 #include "ServerUtilities.h"
@@ -257,7 +257,7 @@ void Lock::HandleGadgetMsg(HOBJECT hSender, const CParsedMsg &cMsg)
 {
 	if (cMsg.GetArgCount() < 2) return;
 
-	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo(atol(cMsg.GetArg(1)));
+	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo((int)(atol(cMsg.GetArg(1))));
 	if (!pAmmo) return;
 
 	LTBOOL bProcess = LTFALSE;

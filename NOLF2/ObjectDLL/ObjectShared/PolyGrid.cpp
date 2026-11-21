@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "PolyGrid.h"
 #include "iltserver.h"
 #include "ClientServerShared.h"

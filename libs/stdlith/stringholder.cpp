@@ -96,7 +96,7 @@ char *CStringHolder::AddString( const char *pString, LTBOOL bFindFirst, uint32 l
 		theString.m_StringSize = 0;
 		if( !m_Strings.Append(theString) )
 		{
-			theString.m_pString;
+			delete [] theString.m_pString;	// was a bare `theString.m_pString;` -- leaked the buffer
 			return NULL;
 		}
 		

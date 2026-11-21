@@ -471,7 +471,7 @@ static LTRESULT cis_DoDrawSurfaceToSurface(HSURFACE hDest, HSURFACE hSrc,
 	}
 
 	bOk = false;
-	if(pSrcData = (uint8*)cis_LockSurface(pSrc, srcPitch))
+	if((pSrcData = (uint8*)cis_LockSurface(pSrc, srcPitch)))
 	{
 		if(pSrc == pDest)
 		{
@@ -480,7 +480,7 @@ static LTRESULT cis_DoDrawSurfaceToSurface(HSURFACE hDest, HSURFACE hSrc,
 		}
 		else
 		{
-			if(pDestData = (uint8*)cis_LockSurface(pDest, destPitch, true))
+			if((pDestData = (uint8*)cis_LockSurface(pDest, destPitch, true)))
 			{
 				if(fn(false, pSrcData, pDestData, srcPitch, destPitch, &srcRect, &destRect) == LT_OK)
 					bOk = true;
@@ -515,13 +515,13 @@ static void cis_InternalBitmapToSurface(CisSurface *pDest, LoadedBitmap *pSrc,
 	if(pSrcRect)
 	{
 		bIsInside = cis_ClipRectsNonScaled(
-			pSrc->m_Width, pSrc->m_Height, pSrcRect->left, pSrcRect->top, pSrcRect->right, pSrcRect->bottom, 
+			(int)pSrc->m_Width, (int)pSrc->m_Height, pSrcRect->left, pSrcRect->top, pSrcRect->right, pSrcRect->bottom, 
 			pDest->m_Width, pDest->m_Height, destX, destY, &srcRect, &destRect);
 	}
 	else
 	{
 		bIsInside = cis_ClipRectsNonScaled(
-			pSrc->m_Width, pSrc->m_Height, 0, 0, pSrc->m_Width, pSrc->m_Height,
+			(int)pSrc->m_Width, (int)pSrc->m_Height, 0, 0, (int)pSrc->m_Width, (int)pSrc->m_Height,
 			pDest->m_Width, pDest->m_Height, destX, destY, &srcRect, &destRect);
 	}
 
@@ -1249,7 +1249,7 @@ HSURFACE cis_CreateSurfaceFromPcx(LoadedBitmap *pLoadedBitmap)
 	CisSurface *pSurface;
 
 	// Create a surface for it.
-	pSurface = cis_InternalCreateSurface(pLoadedBitmap->m_Width, pLoadedBitmap->m_Height);
+	pSurface = cis_InternalCreateSurface((uint32)pLoadedBitmap->m_Width, (uint32)pLoadedBitmap->m_Height);
 	if(!pSurface)
 	{
 		return LTNULL;
@@ -1275,8 +1275,8 @@ static LTRESULT cis_CreateHeightmapFromBitmap(const char* pBitmap, uint32* pWidt
 
 	//create the buffer
 	LT_MEM_TRACK_ALLOC(*ppData		= new uint8 [Bitmap.m_Width * Bitmap.m_Height],LT_MEM_TYPE_HEIGHTMAP);
-	*pWidth		= Bitmap.m_Width;
-	*pHeight	= Bitmap.m_Height;
+	*pWidth		= (uint32)Bitmap.m_Width;
+	*pHeight	= (uint32)Bitmap.m_Height;
 
 	//check the allocation
 	if(!*ppData)

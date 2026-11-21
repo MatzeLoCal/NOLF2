@@ -12,20 +12,20 @@
 
 #include "stdafx.h"
 #include "resource.h"
-#include "ClientFX.h"
-#include "SpriteSystemFX.h"
-#include "SpriteFX.h"
-#include "DynaLightFX.h"
-#include "PlaySoundFX.h"
-#include "CamJitterFX.h"
-#include "CamWobbleFX.h"
-#include "BouncyChunkFX.h"
-#include "NullFX.h"
-#include "FallingStuffFX.h"
-#include "PolyTubeFX.h"
-#include "PlayRandomSoundFX.h"
-#include "LTBModelFX.h"
-#include "LTBBouncyChunkFX.h"
+#include "clientfx.h"
+#include "spritesystemfx.h"
+#include "spritefx.h"
+#include "dynalightfx.h"
+#include "playsoundfx.h"
+#include "camjitterfx.h"
+#include "camwobblefx.h"
+#include "bouncychunkfx.h"
+#include "nullfx.h"
+#include "fallingstufffx.h"
+#include "polytubefx.h"
+#include "playrandomsoundfx.h"
+#include "ltbmodelfx.h"
+#include "LTBbouncychunkfx.h"
 #include "ParticleSystemFX.h"
 #include "CreateFX.h"
 #include "FlareSpriteFX.h"
@@ -156,7 +156,7 @@ bool APIENTRY DllMain( HANDLE hModule,
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) int fxGetNum()
+CLIENTFX_EXPORT int fxGetNum()
 {
 	// Success !!
 
@@ -171,7 +171,7 @@ __declspec(dllexport) int fxGetNum()
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) FX_REF fxGetRef(int nFx)
+CLIENTFX_EXPORT FX_REF fxGetRef(int nFx)
 {
 	FX_REF fxRef;
 
@@ -371,7 +371,7 @@ __declspec(dllexport) FX_REF fxGetRef(int nFx)
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) void fxDelete(CBaseFX *pDeleteFX)
+CLIENTFX_EXPORT void fxDelete(CBaseFX *pDeleteFX)
 {
 	// Figure out what kind of FX we are deleting and make sure the propper bank handles it...
 
@@ -484,7 +484,7 @@ __declspec(dllexport) void fxDelete(CBaseFX *pDeleteFX)
 //   PURPOSE  : Sets the current player (client) object
 //
 //------------------------------------------------------------------
-__declspec(dllexport) CBaseFXProps* fxCreatePropList(int nFx)
+CLIENTFX_EXPORT CBaseFXProps* fxCreatePropList(int nFx)
 {
 	switch(nFx)
 	{
@@ -572,7 +572,7 @@ __declspec(dllexport) CBaseFXProps* fxCreatePropList(int nFx)
 //   PURPOSE  : Sets the current player (client) object
 //
 //------------------------------------------------------------------
-__declspec(dllexport) void fxFreePropList(CBaseFXProps* pPropList)
+CLIENTFX_EXPORT void fxFreePropList(CBaseFXProps* pPropList)
 {
 	debug_delete(pPropList);
 }
@@ -586,7 +586,7 @@ __declspec(dllexport) void fxFreePropList(CBaseFXProps* pPropList)
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) void fxSetPlayer(HOBJECT hPlayer)
+CLIENTFX_EXPORT void fxSetPlayer(HOBJECT hPlayer)
 {
 	g_hPlayer = hPlayer;
 }
@@ -599,7 +599,7 @@ __declspec(dllexport) void fxSetPlayer(HOBJECT hPlayer)
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) void fxSetAppFocus(bool bAppFocus)
+CLIENTFX_EXPORT void fxSetAppFocus(bool bAppFocus)
 {
 	g_bAppFocus = bAppFocus;
 }
@@ -612,7 +612,7 @@ __declspec(dllexport) void fxSetAppFocus(bool bAppFocus)
 //
 //------------------------------------------------------------------
 
-__declspec(dllexport) void fxSetCreateFunction(TCreateClientFXFn pFn, void* pUserData)
+CLIENTFX_EXPORT void fxSetCreateFunction(TCreateClientFXFn pFn, void* pUserData)
 {
 	g_pCreateClientFxFn			= pFn;
 	g_pCreateClientFxUserData	= pUserData;

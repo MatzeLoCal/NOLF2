@@ -14,10 +14,10 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "PlayerMgr.h"
 	#include "CMoveMgr.h"
-	#include "MsgIds.h"
+	#include "MsgIDs.h"
 	#include "LeanMgr.h"
 	#include "InterfaceMgr.h"
 	#include "PlayerCamera.h"

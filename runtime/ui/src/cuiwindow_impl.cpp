@@ -108,9 +108,9 @@ CUI_RESULTTYPE	CUIWindow_Impl::SetTexture(CUI_ELEMENTTYPE elm,
 	CUIPolyTex*	pTex;
 
 	// if no rect is provided, gracefully set texture size to 0
-	memset (&r, 0, sizeof(CUIRECT));
+	memset ((void*)&r, 0, sizeof(CUIRECT));
 	if (pRect) {
-		memcpy(&r, pRect, sizeof(CUIRECT));
+		memcpy((void*)&r, pRect, sizeof(CUIRECT));
 	}
 
 	if (hTex) {

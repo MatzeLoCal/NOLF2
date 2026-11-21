@@ -39,7 +39,7 @@ static char *cc_AddString(ConsoleState *pState, const char *pName)
 	char *pString;
 	int nStrLen;
 
-	nStrLen = strlen( pName );
+	nStrLen = (int)strlen( pName );
 
 	// See if it's in the hash table.
 	hElement = hs_FindElement( pState->m_StringHash, ( void * )pName, nStrLen + 1 );
@@ -66,7 +66,7 @@ static LTCommandVar* cc_AddConsoleVar(ConsoleState *pState, const char *pName)
 	HHashElement *hElement;
 	int nStrLen;
 
-	nStrLen = strlen( pName );
+	nStrLen = (int)strlen( pName );
 
 	// See if it's in the hash table.
 	hElement = hs_FindElement( pState->m_VarHash, ( void * )pName, nStrLen + 1 );
@@ -483,7 +483,7 @@ LTCommandVar* cc_FindConsoleVar(ConsoleState *pState, const char *pName)
 	HHashElement *hElement;
 
 	// See if it's in the hash table.
-	hElement = hs_FindElement( pState->m_VarHash, ( void * )pName, strlen( pName ) + 1 );
+	hElement = hs_FindElement( pState->m_VarHash, ( void * )pName, (uint32)(strlen( pName ) + 1) );
 	if( hElement )
 	{
 		return ( LTCommandVar * )hs_GetElementUserData( hElement );

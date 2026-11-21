@@ -29,7 +29,7 @@ inline int RoundFloatToInt(float f)
 		fistp nResult
 	}
 #else
-	nResult = lroundf(f);
+	nResult = (int)lroundf(f);
 #endif
 	return nResult;
 }

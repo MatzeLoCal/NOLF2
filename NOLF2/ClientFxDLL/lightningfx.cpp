@@ -11,8 +11,8 @@
 // Includes....
 
 #include "stdafx.h"
-#include "LightningFX.h"
-#include "ClientFX.h"
+#include "lightningfx.h"
+#include "clientfx.h"
 
 // ----------------------------------------------------------------------- //
 //
@@ -402,7 +402,7 @@ void CLightningFX::EmitBolts( float tmFrameTime )
 		CLightningBolt *pBolt = LTNULL;
 		LightningBolts::iterator iter;
 
-		for( nBolt = 0, iter = m_lstBolts.begin(); iter != m_lstBolts.end(), nBolt < nActiveBolts; ++iter, ++nBolt )
+		for( nBolt = 0, iter = m_lstBolts.begin(); iter != m_lstBolts.end() && nBolt < nActiveBolts; ++iter, ++nBolt )
 		{
 			pBolt = *iter;
 			
@@ -426,7 +426,7 @@ void CLightningFX::EmitBolts( float tmFrameTime )
 			
 			if( bCanUseAttractors && (!bCanUseRadius || GetRandom(0,1)) )
 			{
-				uint8	nIndex = GetRandom( 0, m_lstAttractors.size() - 1 );
+				uint8	nIndex = GetRandom( 0, (int)(m_lstAttractors.size() - 1) );
 				CAttractor cAttractor = m_lstAttractors[nIndex];
 
 				if( cAttractor.GetTransform( lTrans, true ) == LT_OK )

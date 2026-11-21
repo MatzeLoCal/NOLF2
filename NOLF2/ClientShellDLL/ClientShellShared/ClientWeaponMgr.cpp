@@ -9,7 +9,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "GameClientShell.h"
 #include "InterfaceMgr.h"
@@ -1150,7 +1150,7 @@ void CClientWeaponMgr::ChangeToNextRealWeapon()
 		uint8 nWeaponId = nWeaponPriorities[i];
 		if (WMGR_INVALID_ID != nWeaponId)
 		{
-			uint8 iCur = WeaponIdToIndex(nWeaponId);
+			int iCur = WeaponIdToIndex(nWeaponId);	// int, as everywhere else: a uint8 never equalled CWM_NO_WEAPON (-1)
 
 			if (CWM_NO_WEAPON != iCur)
 			{

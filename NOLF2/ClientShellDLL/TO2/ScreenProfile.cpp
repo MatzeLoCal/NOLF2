@@ -1,7 +1,7 @@
 // ScreenProfile.cpp: implementation of the CScreenProfile class.
 //
 //////////////////////////////////////////////////////////////////////
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenProfile.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -9,7 +9,7 @@
 #include "NetDefs.h"
 
 #include "GameClientShell.h"
-#include "profileMgr.h"
+#include "ProfileMgr.h"
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -391,7 +391,7 @@ void CScreenProfile::HandleDlgCommand(uint32 dwCommand, uint16 nIndex)
 						MBCreate mb;
 						mb.eType = LTMB_YESNO;
 						mb.pFn = LoadCallBack,
-						mb.pData = (void *)nIndex;
+						mb.pData = (void *)(uintptr_t)nIndex;
 						g_pInterfaceMgr->ShowMessageBox(IDS_CONFIRM_NEWPROFILE,&mb);
 					}
 					else
@@ -406,7 +406,7 @@ void CScreenProfile::HandleDlgCommand(uint32 dwCommand, uint16 nIndex)
 			MBCreate mb;
 			mb.eType = LTMB_YESNO;
 			mb.pFn = DeleteCallBack,
-			mb.pData = (void *)nIndex;
+			mb.pData = (void *)(uintptr_t)nIndex;
 			g_pInterfaceMgr->ShowMessageBox(IDS_CONFIRM_DELETE_PROFILE,&mb);
 		}
 		break;

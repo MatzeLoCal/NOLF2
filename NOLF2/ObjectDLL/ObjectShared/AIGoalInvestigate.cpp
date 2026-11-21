@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalInvestigate.h"
 #include "AIGoalMgr.h"
 #include "AISenseRecorderAbstract.h"
@@ -92,7 +92,7 @@ void CAIGoalInvestigate::Save(ILTMessage_Write *pMsg)
 	SAVE_BOOL(m_bLookOnly);
 
 	AI_INVESTIGATION_MEMORY_MAP::iterator it;
-	SAVE_DWORD(m_mapInvestMemory.size());
+	SAVE_DWORD((uint32)m_mapInvestMemory.size());
 	for( it = m_mapInvestMemory.begin(); it != m_mapInvestMemory.end(); ++it )
 	{
 		SAVE_DWORD(it->first);
@@ -346,6 +346,7 @@ void CAIGoalInvestigate::SetStateInvestigate()
 				m_vStimulusDir.Normalize();
 			}
 			break;
+		default: break;
 	}
 
 
@@ -940,6 +941,7 @@ LTBOOL CAIGoalInvestigate::SelectTriggeredAISound(EnumAISoundType* peAISoundType
 				}
 			}
 			break;
+		default: break;
 	}
 
 	if( eAISound != kAIS_None )
@@ -982,6 +984,7 @@ LTBOOL CAIGoalInvestigate::SelectTriggeredAISound(EnumAISoundType* peAISoundType
 			}
 			break;
 
+		default: break;
 	}
 
 	*peAISoundType = eAISound;
@@ -1110,6 +1113,7 @@ LTBOOL CAIGoalInvestigate::HandleGoalSenseTrigger(AISenseRecord* pSenseRecord)
 					return LTFALSE;
 				}
 				break;
+			default: break;
 		}
 
 		

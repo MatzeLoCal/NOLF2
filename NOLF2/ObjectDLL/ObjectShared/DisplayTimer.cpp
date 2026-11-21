@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DisplayTimer.h"
 #include "ServerUtilities.h"
 #include "ObjectMsgs.h"

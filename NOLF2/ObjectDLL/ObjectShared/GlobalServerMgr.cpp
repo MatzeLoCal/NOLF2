@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "GlobalServerMgr.h"
 #include "ServerSoundMgr.h"
 #include "AIButeMgr.h"
@@ -65,8 +65,8 @@
 #include "Dialogue.h"
 #include "DisplayMeter.h"
 #include "DisplayTimer.h"
-#include "DoomsdayDevice.h"
-#include "DoomsdayPiece.h"
+#include "DoomsDayDevice.h"
+#include "DoomsDayPiece.h"
 #include "Door.h"
 #include "DoorKnob.h"
 #include "DynamicOccluderVolume.h"

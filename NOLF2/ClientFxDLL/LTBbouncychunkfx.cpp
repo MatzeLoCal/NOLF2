@@ -11,8 +11,8 @@
 // Includes....
 
 #include "stdafx.h"
-#include "LTBBouncyChunkFX.h"
-#include "ClientFX.h"
+#include "LTBbouncychunkfx.h"
+#include "clientfx.h"
 
 // ----------------------------------------------------------------------- //
 //
@@ -322,7 +322,7 @@ bool CLTBBouncyChunkFX::Update(float tmFrameTime)
 			// Play the bounce sound
 
 			PlaySoundInfo psi;
-			memset(&psi, 0, sizeof(PlaySoundInfo));
+			memset((void*)&psi, 0, sizeof(PlaySoundInfo));
 
 			psi.m_dwFlags = PLAYSOUND_GETHANDLE |
 							PLAYSOUND_CTRL_VOL |

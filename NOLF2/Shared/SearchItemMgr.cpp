@@ -8,7 +8,14 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "SearchItemMgr.h"
 #include "WeaponMgr.h"
 
@@ -424,10 +431,10 @@ SEARCH_ITEM* CSearchItemMgr::GetItem(const char *pszName)
 			pszName++;
 
 	//ignore trailing whitespace
-	int nLen = strlen(pszName);
+	int nLen = (int)strlen(pszName);
 	const char* pszTmp = strpbrk(pszName," \t");
 	if (pszTmp)
-		nLen = (pszTmp-pszName);
+		nLen = ((int)(pszTmp-pszName));
 	
 
 	ItemArray::iterator iter = m_ItemArray.begin();
@@ -538,7 +545,7 @@ LTBOOL CSearchItemMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStr
 		pSet = g_pSearchItemMgr->GetSet(i);
 		if (pSet && pSet->szName[0])
 		{
-            uint32 dwNameLen = strlen(pSet->szName);
+            uint32 dwNameLen = (uint32)strlen(pSet->szName);
 
 			if (dwNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings)
 			{

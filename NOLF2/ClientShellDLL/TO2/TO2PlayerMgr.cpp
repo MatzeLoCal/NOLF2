@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2PlayerMgr.h"
 #include "TO2HUDMgr.h"
 #include "MsgIDs.h"

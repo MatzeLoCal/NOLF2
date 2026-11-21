@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "iltclient.h"
 #include "iltphysics.h"
 #include "CMoveMgr.h"
@@ -1745,7 +1745,7 @@ void CMoveMgr::UpdatePushers()
 				dist = VEC_DIST(pPusher->m_Pos, myPos);
 				if(dist < pPusher->m_Radius)
 				{
-					memset(&iQuery, 0, sizeof(iQuery));
+					memset((void*)&iQuery, 0, sizeof(iQuery));
 					iQuery.m_From = pPusher->m_Pos;
 					iQuery.m_To = myPos;
 					if(!g_pLTClient->IntersectSegment(&iQuery, &iInfo))
@@ -2057,7 +2057,7 @@ void CMoveMgr::SetClientObjNonsolid()
 {
 	HOBJECT hObj;
 
-	if(hObj = g_pLTClient->GetClientObject())
+	if((hObj = g_pLTClient->GetClientObject()))
 	{
 		g_pCommonLT->SetObjectFlags(hObj, OFT_Flags, FLAG_CLIENTNONSOLID, FLAG_CLIENTNONSOLID);
 	}

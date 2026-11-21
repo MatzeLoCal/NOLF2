@@ -13,7 +13,7 @@
 #define __AIGOAL_CHECK_BODY_H__
 
 #include "AIGoalAbstractSearch.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 typedef ObjRefNotifierList SeenBodyList;
 

@@ -8,15 +8,15 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenMulti.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "GameClientShell.h"
 #include "ClientSaveLoadMgr.h"
 #include "ClientMultiplayerMgr.h"
-#include "iserverdir.h"
-#include "msgids.h"
+#include "IServerDir.h"
+#include "MsgIDs.h"
 #include "WinUtil.h"
 #include "direct.h"
 #include "ClientButeMgr.h"
@@ -634,6 +634,7 @@ void CScreenMulti::Update()
 				} break;
 
 
+			default: break;
 			}
 
 			break;
@@ -674,7 +675,7 @@ void CScreenMulti::Update()
 				
 								
 			}
-			else if ((eErrorRequest == IServerDirectory::eRequest_MOTD) )
+			else if (eErrorRequest == IServerDirectory::eRequest_MOTD )
 			{
 
 				g_pLTClient->CPrint( "QueueRequest(IServerDirectory::eRequest_MOTD) : FAILED");

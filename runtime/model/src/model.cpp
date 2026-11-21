@@ -179,7 +179,7 @@ const char* ModelStringList::AddString(const char *pString)
 	}
 
 	// Ok, add a new string.
-	len = strlen(pString) + 1;
+	len = (int)(strlen(pString) + 1);
 	dwSize = sizeof(ModelString) - 1 + len;
 	pRet = (ModelString*)GetAlloc()->Alloc(dwSize);
 	if(!pRet)
@@ -980,7 +980,7 @@ bool Model::SetFilename(const char *pInFilename)
 	char *pFilename;
 
 	FreeFilename();
-	uint32 nStrLen = strlen(pInFilename);
+	uint32 nStrLen = (uint32)strlen(pInFilename);
 
 	LT_MEM_TRACK_ALLOC(pFilename = new char[nStrLen + 1],LT_MEM_TYPE_MODEL);
 	if(!pFilename)
@@ -1413,9 +1413,9 @@ inline bool obb_overlap
   
   //A's basis vectors
   for( i=0 ; i<3 ; i++ )  {
-    ra = a[i];
+    ra = a[(int32)i];
     rb = b[0]*fabsf(R[i][0]) + b[1]*fabsf(R[i][1]) + b[2]*fabsf(R[i][2]);
-    t = fabsf( T[i] );
+    t = fabsf( T[(int32)i] );
     if( t > ra + rb ) 
       return false;
   }
@@ -1424,7 +1424,7 @@ inline bool obb_overlap
     ra = 
       a[0]*fabsf(R[0][k]) + a[1]*fabsf(R[1][k]) + a[2]*fabsf(R[2][k]);
     
-    rb = b[k];
+    rb = b[(int32)k];
     
     t = 
       fabsf( T[0]*R[0][k] + T[1]*R[1][k] + 

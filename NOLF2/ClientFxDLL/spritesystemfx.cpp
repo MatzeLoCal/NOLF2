@@ -11,10 +11,10 @@
 // Includes....
 
 #include "stdafx.h"
-#include "ClientFX.h"
-#include "SpriteSystemFX.h"
+#include "clientfx.h"
+#include "spritesystemfx.h"
 #include "FastList.h"
-#include "CycleTimer.h"
+#include "cycletimer.h"
 #include "iltspritecontrol.h"
 #include "stdio.h"
 #include "time.h"

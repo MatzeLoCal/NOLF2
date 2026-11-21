@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "SearchLightFX.h"
 #include "GameClientShell.h"
 #include "ClientWeaponUtils.h"

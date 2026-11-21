@@ -9,7 +9,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalSerumDeath.h"
 #include "AIGoalMgr.h"
 #include "AI.h"
@@ -197,6 +197,7 @@ void CAIGoalSerumDeath::HandleStateAnimate()
 						m_fCurImportance = 0.f;
 					}
 					break;
+				default: break;
 			}
 			break;
 

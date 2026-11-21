@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIHUMANSTATECATCH_H__
 #include "AIHumanStateCatch.h"		
@@ -173,6 +173,7 @@ void CAIHumanStateCatch::Update(void)
 			HandleDropCatch();
 			break;
 		}
+		default: break;
 	}
 
 	// If we changed states, force an animation recalculation by locking,
@@ -222,6 +223,7 @@ void CAIHumanStateCatch::UpdateAnimation(void)
 		{
 			break;
 		}
+		default: break;
 	}
 
 	// Always lock the animation.  Let the caller handle unlocking later

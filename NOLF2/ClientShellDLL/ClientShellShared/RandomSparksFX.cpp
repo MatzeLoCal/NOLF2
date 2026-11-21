@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "RandomSparksFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"

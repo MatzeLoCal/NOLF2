@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "SteamFX.h"
 #include "VarTrack.h"
 #include "GameClientShell.h"

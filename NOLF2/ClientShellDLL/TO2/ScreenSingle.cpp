@@ -9,7 +9,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenSingle.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -19,7 +19,7 @@
 #include "ClientSaveLoadMgr.h"
 #include "ClientButeMgr.h"
 #include "ClientMultiplayerMgr.h"
-#include "clientres.h"
+#include "ClientRes.h"
 
 
 #ifdef _FINAL
@@ -362,7 +362,7 @@ void CScreenSingle::OnFocus(LTBOOL bFocus)
 #ifndef _REMOVE_CUSTOM_LEVELS
 		m_pCustom->Show(LTFALSE);
 		m_pCustomFrame->Show(LTFALSE);
-#endif _REMOVE_CUSTOM_LEVELS
+#endif // _REMOVE_CUSTOM_LEVELS
 
 		//have they completed game?
 		LTBOOL bCompleted = LTFALSE;

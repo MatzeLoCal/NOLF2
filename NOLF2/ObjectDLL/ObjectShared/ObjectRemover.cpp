@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ObjectRemover.h"
 #include "ServerUtilities.h"
 #include "ObjectMsgs.h"

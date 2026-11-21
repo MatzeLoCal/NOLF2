@@ -6,7 +6,7 @@
 #include "GameButeMgr.h"
 #include "ltbasetypes.h"
 #include "DamageTypes.h"
-#include "CommandIds.h"
+#include "CommandIDs.h"
 #include "CharacterAlignment.h"
 
 #pragma warning (disable : 4786)

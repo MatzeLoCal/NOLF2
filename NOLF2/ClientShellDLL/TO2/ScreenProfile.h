@@ -11,7 +11,7 @@
 
 #include "BaseScreen.h"
 
-#include "profileMgr.h"
+#include "ProfileMgr.h"
 
 #pragma warning (disable : 4503)
 #pragma warning( disable : 4786 )

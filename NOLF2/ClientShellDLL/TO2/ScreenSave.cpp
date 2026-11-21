@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "MissionButeMgr.h"
@@ -235,7 +235,7 @@ void CScreenSave::BuildSavedLevelList()
 			{
 				CLTGUIColumnCtrl* pCtrl = AddColumnCtrl(CMD_CUSTOM+1+i, IDS_HELP_SAVEGAME);
 				pCtrl->SetFont(LTNULL,kSmallFontSize);
-				pCtrl->SetParam1( m_controlArray.size() - 1);
+				pCtrl->SetParam1( (uint32)(m_controlArray.size() - 1));
 
 				// This is a spacer
 				pCtrl->AddColumn("", kIndent, LTTRUE);
@@ -263,7 +263,7 @@ void CScreenSave::BuildSavedLevelList()
 	{
 		CLTGUIColumnCtrl* pCtrl = AddColumnCtrl(CMD_CUSTOM+1+nFirstEmpty, IDS_HELP_SAVEGAME);
 		pCtrl->SetFont(LTNULL,kSmallFontSize);
-		pCtrl->SetParam1( m_controlArray.size() - 1);
+		pCtrl->SetParam1( (uint32)(m_controlArray.size() - 1));
 		// This is a spacer
 		pCtrl->AddColumn("", kIndent, LTTRUE);
 

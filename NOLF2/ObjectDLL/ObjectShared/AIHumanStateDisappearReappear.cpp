@@ -1,6 +1,6 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStateDisappearReappear.h"
 #include "AIHuman.h"
 #include "AITarget.h"
@@ -220,6 +220,7 @@ void CAIHumanStateDisappearReappear::Update()
 				m_eStateStatus = kSStat_StateComplete;
 			}
 			break;
+		default: break;
 	}
 }
 
@@ -278,6 +279,7 @@ void CAIHumanStateDisappearReappear::UpdateAlpha()
 				g_pLTServer->SetObjectColor( GetAI()->m_hObject, 1.f, 1.f, 1.f, 1.f );
 			}
 			break;
+		default: break;
 	}
 }
 
@@ -312,5 +314,6 @@ void CAIHumanStateDisappearReappear::UpdateAnimation()
 				GetAnimationContext()->ClearLock();
 				GetAnimationContext()->Lock();
 			}
+		default: break;
 	}
 }

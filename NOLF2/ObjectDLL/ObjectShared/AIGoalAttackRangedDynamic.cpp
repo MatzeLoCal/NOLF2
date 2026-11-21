@@ -9,7 +9,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalAttackRangedDynamic.h"
 #include "AIGoalMgr.h"
 #include "AIHumanStateAttackMove.h"
@@ -194,6 +194,7 @@ void CAIGoalAttackRangedDynamic::UpdateGoal()
 		case kState_HumanAttackMove:
 			HandleStateAttackMove();
 			return;
+		default: break;
 	}
 
 	super::ActivateGoal();

@@ -776,12 +776,12 @@ void FreshenDir(CRezDir* pDir, const char* sParamPath) {
 // Notify of errors and warnings
 void NotifyErrWarn() {
   if (g_nErrCount > 0) {
-	  if (g_nErrCount == 1) zprintf("\n%i ERROR HAS OCCURED!!!!!!!\n",g_nErrCount);
-	  else zprintf("\n%i ERRORS HAVE OCCURED!!!!!!!\n",g_nErrCount);
+	  if (g_nErrCount == 1) zprintf("\n%li ERROR HAS OCCURED!!!!!!!\n",g_nErrCount);
+	  else zprintf("\n%li ERRORS HAVE OCCURED!!!!!!!\n",g_nErrCount);
   }
   if (g_nWarnCount > 0) {
-	  if (g_nWarnCount == 1) zprintf("\n%i WARNING HAS OCCURED!!!!!!!\n",g_nWarnCount);
-	  else  zprintf("\n%i WARNINGS HAVE OCCURED!!!!!!!\n",g_nWarnCount);
+	  if (g_nWarnCount == 1) zprintf("\n%li WARNING HAS OCCURED!!!!!!!\n",g_nWarnCount);
+	  else  zprintf("\n%li WARNINGS HAVE OCCURED!!!!!!!\n",g_nWarnCount);
   }
 }
 
@@ -829,7 +829,7 @@ BOOL CheckLithHeader(CRezMgr* pMgr)
 BOOL IsCommandSet(char cFlag, const char* pszCommand)
 {
 	//get the length of the command
-	int nCommandLen = strlen(pszCommand);
+	int nCommandLen = (int)strlen(pszCommand);
 
 	//get the uppercase version of the flag
 	char cUpperFlag = toupper(cFlag);
@@ -931,7 +931,7 @@ int RezCompiler(const char* sCmd, const char* sRezFile, const char* sTargetDir, 
 
 	  // output stats to user
       if (g_bVerbose) zprintf("\n");
-      zprintf("Finished extracting %i directories %i resources\n",g_nDirCount,g_nRezCount);
+      zprintf("Finished extracting %li directories %li resources\n",g_nDirCount,g_nRezCount);
 
 	  // if any errors or warnings have occured notify user
 	  NotifyErrWarn();
@@ -964,7 +964,7 @@ int RezCompiler(const char* sCmd, const char* sRezFile, const char* sTargetDir, 
 
 	  // output stats to user
       zprintf("\n");
-      zprintf("File contains %i directories %i resources\n",g_nDirCount,g_nRezCount);
+      zprintf("File contains %li directories %li resources\n",g_nDirCount,g_nRezCount);
 
 	  // if any errors or warnings have occured notify user
 	  NotifyErrWarn();
@@ -1011,7 +1011,7 @@ int RezCompiler(const char* sCmd, const char* sRezFile, const char* sTargetDir, 
 
 	  // output stats to user
       if (g_bVerbose) zprintf("\n");
-      zprintf("Finished creating %i directories %i resources\n",g_nDirCount,g_nRezCount);
+      zprintf("Finished creating %li directories %li resources\n",g_nDirCount,g_nRezCount);
 
       // force the is sorted flag to true because this was all done in order
       Mgr.ForceIsSortedFlag(TRUE);
@@ -1056,7 +1056,7 @@ int RezCompiler(const char* sCmd, const char* sRezFile, const char* sTargetDir, 
 
 	  // output stats to user
       if (g_bVerbose) zprintf("\n");
-      zprintf("Finished freshening %i directories %i resources\n",g_nDirCount,g_nRezCount);
+      zprintf("Finished freshening %li directories %li resources\n",g_nDirCount,g_nRezCount);
 
 	  // if any errors or warnings have occured notify user
 	  NotifyErrWarn();
@@ -1122,5 +1122,5 @@ int RezCompiler(const char* sCmd, const char* sRezFile, const char* sTargetDir, 
     }
   }
 
-  return g_nRezCount;
+  return (int)g_nRezCount;
 }

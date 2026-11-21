@@ -89,7 +89,7 @@ inline void* sb_Allocate(StructBank *pBank) {
 
     pRet = pBank->m_FreeListHead;
     if (!pRet) {
-        sb_AllocateNewStructPage(pBank, pBank->m_CacheSize);
+        sb_AllocateNewStructPage(pBank, (uint32)pBank->m_CacheSize);
         pRet = pBank->m_FreeListHead;
         if (!pRet) {
             return 0;
@@ -118,7 +118,7 @@ inline void* sb_Allocate_z(StructBank *pBank) {
 
     pRet = pBank->m_FreeListHead;
     if (!pRet) {
-        sb_AllocateNewStructPage(pBank, pBank->m_CacheSize);
+        sb_AllocateNewStructPage(pBank, (uint32)pBank->m_CacheSize);
         pRet = pBank->m_FreeListHead;
         if (!pRet) {
             return 0;

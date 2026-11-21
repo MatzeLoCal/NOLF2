@@ -143,12 +143,12 @@ class CAIGoalButeMgr : public CGameButeMgr
 
 		AIGBM_GoalTemplate* GetTemplate(const EnumAIGoalType eGoalType) { return &m_aTemplates[eGoalType]; }
 
-		uint32				GetNumGoalSets() const { return m_lstGoalSets.size(); }
+		uint32				GetNumGoalSets() const { return (uint32)m_lstGoalSets.size(); }
 		uint32				GetGoalSetIndex(const char* szGoalSetName);
 		AIGBM_GoalSet*		GetGoalSet(const uint32 iGoalSet) { return m_lstGoalSets[iGoalSet]; }
 		AIGBM_GoalSet*		GetGoalSet(const char* szGoalSetName);
 
-		uint32						GetNumSmartObjectTemplates() const { return m_lstSmartObjects.size(); }
+		uint32						GetNumSmartObjectTemplates() const { return (uint32)m_lstSmartObjects.size(); }
 		AIGBM_SmartObjectTemplate*	GetSmartObjectTemplate(const uint32 nID) 
 									{	return nID < m_lstSmartObjects.size( ) ? m_lstSmartObjects[nID] : NULL; }
 		AIGBM_SmartObjectTemplate*	GetSmartObjectTemplate(const char* szSmartObjectName);

@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2HUDMgr.h"
 #include "TO2PlayerStats.h"
 #include "TO2InterfaceMgr.h"
@@ -168,6 +168,7 @@ void CHUDDoomsday::Update()
 					case kDoomsDay_Core:
 						nIcon = eDD_Core;
 						break;
+					default: break;
 				}
 
 				// if we've got a match (which should be always)

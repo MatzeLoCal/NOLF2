@@ -21,7 +21,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "AIGoalSentryChallenge.h"		
 #include "AnimationProp.h"

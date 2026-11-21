@@ -9,7 +9,7 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalApprehend.h"
 #include "AIHumanStateApprehend.h"
 #include "AIGoalMgr.h"

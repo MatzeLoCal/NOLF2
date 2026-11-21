@@ -74,7 +74,7 @@ public:
 
 	LTRESULT GetLen(uint32 *len)
 	{
-		*len = m_FileLen;
+		*len = (uint32)m_FileLen;
 		return LT_OK;
 	}
 

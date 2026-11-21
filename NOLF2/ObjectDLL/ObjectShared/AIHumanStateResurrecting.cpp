@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIHUMANSTATERESURRECTING_H__
 #include "AIHumanStateResurrecting.h"		
@@ -26,7 +26,7 @@
 #include "AIHuman.h"
 #endif
 
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "DebrisFuncs.h"
 
 // Forward declarations
@@ -180,6 +180,7 @@ CAIHumanStateResurrecting::CAIHumanStateResurrecting()
 			}
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -206,6 +207,7 @@ CAIHumanStateResurrecting::CAIHumanStateResurrecting()
 			GetAI()->GetAnimationContext()->SetProp(kAPG_Posture, kAP_Stand);
 			GetAI()->GetAnimationContext()->SetProp(kAPG_WeaponPosition, kAP_Down);
 			break;
+		default: break;
 	}
 }
 

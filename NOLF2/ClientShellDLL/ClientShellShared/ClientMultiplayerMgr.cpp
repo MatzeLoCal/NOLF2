@@ -10,13 +10,13 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientMultiplayerMgr.h"
 #include "GameClientShell.h"
-#include "MsgIds.h"
-#include "CharacterFx.h"
+#include "MsgIDs.h"
+#include "CharacterFX.h"
 #include "CMoveMgr.h"
-#include "iserverdir.h"
+#include "IServerDir.h"
 #include "MissionMgr.h"
 #include "MissionButeMgr.h"
 #include "InterfaceMgr.h"
@@ -24,7 +24,7 @@
 #include "WeaponMgr.h"
 #include "CRC32.h"
 
-#pragma message( "FIXFIX:  Should really be called ClientConnectionMgr." )
+// FIXFIX:  Should really be called ClientConnectionMgr.
 
 
 ClientMultiplayerMgr* g_pClientMultiplayerMgr = NULL;
@@ -140,6 +140,7 @@ bool ClientMultiplayerMgr::InitMultiPlayer()
 //
 //		modelId = g_pModelButeMgr->GetDMModel(pProfile->m_nDMPlayerModel);
 		break;
+	default: break;
 	};
 
 	CAutoMessage cMsg;
@@ -208,6 +209,7 @@ bool ClientMultiplayerMgr::UpdateMultiPlayer()
 
 		modelId = g_pModelButeMgr->GetDMModel(pProfile->m_nDMPlayerModel);
 		break;
+	default: break;
 	};
 
 	if( !UpdateNetClientData( ))
@@ -383,6 +385,7 @@ bool ClientMultiplayerMgr::SetupServerHost( int nPort, bool bLANOnly )
 		LTStrCpy( m_StartGameRequest.m_HostInfo.m_sName, pProfile->m_ServerGameOptions.GetDoomsday().m_sSessionName.c_str( ),
 					sizeof(m_StartGameRequest.m_HostInfo.m_sName));
 		break;
+	default: break;
 	};
 
 
@@ -535,7 +538,7 @@ void ClientMultiplayerMgr::GetCurMessageSource(uint8 aAddr[4], uint16 *pPort)
 
 #ifndef SOURCE_RELEASE
 
-#pragma message( "FIXFIX: Remember to remove sections defined without SOURCE_RELEASE defines" )
+// FIXFIX: Remember to remove sections defined without SOURCE_RELEASE defines
 
 // Global key used for cross-encryption  NOTE: MUST BE SAME AS ON SERVER!!
 #define KEY_MESSER_UPPER 0xDEADFACE
@@ -628,7 +631,7 @@ bool ClientMultiplayerMgr::HandleMsgHandshake( ILTMessage_Read & msg )
 #ifdef SOURCE_RELEASE
 			cResponse.Writeuint32( GAME_HANDSHAKE_PASSWORD );
 #else // SOURCE_RELEASE
-			cResponse.Writeuint32((uint32)this);
+			cResponse.Writeuint32((uint32)(uintptr_t)this);
 #endif // SOURCE_RELEASE
 			g_pLTClient->SendToServer(cResponse.Read(), MESSAGE_GUARANTEED);
 		}
@@ -652,7 +655,7 @@ bool ClientMultiplayerMgr::HandleMsgHandshake( ILTMessage_Read & msg )
 			SAFE_STRCPY(sName,pProfile->m_sPlayerGuid.c_str( ));
 
 			// Decrypt it
-			m_nServerKey ^= MessUp32BitValue((uint32)this, (uint32)(sName[0]));
+			m_nServerKey ^= MessUp32BitValue((uint32)(uintptr_t)this, (uint32)(sName[0]));
 
 			// Encrypt "the string" with it
 			uint32 nPassword = *((uint32*)sName);
@@ -1177,6 +1180,7 @@ bool ClientMultiplayerMgr::UpdateNetClientData( )
 		case eGameTypeDeathmatch:
 			m_NetClientData.m_ePlayerModelId = g_pModelButeMgr->GetDMModel( pProfile->m_nDMPlayerModel );
 			break;
+		default: break;
 	};
 
 	return true;	

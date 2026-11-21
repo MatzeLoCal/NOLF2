@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MenuMgr.h"
 #include "GameClientShell.h"
 extern CGameClientShell* g_pGameClientShell;

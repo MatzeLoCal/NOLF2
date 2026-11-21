@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MuzzleFlashParticleFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"

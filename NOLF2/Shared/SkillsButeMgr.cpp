@@ -8,13 +8,20 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "SkillsButeMgr.h"
 
 
 #ifdef _CLIENTBUILD
 
-#include "clientresshared.h"
+#include "ClientResShared.h"
 #include "ClientUtilities.h"
 
 int GetSkillNameId(eSkill skl)
@@ -207,7 +214,7 @@ LTBOOL CSkillsButeMgr::Init(const char* szAttributeFile)
 			
 		while (lvl < kNumSkillLevels && pCost)
 		{
-			cost = atol(pCost);
+			cost = (uint32)atol(pCost);
 			m_nCosts[skl][lvl] = cost;
 			pCost = strtok(NULL,",");
 			lvl++;
@@ -357,6 +364,7 @@ const SkillModifiers* CSkillsButeMgr::GetModifiers(eSkill skl, eSkillLevel lvl)
 			return &m_Gadget[lvl];
 		case SKL_SEARCH:
 			return &m_Search[lvl];
+		default: break;
 	}
 
 	ASSERT(!"Invalid Skill specified.");
@@ -427,6 +435,7 @@ uint8 CSkillsButeMgr::GetNumModifiers(eSkill skl)
 			return GadgetModifiers::kNumModifiers;
 		case SKL_SEARCH:
 			return SearchModifiers::kNumModifiers;
+		default: break;
 	}
 
 	ASSERT(!"Invalid Skill specified.");

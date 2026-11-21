@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "KeyItem.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"

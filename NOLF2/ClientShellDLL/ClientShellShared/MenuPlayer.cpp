@@ -8,10 +8,10 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MenuPlayer.h"
 #include "InterfaceMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ClientResShared.h"
 
 

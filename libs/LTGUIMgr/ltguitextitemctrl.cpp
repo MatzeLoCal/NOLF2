@@ -83,7 +83,7 @@ void CLTGUITextCtrl::SetString(const char *pString)
 	if ( !pString || !m_pFont || !m_nFontSize)
 		return;
 
-	int nLen = strlen(pString);
+	int nLen = (int)strlen(pString);
 	ASSERT(nLen < 1024);
 	if (nLen >= 1024)
 		return;

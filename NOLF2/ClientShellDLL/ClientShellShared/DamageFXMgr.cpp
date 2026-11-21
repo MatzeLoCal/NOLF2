@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "DamageFXMgr.h"
 	#include "VarTrack.h"
 	#include "SoundMgr.h"

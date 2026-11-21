@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalCheckBody.h"
 #include "AIGoalSpecialDamage.h"
 #include "AIHumanState.h"
@@ -58,7 +58,7 @@ void CAIGoalCheckBody::Save(ILTMessage_Write *pMsg)
 	SAVE_HOBJECT(m_hBody);
 
 	SeenBodyList::iterator it;
-	SAVE_DWORD(m_lstSeenBodies.size());
+	SAVE_DWORD((uint32)m_lstSeenBodies.size());
 	for(it = m_lstSeenBodies.begin(); it != m_lstSeenBodies.end(); ++it)
 	{
 		SAVE_HOBJECT(*it);

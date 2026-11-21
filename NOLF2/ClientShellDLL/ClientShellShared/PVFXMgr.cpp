@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PVFXMgr.h"
 #include "CommonUtilities.h"
 #include "GameClientShell.h"

@@ -76,7 +76,7 @@ public:
 
 	// Simple accessors
 	LTBOOL	IsInitialized() const { return m_bInitialized; }
-	uint32	GetNumVolumes() const { return m_listpVolumes.size(); }
+	uint32	GetNumVolumes() const { return (uint32)m_listpVolumes.size(); }
 
 	AISpatialRepresentation* GetVolume(uint32 iVolume);
 	AISpatialRepresentation* GetVolume(const char* szVolume);

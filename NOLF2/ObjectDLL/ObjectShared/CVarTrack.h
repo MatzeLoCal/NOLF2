@@ -68,7 +68,7 @@
 
 			if(m_pServerDE && m_hVar)
 			{
-				if(pRet = m_pServerDE->GetVarValueString(m_hVar))
+				if((pRet = m_pServerDE->GetVarValueString(m_hVar)))
 					return pRet;
 			}
 			return pDefault;

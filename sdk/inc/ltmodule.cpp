@@ -34,7 +34,7 @@ namespace
         if (str == NULL) return NULL;
 
         //get the length of the string
-        int32 length = strlen(str);
+        int32 length = (int32)strlen(str);
 
         //allocate memory for our copy
         char *copy = new char[length + 1];

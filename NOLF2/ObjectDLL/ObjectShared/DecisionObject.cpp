@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DecisionObject.h"
 #include "ServerUtilities.h"
 #include "ObjectMsgs.h"
@@ -323,7 +323,10 @@ void DecisionObject::HandleChoose(uint8 nChoice)
 
 	//special case of closing a open decision window as another one is being opened
 	// in this case do not notify the client
-	if (nChoice == -1)
+	// As shipped this compared the uint8 nChoice with -1, which is never true, so this
+	// case has never run, in retail either. Meant was (uint8)-1; kept disabled so decision
+	// windows behave exactly as they always have.
+	if (false)
 	{
 		HandleAbort(false);
 		return;

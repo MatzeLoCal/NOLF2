@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "SFXMgr.h"
 #include "SpecialFX.h"
 #include "PolyGridFX.h"
@@ -36,7 +36,7 @@
 #include "ProjectileFX.h"
 #include "LightFX.h"
 #include "PickupItemFX.h"
-#include "DoomsDayPieceFX.h"
+#include "DoomsdayPieceFX.h"
 #include "GadgetTargetFX.h"
 #include "GameClientShell.h"
 #include "CharacterFX.h"

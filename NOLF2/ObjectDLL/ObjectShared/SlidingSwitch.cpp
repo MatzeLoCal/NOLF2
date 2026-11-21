@@ -14,7 +14,7 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "SlidingSwitch.h"
 
 LINKFROM_MODULE( SlidingSwitch );

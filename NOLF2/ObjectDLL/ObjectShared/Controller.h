@@ -35,7 +35,7 @@
 
 
 #include "GameBaseLite.h"
-#include "commonutilities.h"
+#include "CommonUtilities.h"
 #include "WaveFn.h"
 
 LINKTO_MODULE( Controller );

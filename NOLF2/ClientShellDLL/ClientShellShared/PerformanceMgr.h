@@ -16,7 +16,7 @@
 #endif // _MSC_VER > 1000
 
 #include "ClientUtilities.h"
-#include "ButeMgr.h"
+#include "butemgr.h"
 
 class CPerformanceMgr;
 extern CPerformanceMgr* g_pPerformanceMgr;

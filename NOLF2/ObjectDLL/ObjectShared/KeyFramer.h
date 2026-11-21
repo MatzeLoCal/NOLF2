@@ -14,7 +14,7 @@
 #include "ltengineobjects.h"
 #include "CDynArray.h"
 #include "KeyData.h"
-#include "commonutilities.h"
+#include "CommonUtilities.h"
 #include "iobjectplugin.h"
 #include "GameBase.h"
 

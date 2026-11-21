@@ -102,7 +102,7 @@ void CLTMessage_Write::WriteStringAsHString(const char *pString)
 {
 	if (pString)
 	{
-		uint32 nLength = (strlen(pString) + 1);
+		uint32 nLength = ((uint32)(strlen(pString) + 1));
 		m_cPacket.Writeuint16((uint16)nLength);
 		m_cPacket.WriteData(pString, nLength * 8);
 	}

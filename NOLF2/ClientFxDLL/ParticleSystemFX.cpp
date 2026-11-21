@@ -15,7 +15,7 @@
 //
 	
 	#include "stdafx.h" 
-	#include "ClientFX.h"
+	#include "clientfx.h"
 	#include "ParticleSystemFX.h"
 
 //

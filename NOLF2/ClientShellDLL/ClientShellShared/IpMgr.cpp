@@ -13,7 +13,7 @@
 
 // Includes...
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "iltclient.h"
 #include "IpMgr.h"
 
@@ -275,13 +275,13 @@ BOOL CIpMgr::GetAllIpString(char* sBuf, int nBufSize)
 			const char* sIp = pIp->GetAddress();
 			if (sIp)
 			{
-				int nLen = strlen(sIp);
+				int nLen = (int)strlen(sIp);
 
 				if (nTotalSize + nLen + 2 < nBufSize)
 				{
 					if (nTotalSize > 0) strcat(sBuf, ";");
 					strcat(sBuf, sIp);
-					nTotalSize = strlen(sBuf);
+					nTotalSize = (int)strlen(sBuf);
 				}
 			}
 		}
@@ -325,7 +325,7 @@ int CIpMgr::FillListBox(HWND hList)
 		CIp* pIp = GetIp(i);
 		if (pIp)
 		{
-			int nRet = SendMessage(hList, LB_ADDSTRING, 0, (LPARAM)pIp->GetAddress());
+			int nRet = (int)SendMessage(hList, LB_ADDSTRING, 0, (LPARAM)pIp->GetAddress());
 			if (nRet != LB_ERR) cIps++;
 		}
 	}
@@ -407,12 +407,12 @@ BOOL CIpMgr::RemoveSelectedIpFromListBox(HWND hList)
 
 	// Get the currently selected ip text from the list box...
 
-	int iSel = SendMessage(hList, LB_GETCURSEL, 0, 0);
+	int iSel = (int)SendMessage(hList, LB_GETCURSEL, 0, 0);
 	if (iSel == LB_ERR) return(FALSE);
 
 	char sIp[IPM_MAX_ADDRESS + 2];
 
-	int nRet = SendMessage(hList, LB_GETTEXT, iSel, (LPARAM)sIp);
+	int nRet = (int)SendMessage(hList, LB_GETTEXT, iSel, (LPARAM)sIp);
 	if (nRet == LB_ERR) return(FALSE);
 
 

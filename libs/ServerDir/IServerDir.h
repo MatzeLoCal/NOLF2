@@ -10,7 +10,10 @@
 // that uses this DLL. This way any other project whose source files include this file see 
 // SERVERDIR_API functions as being imported from a DLL, wheras this DLL sees symbols
 // defined with this macro as being exported.
-#ifdef SERVERDIR_EXPORTS
+#if defined(__APPLE__)
+// __declspec is ignored on macOS (clang warns); default visibility exports.
+#define SERVERDIR_API __attribute__((visibility("default")))
+#elif defined(SERVERDIR_EXPORTS)
 #define SERVERDIR_API __declspec(dllexport)
 #else
 #define SERVERDIR_API __declspec(dllimport)

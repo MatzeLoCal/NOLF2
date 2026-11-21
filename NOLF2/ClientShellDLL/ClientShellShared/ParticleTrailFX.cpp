@@ -8,13 +8,13 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ParticleTrailFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"
 #include "ParticleTrailSegmentFX.h"
 #include "GameClientShell.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "WeaponFXTypes.h"
 #include "VarTrack.h"
 

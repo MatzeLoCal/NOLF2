@@ -76,7 +76,7 @@ LTBOOL CHelpers::ExtractPathAndFileName( const char *pInputPath, char *pPathName
 		
 	pPathName[0] = pFileName[0] = 0;
 
-	len = strlen(pInputPath);
+	len = (int)strlen(pInputPath);
 	lastDelimiter = -1;
 	
 	for( i=0; i < len; i++ )
@@ -110,7 +110,7 @@ LTBOOL CHelpers::ExtractFileNameAndExtension( const char *pInputFilename, char *
 	int		i, len, lastDot;
 	char	delimiter = '.';
 
-	len = strlen(pInputFilename);
+	len = (int)strlen(pInputFilename);
 	lastDot = len;
 
 	for( i=0; i < len; i++ )
@@ -157,7 +157,7 @@ LTBOOL CHelpers::ExtractNames( const char *pFullPath, char *pPathname, char *pFi
 
 char* CHelpers::GetNextDirName( char *pIn, char *pOut )
 {
-	uint32		len = strlen(pIn);
+	uint32		len = (uint32)strlen(pIn);
 	uint32		inPos=0, outPos=0;
 
 
@@ -196,7 +196,7 @@ LTBOOL CHelpers::IsFileAbsolute(const char* pFilename)
 void CHelpers::RemoveExtension(char* pFilename)
 {
 	//go to the very end of the string
-	int32 nCurrPos = strlen(pFilename) - 1;
+	int32 nCurrPos = (int32)(strlen(pFilename) - 1);
 
 	//now we go backwards looking for a dot, or a slash
 	for(;nCurrPos >= 0; nCurrPos--)

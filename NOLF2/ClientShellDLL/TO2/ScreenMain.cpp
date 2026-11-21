@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenMain.h"
 #include "ScreenMgr.h"
 #include "LayoutMgr.h"

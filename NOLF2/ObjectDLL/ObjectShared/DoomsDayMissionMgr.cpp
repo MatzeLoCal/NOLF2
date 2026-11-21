@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DoomsDayMissionMgr.h"
 #include "PlayerObj.h"
 #include "ServerSaveLoadMgr.h"

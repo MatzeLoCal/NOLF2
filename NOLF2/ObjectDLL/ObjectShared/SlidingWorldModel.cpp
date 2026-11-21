@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "SlidingWorldModel.h"
 
 LINKFROM_MODULE( SlidingWorldModel );

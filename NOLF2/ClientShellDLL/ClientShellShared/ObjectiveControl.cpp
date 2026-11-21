@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ObjectiveControl.h"
 #include "InterfaceMgr.h"
 

@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalChase.h"
 #include "AIGoalMgr.h"
 #include "AIHumanState.h"
@@ -66,7 +66,7 @@ void CAIGoalChase::Save(ILTMessage_Write *pMsg)
 	SAVE_COBJECT( m_pLastVolume );
 
 	JunctionRecord* pRec;
-	SAVE_DWORD( m_stkJunctions.size() );
+	SAVE_DWORD( (uint32)m_stkJunctions.size() );
 	JunctionStack::iterator it;
 	for( it = m_stkJunctions.begin(); it != m_stkJunctions.end(); ++it )
 	{

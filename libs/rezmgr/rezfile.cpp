@@ -85,7 +85,7 @@ DWORD CRezFile::Read(DWORD nItemPos, DWORD nItemOffset, DWORD nSize, void* pData
   }
 
   DWORD nRetVal;
-  while ((nRetVal = fread(pData, 1, nSize, m_pFile)) != nSize) {
+  while ((nRetVal = (DWORD)fread(pData, 1, nSize, m_pFile)) != nSize) {
 		if (!m_pRezMgr->DiskError()) {
 			m_nLastSeekPos = 0xFFFFFFFF;
 			ASSERT(FALSE); // Read Failed!
@@ -119,7 +119,7 @@ DWORD CRezFile::Write(DWORD nItemPos, DWORD nItemOffset, DWORD nSize, void* pDat
   }
 
   DWORD nRetVal;
-  while ((nRetVal = fwrite(pData, 1, nSize, m_pFile)) != nSize) {
+  while ((nRetVal = (DWORD)fwrite(pData, 1, nSize, m_pFile)) != nSize) {
     if (!m_pRezMgr->DiskError()) {
       ASSERT(FALSE); // Write Failed!
       return 0;
@@ -150,7 +150,7 @@ BOOL CRezFile::Open(const char* sFileName, BOOL bReadOnly, BOOL bCreateNew) {
   if (m_sFileName != NULL) 
 	  delete [] m_sFileName;
   
-  uint32 nNewStrLen = strlen(sFileName)+1;
+  uint32 nNewStrLen = (uint32)(strlen(sFileName)+1);
   LT_MEM_TRACK_ALLOC(m_sFileName = new char[nNewStrLen],LT_MEM_TYPE_MISC);
   
   if (m_sFileName != NULL) 
@@ -354,7 +354,7 @@ DWORD CRezFileSingleFile::Read(DWORD nItemPos, DWORD nItemOffset, DWORD nSize, v
   }
 
   DWORD nRetVal;
-  while ((nRetVal = fread(pData, 1, nSize, m_pFile)) != nSize) {
+  while ((nRetVal = (DWORD)fread(pData, 1, nSize, m_pFile)) != nSize) {
     if (!m_pDirEmulation->m_pRezMgr->DiskError()) {
       ASSERT(FALSE); // Read Failed!
       return 0;
@@ -385,7 +385,7 @@ DWORD CRezFileSingleFile::Write(DWORD nItemPos, DWORD nItemOffset, DWORD nSize, 
   }
 
   DWORD nRetVal;
-  while ((nRetVal = fwrite(pData, 1, nSize, m_pFile)) != nSize) {
+  while ((nRetVal = (DWORD)fwrite(pData, 1, nSize, m_pFile)) != nSize) {
     if (!m_pDirEmulation->m_pRezMgr->DiskError()) {
       ASSERT(FALSE); // Write Failed!
       return 0;

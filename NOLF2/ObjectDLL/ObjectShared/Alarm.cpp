@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Alarm.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
@@ -690,19 +690,19 @@ void Alarm::Save(ILTMessage_Write *pMsg)
 
 	AIREGION_LIST::iterator it;
 
-	SAVE_DWORD( m_lstAlertRegions.size() );
+	SAVE_DWORD( (uint32)m_lstAlertRegions.size() );
 	for( it = m_lstAlertRegions.begin(); it != m_lstAlertRegions.end(); ++it )
 	{
 		SAVE_HOBJECT( *it );
 	}
 
-	SAVE_DWORD( m_lstRespondRegions.size() );
+	SAVE_DWORD( (uint32)m_lstRespondRegions.size() );
 	for( it = m_lstRespondRegions.begin(); it != m_lstRespondRegions.end(); ++it )
 	{
 		SAVE_HOBJECT( *it );
 	}
 
-	SAVE_DWORD( m_lstSearchRegions.size() );
+	SAVE_DWORD( (uint32)m_lstSearchRegions.size() );
 	for( it = m_lstSearchRegions.begin(); it != m_lstSearchRegions.end(); ++it )
 	{
 		SAVE_HOBJECT( *it );

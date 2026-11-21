@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "DestructibleModel.h"
 #include "ClientServerShared.h"
 #include "ServerUtilities.h"

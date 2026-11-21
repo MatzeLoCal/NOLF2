@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalAbstractSearch.h"
 #include "AIGoalMgr.h"
 #include "AIHumanState.h"
@@ -53,7 +53,7 @@ void CAIGoalAbstractSearch::Save(ILTMessage_Write *pMsg)
 
 	HOBJECT hRegion;
 	AISEARCHREGION_LIST::iterator it;
-	SAVE_DWORD( m_lstRegions.size() );
+	SAVE_DWORD( (uint32)m_lstRegions.size() );
 	for( it = m_lstRegions.begin(); it != m_lstRegions.end(); ++it )
 	{
 		hRegion = *it;

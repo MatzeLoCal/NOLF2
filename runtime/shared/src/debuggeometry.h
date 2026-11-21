@@ -99,7 +99,7 @@ public:
 
 	// Container goodies
 	void		clear();
-	int			size() const							{ return mLines.size() + mPolygons.size(); }
+	int			size() const							{ return (int)(mLines.size() + mPolygons.size()); }
 
 	// Set up attributes
 	void		setWidth(float width)					{ mWidth = width; }

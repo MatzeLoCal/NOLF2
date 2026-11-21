@@ -32,7 +32,7 @@ class Alarm : public Prop
 		LTBOOL	IsRegionInRespondGroup(HOBJECT hRegion);
 		LTBOOL	IsRegionInAlertGroup(HOBJECT hRegion);
 		LTBOOL	IsRegionCovered(HOBJECT hRegion);
-		uint32	GetNumSearchRegions() { return m_lstSearchRegions.size(); }
+		uint32	GetNumSearchRegions() { return (uint32)m_lstSearchRegions.size(); }
 		HOBJECT	GetSearchRegion(uint32 iRegion);
 
 	protected :

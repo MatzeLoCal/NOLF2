@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "KeyPad.h"
 #include "SoundMgr.h"
 #include "ServerUtilities.h"
@@ -190,7 +190,7 @@ void KeyPad::HandleGadgetMsg(const CParsedMsg &cMsg)
 {
 	if (cMsg.GetArgCount() < 2) return;
 
-	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo(atol(cMsg.GetArg(1)));
+	AMMO const *pAmmo = g_pWeaponMgr->GetAmmo((int)(atol(cMsg.GetArg(1))));
 	if (!pAmmo) return;
 
 	if (pAmmo->eInstDamageType == DT_GADGET_CODE_DECIPHERER)

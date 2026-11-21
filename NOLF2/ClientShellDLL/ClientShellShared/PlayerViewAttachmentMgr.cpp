@@ -12,7 +12,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "CMoveMgr.h"
 	#include "CharacterFX.h"
 	#include "PlayerViewAttachmentMgr.h"

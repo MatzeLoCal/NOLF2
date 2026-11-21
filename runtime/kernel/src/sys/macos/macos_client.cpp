@@ -146,7 +146,7 @@ static void LTMacClient_TickTestConsole(void)
     c_CommandHandler(pCmd);
 }
 
-extern "C" int main(int argc, char** argv)
+int main(int argc, char** argv)
 {
     // Window size in POINTS. On a Retina display the GL drawable is 2x this
     // (LTMacWin_GetSize reports backing pixels, and the whole pipeline —

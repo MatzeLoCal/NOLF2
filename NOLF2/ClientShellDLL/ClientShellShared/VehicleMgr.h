@@ -18,7 +18,7 @@
 #include "CameraOffsetMgr.h"
 #include "Timer.h"
 #include "SurfaceDefs.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 struct VEHICLENODE
 {

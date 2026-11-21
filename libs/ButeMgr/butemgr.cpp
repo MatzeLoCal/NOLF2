@@ -2,8 +2,8 @@
 // okay to ignore
 #pragma warning(disable: 4786)
 
-#include "Stdafx.h"
-#include "ButeMgr.h"
+#include "stdafx.h"
+#include "butemgr.h"
 
 
 #if defined(_DEBUG)
@@ -707,7 +707,7 @@ bool CButeMgr::Statement()
 		case CastDwordTok:
 			if (!Match(PosIntegerTok))
 				return false;
-			dwordValue = strtoul(m_szTokenString, endptr, 10);
+			dwordValue = (DWORD)strtoul(m_szTokenString, endptr, 10);
 			if (!m_pSaveData)
 			{
 				if (!bDuplicate)
@@ -1012,6 +1012,7 @@ bool CButeMgr::AuxTabItemsSave( char const* pszAttName, CSymTabItem& theItem, vo
 	case RangeType:
 		*pSaveData << "[" << theItem.data.range->GetMin() << ", " << theItem.data.range->GetMax() << "]";
 		break;
+	default: break;
 	}
 
 	return true;
@@ -1145,7 +1146,7 @@ bool CButeMgr::Save(const char* szNewFileName)
 #if _MSC_VER >= 1300
 	std::strstream ss(pssBuf, nFileLength, std::ios_base::in | std::ios_base::out);
 #else
-	strstream ss(pssBuf, nFileLength, ios::in | ios::out);
+	strstream ss(pssBuf, (int)nFileLength, ios::in | ios::out);
 #endif // VC7
 
 	if (m_bCrypt)
@@ -1657,7 +1658,7 @@ int CButeMgr::GetInt(const char* szTagName, const char* szAttName, int defVal)
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == IntType)
 			return (pItem->data.i);
@@ -1705,7 +1706,7 @@ DWORD CButeMgr::GetDword(const char* szTagName, const char* szAttName, DWORD def
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		switch (pItem->SymType)
 		{
@@ -1756,7 +1757,7 @@ BYTE CButeMgr::GetByte(const char* szTagName, const char* szAttName, BYTE defVal
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		switch (pItem->SymType)
 		{
@@ -1807,7 +1808,7 @@ bool CButeMgr::GetBool(const char* szTagName, const char* szAttName, bool defVal
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		switch (pItem->SymType)
 		{
@@ -1863,7 +1864,7 @@ float CButeMgr::GetFloat(const char* szTagName, const char* szAttName, float def
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		switch (pItem->SymType)
 		{
@@ -1917,7 +1918,7 @@ double CButeMgr::GetDouble(const char* szTagName, const char* szAttName, double 
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		switch (pItem->SymType)
 		{
@@ -1970,7 +1971,7 @@ const char *CButeMgr::GetString(const char* szTagName, const char* szAttName, co
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == StringType)
 			return *(pItem->data.s);
@@ -2003,7 +2004,7 @@ void CButeMgr::GetString(const char* szTagName, const char* szAttName, const cha
 
 	if( m_bSuccess )
 	{
-		uint32 nLength = strlen( pRet );
+		uint32 nLength = (uint32)strlen( pRet );
 		if ( nLength < ( int )maxLen )
 			maxLen = nLength + 1;
 		strncpy(szResult, pRet, maxLen);
@@ -2045,7 +2046,7 @@ CRect& CButeMgr::GetRect(const char* szTagName, const char* szAttName, CRect& de
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == RectType)
 			return *(pItem->data.r);
@@ -2094,7 +2095,7 @@ CPoint& CButeMgr::GetPoint(const char* szTagName, const char* szAttName, CPoint&
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == PointType)
 			return *(pItem->data.point);
@@ -2143,7 +2144,7 @@ CAVector& CButeMgr::GetVector(const char* szTagName, const char* szAttName, CAVe
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == VectorType)
 			return *(pItem->data.v);
@@ -2193,7 +2194,7 @@ CARange& CButeMgr::GetRange(const char* szTagName, const char* szAttName, CARang
 {
 	m_bSuccess = true;
 	CSymTabItem* pItem;
-	if (pItem = FindSymTabItem(szTagName, szAttName))
+	if ((pItem = FindSymTabItem(szTagName, szAttName)))
 	{
 		if (pItem->SymType == RangeType)
 			return *(pItem->data.range);

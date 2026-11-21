@@ -14,11 +14,18 @@
 // Includes...
 //
 
+	#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wnonportable-include-path"
+	#endif
 	#include "stdafx.h"
+	#ifdef __clang__
+	#pragma clang diagnostic pop
+	#endif
 	#include "WeaponMgr.h"
 	#include "ActivateTypeMgr.h"
 	#include "SFXMsgIds.h"
-	#include "MsgIds.h"
+	#include "MsgIDs.h"
 
 //
 // Defines...
@@ -349,7 +356,7 @@ bool CActivateTypeMgrPlugin::PopulateStringList( char** aszStrings,
 		pActivateType = g_pActivateTypeMgr->GetActivateType( i );
 		if( pActivateType && pActivateType->szName[0] )
 		{
-			uint32 dwATNameLen = strlen( pActivateType->szName );
+			uint32 dwATNameLen = (uint32)strlen( pActivateType->szName );
 			if( dwATNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings )
 			{
 				strcpy( aszStrings[(*pcStrings)++], pActivateType->szName );
@@ -744,7 +751,7 @@ void CActivateTypeHandler::Save( ILTMessage_Write *pMsg )
 
 	// Save our inherited objects
 
-	SAVE_DWORD( m_lstInheritedObjs.size() );
+	SAVE_DWORD( (uint32)m_lstInheritedObjs.size() );
 	ObjRefNotifierList::iterator iter;
 	for( iter = m_lstInheritedObjs.begin(); iter != m_lstInheritedObjs.end(); ++iter )
 	{

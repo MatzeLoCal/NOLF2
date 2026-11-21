@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "VolumeBrush.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
@@ -20,7 +20,7 @@
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"
 #include "SurfaceMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "SurfaceFunctions.h"
 
 LINKFROM_MODULE( VolumeBrush );
@@ -669,7 +669,7 @@ LTRESULT CVolumePlugin::PreHook_EditStringList(const char* szRezPath,
 			{
 				_ASSERT(cMaxStrings > (*pcStrings) + 1);
 
-				uint32 dwNameLen = strlen(DTInfoArray[i].pName);
+				uint32 dwNameLen = (uint32)strlen(DTInfoArray[i].pName);
 
 				if (dwNameLen < cMaxStringLength &&
 					((*pcStrings) + 1) < cMaxStrings)

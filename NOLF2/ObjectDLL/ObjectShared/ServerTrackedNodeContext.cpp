@@ -12,7 +12,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerTrackedNodeContext.h"
 #include "MsgIDs.h"
 
@@ -219,6 +219,7 @@ void CServerTrackedNodeContext::UpdateClient()
 			case kTrackTarget_Position:
 				SetTrackedTarget( (EnumTrackedNodeGroup)iGroup, m_TrackedNodeTargets[iGroup].vTarget );
 				break;
+			default: break;
 		}
 	}
 

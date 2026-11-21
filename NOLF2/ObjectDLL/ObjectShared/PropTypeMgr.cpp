@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "PropTypeMgr.h"
 #include "CommonUtilities.h"
 #include "DebrisMgr.h"
@@ -489,7 +489,7 @@ LTBOOL CPropTypeMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStrin
 		pPropType = g_pPropTypeMgr->GetPropType(i);
 		if (pPropType && !pPropType->sType.empty( ))
 		{
-            uint32 dwImpactFXNameLen = pPropType->sType.length( );
+            uint32 dwImpactFXNameLen = (uint32)pPropType->sType.length( );
 
 			if (dwImpactFXNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings)
 			{

@@ -14,7 +14,14 @@
 // Includes...
 //
 
+	#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wnonportable-include-path"
+	#endif
 	#include "stdafx.h"
+	#ifdef __clang__
+	#pragma clang diagnostic pop
+	#endif
 	#include "WeaponMgr.h"
 	#include "TriggerTypeMgr.h"
 
@@ -346,7 +353,7 @@ bool CTriggerTypeMgrPlugin::PopulateStringList( char** aszStrings,
 		pTriggerType = g_pTriggerTypeMgr->GetTriggerType( i );
 		if( pTriggerType && pTriggerType->szName[0] )
 		{
-			uint32 dwATNameLen = strlen( pTriggerType->szName );
+			uint32 dwATNameLen = (uint32)strlen( pTriggerType->szName );
 			if( dwATNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings )
 			{
 				strcpy( aszStrings[(*pcStrings)++], pTriggerType->szName );

@@ -616,7 +616,7 @@ bool CUIVectorFont::CreateFontTextureAndTable(InstalledFontFace& installedFontFa
 
 #include <string>
 #ifdef _MSC_VER
-#include <TCHAR.h>
+#include <tchar.h>
 #endif
 
 // get the ILTTexInterface from the interface database

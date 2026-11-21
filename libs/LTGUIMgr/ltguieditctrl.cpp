@@ -304,7 +304,7 @@ void CLTGUIEditCtrl::AddCharacter(char c)
 
 	
 	SAFE_STRCPY(szString,m_pText->GetText());
-	int nIndex = strlen(szString);
+	int nIndex = (int)strlen(szString);
 
 	while (nIndex > m_nCaretPos)
 	{
@@ -342,7 +342,7 @@ void CLTGUIEditCtrl::RemoveCharacter()
 
 	SAFE_STRCPY(szString,m_pText->GetText());
 
-	int nEnd=strlen(szString);
+	int nEnd=(int)strlen(szString);
 	if (nEnd > m_nCaretPos)
 	{
 		int nIndex = m_nCaretPos;
@@ -446,6 +446,7 @@ LTBOOL CLTGUIEditCtrl::HandleChar(unsigned char c)
 			  return LTFALSE;
 		break;
 
+	default: break;
 	};
 
 

@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "CharacterMgr.h"
 #include "AI.h"
 #include "Scanner.h"

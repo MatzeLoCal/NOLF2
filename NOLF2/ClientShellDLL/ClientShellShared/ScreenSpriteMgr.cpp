@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "InterfaceMgr.h"
 #include "ScreenSpriteMgr.h"
 
@@ -725,7 +725,7 @@ int CScreenSpriteMgr::CacheTexture(char * pFile)
 		ScreenSpriteFrame * pFrame = new ScreenSpriteFrame;
 		_ASSERT(pFrame != LTNULL);
 
-		pFrame->iFrameID = m_FrameArray.size();
+		pFrame->iFrameID = (int)m_FrameArray.size();
 		pFrame->pName = strdup(pFile);
 		pFrame->hTex = hTex;
 		g_pTexInterface->GetTextureDims(hTex,pFrame->iWidth,pFrame->iHeight);

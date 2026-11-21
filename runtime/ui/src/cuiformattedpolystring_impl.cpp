@@ -74,7 +74,7 @@ CUIFormattedPolyString_Impl::CUIFormattedPolyString_Impl(CUIFont* pFont,
 	m_X = x;
 	m_Y = y;
 
-	memset(&m_Rect, 0, sizeof(CUIRECT));
+	memset((void*)&m_Rect, 0, sizeof(CUIRECT));
 
 	m_WrapWidth		= 0;
 
@@ -666,6 +666,7 @@ void CUIFormattedPolyString_Impl::ApplyXYZ()
 				if (line_start < stop_idx) current_word++;
 				line_start = i;
 				break;
+			default: break;
 		}
 
 		start_word = m_pLines[lines*2] + 1;

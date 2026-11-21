@@ -30,6 +30,7 @@ class CClientMgr;
 
 
 // Render initialization status codes.
+#undef R_OK	// <unistd.h> has one for access(); this header's wins, as it always did
 #define R_OK                    0
 #define R_CANTLOADLIBRARY       1
 #define R_INVALIDRENDERDLL      2

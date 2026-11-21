@@ -66,12 +66,12 @@ void CDynArray<T>::Flush()
 template <class T>
 int CDynArray<T>::Grow()
 {
-	T* pNewArray = debug_newa(T, m_nArraySize + m_nGrowBy);
+	T* pNewArray = debug_newa(T, (int)(m_nArraySize + m_nGrowBy));
 	if (!pNewArray) return 0;
 
 	if (m_bMemCopyable)
 	{
-		memcpy (pNewArray, m_pItems, m_nArraySize * sizeof(T));
+		memcpy ((void*)pNewArray, (const void*)m_pItems, m_nArraySize * sizeof(T));
 	}
 	else
 	{

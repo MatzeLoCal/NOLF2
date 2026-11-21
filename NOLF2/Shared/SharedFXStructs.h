@@ -16,7 +16,7 @@
 #include "Globals.h"
 #include "SharedBaseFXStructs.h"
 #include "ModelButeMgr.h"
-#include "SFXMsgIDs.h"
+#include "SFXMsgIds.h"
 #include "SharedMovement.h"
 #include "CharacterAlignment.h"
 #include "DamageTypes.h"

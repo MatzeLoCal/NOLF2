@@ -17,7 +17,7 @@
 // Includes...
 //
 
-	#include "basefx.h"
+	#include "BaseFx.h"
 
 //
 // Defines...

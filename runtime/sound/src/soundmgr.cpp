@@ -1561,7 +1561,7 @@ LTRESULT CSoundMgr::Update()
         }
 
         // Check if sample needs reverb or is 3d
-        if ( m_nMax3DSamples && (pSoundInstance->GetType() == SOUNDTYPE_3D)
+        if ( (m_nMax3DSamples && (pSoundInstance->GetType() == SOUNDTYPE_3D))
 			|| (m_b3DReverb && pSoundInstance->GetPlaySoundFlags() & PLAYSOUND_REVERB))
         {
             // Try to get a free 3d sample

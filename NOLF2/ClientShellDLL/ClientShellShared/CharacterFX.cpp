@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "CharacterFX.h"
 #include "GameClientShell.h"
 #include "ParticleTrailFX.h"

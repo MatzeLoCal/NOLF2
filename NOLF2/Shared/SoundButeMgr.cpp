@@ -14,7 +14,14 @@
 // Includes...
 //
 	
+	#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wnonportable-include-path"
+	#endif
 	#include "stdafx.h"
+	#ifdef __clang__
+	#pragma clang diagnostic pop
+	#endif
 	#include "SoundButeMgr.h"
 
 
@@ -319,7 +326,7 @@ void CSoundButeMgr::LoadSoundButes(const char * szTagName, SoundBute * pButes, S
 		sprintf(aAttribName, "%s%d", SOUND_BUTE_PATH, nNumSoundButes);
 	}
 
-	pFiles->m_nNumSounds = pFiles->m_szSounds.size();
+	pFiles->m_nNumSounds = (uint32)pFiles->m_szSounds.size();
 
 	ASSERT( pFiles->m_fWeights.size() == pFiles->m_nNumSounds );
 

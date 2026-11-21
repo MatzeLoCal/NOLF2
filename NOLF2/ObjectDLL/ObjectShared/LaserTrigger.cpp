@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "LaserTrigger.h"
 #include "iltserver.h"
 #include "ClientServerShared.h"

@@ -293,7 +293,7 @@ public:
 
  
     force_inline uint32 GetCount() const {
-        return m_nElements; 
+        return (uint32)m_nElements; 
     }
 
 

@@ -60,7 +60,7 @@ BOOL CRegMgr::Set(const char* sKey, const char* sValue) {
   if (!m_bInitialized) return FALSE;
   if (sKey == NULL) return FALSE;
   if (sValue == NULL) return NULL;
-  if (RegSetValueEx(m_hSubKey,sKey,0,REG_SZ,(const unsigned char*)sValue,strlen(sValue)+1) == ERROR_SUCCESS) return TRUE;
+  if (RegSetValueEx(m_hSubKey,sKey,0,REG_SZ,(const unsigned char*)sValue,(DWORD)(strlen(sValue)+1)) == ERROR_SUCCESS) return TRUE;
   else return FALSE;
 };
 
@@ -93,7 +93,7 @@ char* CRegMgr::Get(const char* sKey, char* sBuf, UINT32& nBufSize, const char* s
 Default:
   if (sDef != NULL) {
     strcpy(sBuf,sDef);
-    nBufSize = strlen(sBuf);
+    nBufSize = (UINT32)strlen(sBuf);
     return sBuf;
   }
   else {

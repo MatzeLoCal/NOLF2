@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "ParsedMsg.h"
 	#include "PlayerObj.h"
 	#include "DoomsDayDevice.h"

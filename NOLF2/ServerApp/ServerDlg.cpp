@@ -14,7 +14,7 @@
 #include "SelectConfigDlg.h"
 #include "NetDefs.h"
 #include "versionmgr.h"
-#include "ButeMgr.h"
+#include "butemgr.h"
 #include "AutoMessage.h"
 #include "CommonUtilities.h"
 #include "ScmdConsole.h"

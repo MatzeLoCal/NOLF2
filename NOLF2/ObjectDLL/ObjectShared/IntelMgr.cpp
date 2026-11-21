@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "IntelMgr.h"
 #include "CommonUtilities.h"
 #include "DebrisMgr.h"
@@ -310,7 +310,7 @@ LTBOOL CIntelMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStrings,
 		pIntel = g_pIntelMgr->GetIntel(i);
 		if (pIntel && pIntel->szName[0])
 		{
-            uint32 dwImpactFXNameLen = strlen(pIntel->szName);
+            uint32 dwImpactFXNameLen = (uint32)strlen(pIntel->szName);
 
 			if (dwImpactFXNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings)
 			{

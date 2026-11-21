@@ -689,7 +689,7 @@ void CServerMgr::SetGameInfo(void *pData, uint32 dataLen)
 
 int32 CServerMgr::GetNumClients()
 {
-	return m_Clients.m_nElements;
+	return (int32)m_Clients.m_nElements;
 }
 
 
@@ -1350,7 +1350,7 @@ void CServerMgr::InternalResetFlowControl()
 	}
 
 	// Partition out the amount remaining to the non-local clients
-	uint32 nClientsToAdjust = m_Clients.m_nElements;
+	uint32 nClientsToAdjust = (uint32)m_Clients.m_nElements;
 	if (bHasLocalClient)
 		--nClientsToAdjust;
 	uint32 nRemainingBandwidth = m_nCurBandwidthTarget;
@@ -1766,7 +1766,7 @@ LTRESULT sm_CreateServerData(ObjectCreateStruct *pStruct,
 	else
 	{
 		pRet->m_hName = LTNULL;
-		pRet->m_hName = hs_AddElement(g_pServerMgr->m_hNameTable, pStruct->m_Name, strlen(pStruct->m_Name)+1);
+		pRet->m_hName = hs_AddElement(g_pServerMgr->m_hNameTable, pStruct->m_Name, (uint32)(strlen(pStruct->m_Name)+1));
 		hs_SetElementUserData(pRet->m_hName, pObject);
 	}
 
@@ -2046,7 +2046,7 @@ LTRESULT sm_CreateNewID(LTLink **pID)
 	LTLink *pRet;
 	LT_MEM_TRACK_ALLOC(pRet = g_DLinkBank.Allocate(), LT_MEM_TYPE_MISC);
 
-	pRet->m_pData = (void*)g_pServerMgr->m_nAllocatedIDs;
+	pRet->m_pData = (void*)(uintptr_t)g_pServerMgr->m_nAllocatedIDs;
 	++g_pServerMgr->m_nAllocatedIDs;
 
 	dl_Insert(&g_pServerMgr->m_FreeIDs, pRet);

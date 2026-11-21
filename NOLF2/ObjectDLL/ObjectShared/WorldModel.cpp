@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "ObjectMsgs.h"
 	#include "ParsedMsg.h"
 	#include "WorldModel.h"
@@ -1200,7 +1200,7 @@ bool WorldModel::CreateServerMark(CLIENTWEAPONFX & theStruct)
     HOBJECT hMoveObj = LTNULL;
     HOBJECT hFarObj  = LTNULL;
 
-    uint32 nNumMarks = m_MarkList.size( );
+    uint32 nNumMarks = (uint32)m_MarkList.size( );
 
     LTFLOAT  fClosestMarkDist  = REGION_DIAMETER;
     LTFLOAT  fFarthestMarkDist = 0.0f;

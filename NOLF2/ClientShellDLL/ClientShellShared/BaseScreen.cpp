@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "BaseScreen.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -1036,7 +1036,7 @@ LTBOOL CBaseScreen::GetControlUnderPoint(int xPos, int yPos, uint16 *pnIndex)
 	for (uint16 i=0; i < m_controlArray.size() ; i++)
 	{
 		//start with last control
-		int ndx = (m_controlArray.size()-1) - i;
+		int ndx = (int)((m_controlArray.size()-1) - i);
 
 		// Check to see if the click is in the bounding box for the control
 		if (m_controlArray[i]->IsOnMe(xPos,yPos) && m_controlArray[i]->IsEnabled())

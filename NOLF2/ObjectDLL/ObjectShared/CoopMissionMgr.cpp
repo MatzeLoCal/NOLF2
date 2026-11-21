@@ -9,11 +9,11 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "CoopMissionMgr.h"
 #include "MusicMgr.h"
 #include "PlayerObj.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ServerSaveLoadMgr.h"
 #include "MissionButeMgr.h"
 

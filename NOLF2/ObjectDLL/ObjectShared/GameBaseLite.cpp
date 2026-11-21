@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "GameBaseLite.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"
@@ -241,6 +241,7 @@ bool GameBaseLite::ReadProp( ObjectCreateStruct* pStruct )
 				return false;
 		}	
 		break;
+		default: break;
 	}
 
 	return true;

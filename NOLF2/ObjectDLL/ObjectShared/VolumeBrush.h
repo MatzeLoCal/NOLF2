@@ -18,7 +18,7 @@ LINKTO_MODULE( VolumeBrush );
 #include "GameBase.h"
 #include "ContainerCodes.h"
 #include "DamageTypes.h"
-#include "../shared/SoundFilterMgr.h"
+#include "../Shared/SoundFilterMgr.h"
 #include "SharedMovement.h"
 
 

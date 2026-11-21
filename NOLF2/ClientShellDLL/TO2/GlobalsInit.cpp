@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2GameClientShell.h"
 
 // These macros create a bunch of static variables whose constructors do initialization

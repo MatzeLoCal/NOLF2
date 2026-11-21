@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenTeam.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -175,6 +175,7 @@ void CScreenTeam::OnFocus(LTBOOL bFocus)
 			m_nSkipModel = pProfile->m_ServerGameOptions.GetDoomsday().m_nTeamModel[1-g_nCurTeam];
 			m_sTeamName = pProfile->m_ServerGameOptions.GetDoomsday().m_sTeamName[g_nCurTeam].c_str();
 			break;
+		default: break;
 		};
 		
 		m_pName->SetString(1,m_sTeamName.c_str());
@@ -207,6 +208,7 @@ void CScreenTeam::OnFocus(LTBOOL bFocus)
 			pProfile->m_ServerGameOptions.GetDoomsday().m_nTeamModel[g_nCurTeam] = m_nCurrentModel;
 			pProfile->m_ServerGameOptions.GetDoomsday().m_sTeamName[g_nCurTeam] = m_sTeamName;
 			break;
+		default: break;
 		};
 
 		pProfile->Save();

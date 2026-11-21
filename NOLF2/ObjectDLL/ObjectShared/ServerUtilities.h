@@ -16,7 +16,7 @@
 #include "ltengineobjects.h"
 #include "SoundTypes.h"
 #include "CommonUtilities.h"
-#include "FXFlags.h"
+#include "FxFlags.h"
 #include "LiteObjectMgr.h"
 
 class CPlayerObj;
@@ -263,7 +263,7 @@ inline void ConvertLTBFilename(char* szFilename)
 	// Make sure string is valid 
 	if (!szFilename || !(*szFilename)) return;
 
-	int nLen = strlen(szFilename);
+	int nLen = (int)strlen(szFilename);
 	
 	if (nLen > 0)
 	{
@@ -327,7 +327,7 @@ void Warn(const char* szFormat, ...);
 
 #define BUILD_NOPAIN_WAV	"null.wav"
 
-#include "IObjectPlugin.h"
+#include "iobjectplugin.h"
 #pragma warning( disable : 4786 )
 #include <vector>
 class CEditStringPlugin : public IObjectPlugin

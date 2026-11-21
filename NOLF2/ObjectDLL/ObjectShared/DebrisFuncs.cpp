@@ -12,7 +12,7 @@
 
 // Includes...
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ltserverobj.h"
 #include "DebrisFuncs.h"
 #include "SFXMsgIds.h"

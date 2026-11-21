@@ -15,7 +15,7 @@ void PrintToErrorLog(const char *pMsg)
 {
 	if(g_bErrorLog && g_ErrorLogFP)
 	{
-		fprintf(g_ErrorLogFP, pMsg);
+		fprintf(g_ErrorLogFP, "%s", pMsg);
 		if (pMsg[strlen(pMsg)-1] != '\n')
 			fprintf(g_ErrorLogFP, "\n");
 		

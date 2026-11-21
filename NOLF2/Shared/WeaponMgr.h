@@ -15,7 +15,7 @@
 
 #include "ltbasetypes.h"
 #include "DamageTypes.h"
-#include "CommandIds.h"
+#include "CommandIDs.h"
 #include "TemplateList.h"
 #include "GameButeMgr.h"
 #include "ButeListReader.h"
@@ -94,7 +94,7 @@ inline char* GetString( CButeMgr & buteMgr, const char* szTagName, const char* s
 	// allocate memory for the string and copy the string into it
 	// NOTE: the caller of this function is responsible
 	// for this memory
-	szResult = debug_newa(char, strlen(szTemp) + 1);
+	szResult = debug_newa(char, (int)(strlen(szTemp) + 1));
 	SAFE_STRCPY( szResult, szTemp );
 
 	return szResult;

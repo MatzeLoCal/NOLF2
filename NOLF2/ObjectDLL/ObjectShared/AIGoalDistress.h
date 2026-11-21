@@ -10,7 +10,7 @@
 // ----------------------------------------------------------------------- //
 
 #ifndef __AIGOAL_DISTRESS_H__
-#define __AIGOAL_DISTESS_H__
+#define __AIGOAL_DISTRESS_H__
 
 #include "AIGoalAbstractStimulated.h"
 

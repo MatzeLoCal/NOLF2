@@ -14,7 +14,7 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ParsedMsg.h"
 #include "DoomsDayDevice.h"
 #include "TeamMgr.h"
@@ -342,7 +342,7 @@ void DoomsDayDevice::InitialUpdate( )
 
 	for( uint32 i = 0; i < kDoomsDay_MAXTYPES; ++i )
 	{
-		sprintf( szType, c_aDDPieceTypes[i].m_pszPropType );
+		sprintf( szType, "%s", c_aDDPieceTypes[i].m_pszPropType );
 		sprintf( szSpawn, "PropType Type %s_target", szType );
 
 		BaseClass* pObj = SpawnObject( szSpawn, vPos, rRot );
@@ -932,7 +932,7 @@ void DoomsDayDevice::Save(ILTMessage_Write *pMsg, uint32 dwSaveFlags)
 	SAVE_BYTE( m_nOwningTeamID );
 	SAVE_FLOAT( m_fDropZoneRadius );
 
-	SAVE_DWORD( m_lsthTargets.size() );
+	SAVE_DWORD( (uint32)m_lsthTargets.size() );
 
 	TargetList::const_iterator iter;
 	for( iter = m_lsthTargets.begin(); iter != m_lsthTargets.end(); ++iter )

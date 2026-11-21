@@ -8636,12 +8636,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 82;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = launcher/Info.plist;
 				INSTALL_PATH = "$(LOCAL_APPS_DIR)";
-				MARKETING_VERSION = 0.6.5;
+				MARKETING_VERSION = 0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.schonder.nolf2mac.launcher;
 				PRODUCT_NAME = NOLF2Launcher;
 				SKIP_INSTALL = NO;
@@ -8657,6 +8657,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 0.5;
 				DEVELOPMENT_TEAM = EJBTKE7CEJ;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -8689,6 +8690,7 @@
 					"-Wno-address-of-temporary",
 					"-Wno-return-type",
 				);
+				OTHER_LIBTOOLFLAGS = "-no_warning_for_no_symbols";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -8902,6 +8904,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 0.5;
 				DEVELOPMENT_TEAM = EJBTKE7CEJ;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -8934,6 +8937,7 @@
 					"-Wno-address-of-temporary",
 					"-Wno-return-type",
 				);
+				OTHER_LIBTOOLFLAGS = "-no_warning_for_no_symbols";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -9299,12 +9303,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 82;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = launcher/Info.plist;
 				INSTALL_PATH = "$(LOCAL_APPS_DIR)";
-				MARKETING_VERSION = 0.6.5;
+				MARKETING_VERSION = 0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.schonder.nolf2mac.launcher;
 				PRODUCT_NAME = NOLF2Launcher;
 				SKIP_INSTALL = NO;

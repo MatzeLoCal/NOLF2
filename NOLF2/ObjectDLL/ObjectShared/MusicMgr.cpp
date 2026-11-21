@@ -1,9 +1,9 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "MusicMgr.h"
 #include "GameButeMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "GameServerShell.h"
 
 extern CGameServerShell* g_pGameServerShell;
@@ -100,7 +100,7 @@ void CMusicMgr::Init(const char* szMusicControlFile)
 
 	strcpy(m_szTheme, szMusicControlFile);
 	char* pchDot;
-	if ( pchDot = strchr(m_szTheme, '.') )
+	if ( (pchDot = strchr(m_szTheme, '.')) )
 	{
 		*pchDot = 0;
 	}

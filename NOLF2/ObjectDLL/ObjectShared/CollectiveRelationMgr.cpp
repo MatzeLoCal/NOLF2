@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "CollectiveRelationMgr.h"
 #include "ObjectRelationMgr.h"

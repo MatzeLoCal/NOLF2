@@ -56,7 +56,7 @@ public:
 	// This pure virtual destructor maintains this class
 	// as an abstract class.  It should not be instantiated,
 	// but all public functions can have default behaviours.
-	virtual       ~IClientWeaponBase() = 0 {}
+	virtual       ~IClientWeaponBase() = 0;
 	IClientWeaponBase() {}
 
 	// handle messages
@@ -168,6 +168,9 @@ public:
 	
 	virtual void		ClearFiring() {}
 };
+
+// A pure virtual destructor still needs a body; defining it inside the class is an MSVC extension.
+inline IClientWeaponBase::~IClientWeaponBase() {}
 
 
 

@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "Door.h"
 	#include "ParsedMsg.h"
 	#include "KeyMgr.h"

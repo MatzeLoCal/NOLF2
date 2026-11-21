@@ -11,11 +11,11 @@
 // ----------------------------------------------------------------------- //
 
 #include <vector>
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "WeaponMgr.h"
 #include "Weapons.h"
 #include "PlayerObj.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "iltserver.h"
 #include "Character.h"
 #include "ObjectMsgs.h"

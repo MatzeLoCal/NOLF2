@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "PowerArmor.h"		
 #include "ltserverobj.h"

@@ -8,13 +8,13 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
-#include "profileMgr.h"
-#include "clientutilities.h"
-#include "commandids.h"
-#include "interfacemgr.h"
-#include "winutil.h"
+#include "ProfileMgr.h"
+#include "ClientUtilities.h"
+#include "CommandIDs.h"
+#include "InterfaceMgr.h"
+#include "WinUtil.h"
 #include "ClientResShared.h"
 #include "GameClientShell.h"
 #include "GameSettings.h"
@@ -23,15 +23,15 @@
 #include "ClientMultiplayerMgr.h"
 #include "VarTrack.h"
 #include "CMoveMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "VersionMgr.h"
 
 extern CGameClientShell* g_pGameClientShell;
 
-#include <Direct.h>			// For _rmdir
+#include <direct.h>			// For _rmdir
 #include "dinput.h"
 #include <set>
-#include <IO.H>
+#include <io.h>
 
 VarTrack	g_vtMouseMinSensitivity;
 VarTrack	g_vtMouseMaxSensitivity;
@@ -1891,7 +1891,8 @@ void CProfileMgr::SetDeviceData()
 	// loop through all joystick objects and store the axis ones with our devicename the m_aDeviceData array
 	while ((pObj != NULL) && (m_nNumDeviceAxis < kMaxDeviceAxis))
 	{
-		if ((pObj->m_ObjectName != NULL) && (pObj->m_DeviceName != NULL))
+		// (was: if m_ObjectName != NULL && m_DeviceName != NULL -- both are character
+		// ARRAYS, never NULL, so the test was always true)
 		{
 			if	(	(pObj->m_DeviceType == DEVICETYPE_JOYSTICK || pObj->m_DeviceType == DEVICETYPE_GAMEPAD) &&
 					(stricmp(pObj->m_DeviceName, strDeviceName[2]) == 0) &&
@@ -1909,7 +1910,8 @@ void CProfileMgr::SetDeviceData()
 			}
 
 		}
-		if ((pObj->m_ObjectName != NULL) && (pObj->m_DeviceName != NULL))
+		// (was: if m_ObjectName != NULL && m_DeviceName != NULL -- both are character
+		// ARRAYS, never NULL, so the test was always true)
 		{
 			if	(	(pObj->m_DeviceType == DEVICETYPE_JOYSTICK || pObj->m_DeviceType == DEVICETYPE_GAMEPAD) &&
 					(stricmp(pObj->m_DeviceName, strDeviceName[2]) == 0) &&

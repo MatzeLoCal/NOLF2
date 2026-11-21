@@ -13,7 +13,7 @@
 
 	// Includes....
 
-	#include "basefx.h"
+	#include "BaseFx.h"
 
 	class CCamWobbleProps : public CBaseFXProps
 	{

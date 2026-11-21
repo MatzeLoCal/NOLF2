@@ -5,7 +5,7 @@
 
 #include "CommonUtilities.h"
 #include "iltmodel.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 // Enums
 

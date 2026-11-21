@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenDisplay.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -541,8 +541,8 @@ void CScreenDisplay::SetCurrentCtrlResolution(ScreenDisplayResolution resolution
 		ScreenDisplayResolution searchRes=m_rendererData.m_resolutionArray[i];
 
 		if (resolution.m_dwWidth > searchRes.m_dwWidth ||
-			resolution.m_dwHeight > searchRes.m_dwHeight &&
-			resolution.m_dwBitDepth == searchRes.m_dwBitDepth)
+			(resolution.m_dwHeight > searchRes.m_dwHeight &&
+			resolution.m_dwBitDepth == searchRes.m_dwBitDepth))
 		{
 			if (i > 0)
 			{

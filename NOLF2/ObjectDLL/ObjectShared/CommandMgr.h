@@ -14,7 +14,7 @@
 #define __COMMAND_MGR_H__
 
 #include "ServerUtilities.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 class ConParse;
 class CCommandMgr;
@@ -538,7 +538,7 @@ class CCommandMgrPlugin : public IObjectPlugin
 		friend class CCommandButeMgr;
 
 		static VAR_STRUCT		s_aVars[CMDMGR_MAX_VARS];
-		static uint8			s_nNumVars;
+		static uint16			s_nNumVars;	// uint8 wrapped at 256 and never reached CMDMGR_MAX_VARS (512)
 		static CCommandButeMgr	s_CommandButeMgr;
 		static LTBOOL			s_bFileLoadError;
 		static char				s_szLastWorld[128];

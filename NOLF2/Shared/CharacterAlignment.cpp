@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "CharacterAlignment.h"		
 #include "AIUtils.h"
@@ -604,7 +604,7 @@ void RelationSet::Save(ILTMessage_Write *pMsg)
 	for( int i = 0; i < RelationTraits::kTrait_Count; i++ )
 	{
 		// Save the size, so we know how many elements this RelationSet has when we load
-		SAVE_INT( m_RelationSet[i].size() );
+		SAVE_INT( (int32)m_RelationSet[i].size() );
 
 		// Save each of the _EnumString/int pairs
 		_mapEnumStringsToAlignment::iterator itMapToString;
@@ -721,7 +721,7 @@ void RelationData::SetTraitValue(RelationTraits::eRelationTraits Trait, char con
 	// then assign a null value.
 	if ( pszString == NULL )
 	{
-		szString == "";
+		szString = "";
 	}
 	else
 	{

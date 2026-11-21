@@ -1,5 +1,5 @@
 
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "StandardCreator.h"
 #include "TO2ClientWeaponAllocator.h"

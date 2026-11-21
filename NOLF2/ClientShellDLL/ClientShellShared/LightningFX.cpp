@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "LightningFX.h"
 #include "iltclient.h"
 #include "SFXMgr.h"

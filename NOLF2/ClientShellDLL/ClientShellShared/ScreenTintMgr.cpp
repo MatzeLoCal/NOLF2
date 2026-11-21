@@ -10,8 +10,8 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
-#include "screentintmgr.h"
+#include "StdAfx.h"
+#include "ScreenTintMgr.h"
 #include "GameClientShell.h"
 
 

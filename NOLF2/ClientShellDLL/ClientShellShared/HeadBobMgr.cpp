@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "HeadBobMgr.h"
 #include "GameClientShell.h"
 #include "SurfaceFunctions.h"

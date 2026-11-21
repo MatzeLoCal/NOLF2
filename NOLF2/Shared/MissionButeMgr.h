@@ -125,7 +125,7 @@ class CMissionButeMgr : public CGameButeMgr
 
         void            Reload() { Term(); Init(); }
 
-		int				GetNumMissions() const { return m_MissionList.size(); }
+		int				GetNumMissions() const { return (int)m_MissionList.size(); }
 		MISSION*		GetMission(int nMissionId);
 		LEVEL*			GetLevel( int nMissionId, int nLevelId );
 

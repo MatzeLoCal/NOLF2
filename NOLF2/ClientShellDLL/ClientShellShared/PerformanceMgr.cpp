@@ -8,14 +8,14 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "PerformanceMgr.h"
-#include "interfacemgr.h"
+#include "InterfaceMgr.h"
 
 #include <iostream>			// For input and output
 #include <fstream>			// For the files
-#include <IO.h>				// Find first, find next, etc.
+#include <io.h>				// Find first, find next, etc.
 
 
 namespace

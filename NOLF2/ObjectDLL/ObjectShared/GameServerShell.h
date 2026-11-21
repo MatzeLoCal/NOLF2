@@ -26,7 +26,7 @@
 #include "CommandMgr.h"
 #include "IDList.h"
 #include "MusicMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ProfileUtils.h"
 
 #define MAX_CLIENTS		MAX_MULTI_PLAYERS

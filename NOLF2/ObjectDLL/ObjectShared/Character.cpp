@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Character.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
@@ -3377,6 +3377,7 @@ EnumAIStateType CCharacter::GetPriorityBodyState(EnumAIStateType bs1, EnumAIStat
 			return bs1;
 		case kState_BodyAcid:
 			return bs1;
+		default: break;
 	}
 
 	switch ( bs2 )
@@ -3403,6 +3404,7 @@ EnumAIStateType CCharacter::GetPriorityBodyState(EnumAIStateType bs1, EnumAIStat
 			return bs2;
 		case kState_BodyAcid:
 			return bs2;
+		default: break;
 	}
 
 	_ASSERT(bs1 == bs2);
@@ -3867,7 +3869,7 @@ void CCharacter::Save(ILTMessage_Write *pMsg)
 	SAVE_FLOAT(m_fLastPitch);
 
 	// Inventory
-	SAVE_INT(m_lstInventory.size());
+	SAVE_INT((int32)m_lstInventory.size());
 
 	GEN_INVENTORY_LIST::iterator iter;
 	for(iter=m_lstInventory.begin();iter!=m_lstInventory.end();iter++)

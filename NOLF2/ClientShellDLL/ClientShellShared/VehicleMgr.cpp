@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "VehicleMgr.h"
 #include "VarTrack.h"
 #include "MsgIDs.h"

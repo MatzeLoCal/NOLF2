@@ -19,7 +19,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "ObjectRelationMgr.h"
 #include "AIRegion.h"

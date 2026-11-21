@@ -10,11 +10,11 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Scanner.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"
-#include "gameservershell.h"
+#include "GameServerShell.h"
 #include "SoundMgr.h"
 #include "PlayerObj.h"
 #include "CharacterMgr.h"
@@ -965,7 +965,7 @@ void CScanner::Save(ILTMessage_Write *pMsg)
 
 	SAVE_BOOL( m_bDoneProcessingStimuli );
 
-	SAVE_DWORD( m_mapProcessedStimuli.size() );
+	SAVE_DWORD( (uint32)m_mapProcessedStimuli.size() );
 	AI_PROCESSED_STIMULI_MAP::iterator psit;
 	for( psit = m_mapProcessedStimuli.begin(); psit != m_mapProcessedStimuli.end(); ++psit )
 	{

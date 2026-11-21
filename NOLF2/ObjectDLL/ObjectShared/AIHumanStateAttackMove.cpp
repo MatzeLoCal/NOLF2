@@ -1,6 +1,6 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStateAttackMove.h"
 #include "AIHuman.h"
 #include "AITarget.h"

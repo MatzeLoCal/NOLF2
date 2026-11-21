@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "DoomsdayPieceFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"
@@ -57,6 +57,7 @@ LTBOOL CDoomsdayPieceFX::Init(SFXCREATESTRUCT* psfxCreateStruct)
 	case kDoomsDay_battery:
 		radarType += "Bat_";
 		break;
+	default: break;
 	}
 
 	switch (m_nTeam)
@@ -140,6 +141,7 @@ LTBOOL CDoomsdayPieceFX::OnServerMessage(ILTMessage_Read *pMsg)
 	case kDoomsDay_battery:
 		radarType += "Bat_";
 		break;
+	default: break;
 	}
 
 	switch (m_nTeam)

@@ -1,16 +1,16 @@
 // ScreenHostMission.cpp: implementation of the CScreenHostMission class.
 //
 //////////////////////////////////////////////////////////////////////
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenHostMission.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "ClientRes.h"
 #include "NetDefs.h"
-#include "profileMgr.h"
-#include "clientmultiplayermgr.h"
+#include "ProfileMgr.h"
+#include "ClientMultiplayerMgr.h"
 #include "WinUtil.h"
-#include <IO.h>
+#include <io.h>
 
 #include "GameClientShell.h"
 
@@ -461,7 +461,7 @@ void CScreenHostMission::HandleDlgCommand(uint32 dwCommand, uint16 nIndex)
 						MBCreate mb;
 						mb.eType = LTMB_YESNO;
 						mb.pFn = LoadCallBack,
-						mb.pData = (void *)nIndex;
+						mb.pData = (void *)(uintptr_t)nIndex;
 						g_pInterfaceMgr->ShowMessageBox(IDS_CONFIRM_NEWPROFILE,&mb);
 					}
 					else
@@ -478,7 +478,7 @@ void CScreenHostMission::HandleDlgCommand(uint32 dwCommand, uint16 nIndex)
 				MBCreate mb;
 				mb.eType = LTMB_YESNO;
 				mb.pFn = DeleteCallBack,
-				mb.pData = (void *)nIndex;
+				mb.pData = (void *)(uintptr_t)nIndex;
 				g_pInterfaceMgr->ShowMessageBox(IDS_CONFIRM_DELETE,&mb);
 			}
 		}

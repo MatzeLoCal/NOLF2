@@ -17,7 +17,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AISPATIALREPRESENTATIONMGR_H__
 #include "AISpatialRepresentationMgr.h"
@@ -82,7 +82,7 @@ void CAISpatialRepresentationMgr::Save(ILTMessage_Write *pMsg)
 {
 	SAVE_BOOL(m_bInitialized);
 
-	SAVE_INT(m_listpVolumes.size());
+	SAVE_INT((int32)m_listpVolumes.size());
 	for ( uint32 iVolume = 0; iVolume < m_listpVolumes.size(); iVolume++ )
 	{
 		SAVE_COBJECT(m_listpVolumes[iVolume]);
@@ -113,7 +113,7 @@ int CAISpatialRepresentationMgr::CountInstances(const char* const szClass) const
 	int nInstances = 0;
 	HCLASS  hClass = g_pLTServer->GetClass((char*)szClass);
 	HOBJECT	hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 		{
@@ -122,7 +122,7 @@ int CAISpatialRepresentationMgr::CountInstances(const char* const szClass) const
 	}
 
 	hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 		{
@@ -147,7 +147,7 @@ void CAISpatialRepresentationMgr::SetupInstanceArray(const char* const szClass)
 	uint32 nId = 0;
 	HCLASS hClass = g_pLTServer->GetClass((char*)szClass);
 	HOBJECT hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 		{
@@ -158,7 +158,7 @@ void CAISpatialRepresentationMgr::SetupInstanceArray(const char* const szClass)
 	}
 
 	hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 		{

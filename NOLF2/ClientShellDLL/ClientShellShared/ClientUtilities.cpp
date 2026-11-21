@@ -10,12 +10,12 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <stdlib.h>
 #include "ClientUtilities.h"
 #include "GameClientShell.h"
 #include "VarTrack.h"
-#include "VKdefs.h"
+#include "VKDefs.h"
 #include "WeaponMgr.h"
 #include "ClientServerShared.h"
 #include "ClientMultiplayerMgr.h"

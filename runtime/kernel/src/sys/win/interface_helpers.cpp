@@ -431,7 +431,7 @@ inline LTBOOL WarpPolyClip(test tester, clip clipper, LTWarpPt* &pVerts, int &nV
 			pPrev = pCur; 
 		} 
 
-		nVerts = pOut - pOldOut; 
+		nVerts = (int)(pOut - pOldOut); 
 		pVerts = pOldOut; 
 	} 
 
@@ -512,12 +512,12 @@ LTRESULT cis_DrawWarp_T(CisSurface *pDest, CisSurface *pSrc,
 					sourceYInc = (pTempRight->m_SourceY - curSourceY) / spanWidth;
 
 					destPos = &pDestData[y*destPitch + pTempLeft->m_DestX*g_nScreenPixelBytes];
-					xCounter = spanWidth;
+					xCounter = (uint32)spanWidth;
 					while(xCounter)
 					{
 						xCounter--;
 
-						Drawer::Process(destPos, srcData[(curSourceY>>WARP_FIXED_SHIFT)*srcPixelPitch + (curSourceX>>WARP_FIXED_SHIFT)]);
+						Drawer::Process(destPos, srcData[(uint32)((curSourceY>>WARP_FIXED_SHIFT)*srcPixelPitch + (curSourceX>>WARP_FIXED_SHIFT))]);
 						++destPos;
 						curSourceX += sourceXInc;
 						curSourceY += sourceYInc;

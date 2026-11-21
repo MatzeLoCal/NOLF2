@@ -8,14 +8,14 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 
 
 #include "DebugLineSystem.h"
 #include "SFXMsgIds.h"
 #include "DebugLine.h"
-#include "MsgIds.h"
-#include "LTObjRef.h"
+#include "MsgIDs.h"
+#include "ltobjref.h"
 #if _MSC_VER >= 1300
 #	include "ObjectTemplateMgr.h"
 #endif // VC7
@@ -188,7 +188,7 @@ void DebugLineSystem::AddLine(const DebugLine & new_line)
 	if( !m_hObject ) return;
 
 	// Record the offset of the sending iterator
-	int send_offset = nextLineToSend - lines.begin();
+	int send_offset = (int)(nextLineToSend - lines.begin());
 
 	_ASSERT( (uint32)send_offset <= lines.size() );
 	_ASSERT( send_offset >= 0 );
@@ -373,7 +373,7 @@ void DebugLineSystem::Update()
 		cMsg.WriteObject( m_hObject );
 
 		// Record the number of entries.
-		const int num_lines_left = (lines.end() - nextLineToSend);
+		const int num_lines_left = ((int)(lines.end() - nextLineToSend));
 		if( num_lines_left < s_MaxLinesPerMessage )
 		{
 			cMsg.Writeuint16( num_lines_left );

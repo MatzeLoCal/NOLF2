@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "ObjectMsgs.h"
 	#include "ParsedMsg.h"
 	#include "SoundButeFX.h"

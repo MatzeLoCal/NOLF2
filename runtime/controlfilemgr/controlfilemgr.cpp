@@ -2,7 +2,7 @@
 //#ifndef _CONSOLE
 //#include "windows.h"
 //#endif
-#include "ControlFileMgr.h"
+#include "controlfilemgr.h"
 #include "ltmem.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -169,8 +169,8 @@ CControlFileMgr::~CControlFileMgr()
 BOOL CControlFileMgr::Init(const char* sFileName, const char* sWhiteSpace)
 {
 	ASSERT(sFileName != NULL);
-	LT_MEM_TRACK_ALLOC(m_sFileName.Alloc(strlen(sFileName)+1), LT_MEM_TYPE_MISC);
-	m_sFileName.Copy(sFileName,strlen(sFileName)+1);
+	LT_MEM_TRACK_ALLOC(m_sFileName.Alloc((unsigned int)(strlen(sFileName)+1)), LT_MEM_TYPE_MISC);
+	m_sFileName.Copy(sFileName,(unsigned int)(strlen(sFileName)+1));
 
 	if (sWhiteSpace == NULL)
 	{
@@ -179,8 +179,8 @@ BOOL CControlFileMgr::Init(const char* sFileName, const char* sWhiteSpace)
 	}
 	else
 	{
-		LT_MEM_TRACK_ALLOC(m_sWhiteSpace.Alloc(strlen(sWhiteSpace)), LT_MEM_TYPE_MISC);
-		m_sWhiteSpace.Copy(sWhiteSpace,strlen(sWhiteSpace)+1);
+		LT_MEM_TRACK_ALLOC(m_sWhiteSpace.Alloc((unsigned int)strlen(sWhiteSpace)), LT_MEM_TYPE_MISC);
+		m_sWhiteSpace.Copy(sWhiteSpace,(unsigned int)(strlen(sWhiteSpace)+1));
 	}
 
 	m_cEndOfLine = '\n';
@@ -360,7 +360,7 @@ BOOL CControlFileMgr::AddDefine(const char* sDefine)
 	if (sDefine == NULL) return FALSE;
 
 	// figure out the lenght of the new define
-	int nDefineLenCount = strlen(sDefine);
+	int nDefineLenCount = (int)strlen(sDefine);
 
 	// can't make a zero length define
 	if (nDefineLenCount < 1) return FALSE;

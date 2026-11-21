@@ -15,14 +15,14 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ServerSpecialFX.h"
 #include "FxFlags.h"
 #include "FxDefs.h"
 #include "iltmessage.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"
-#include <IO.h>
+#include <io.h>
 #include "CommandMgr.h"
 
 //
@@ -531,7 +531,7 @@ LTBOOL SpecialFXPlugin::ParseFCF( const char *szFcfPath, char **aszStrings, uint
 		fscanf( pFxFile, "%s", szTag );
 		fseek( pFxFile, 1, SEEK_CUR );
 		fgets(sTmp, ARRAY_LEN(sTmp), pFxFile );
-		int iStrSize = strlen( sTmp );
+		int iStrSize = (int)strlen( sTmp );
 		if( (iStrSize > 0) && (sTmp[iStrSize - 1] == '\n') )
 			sTmp[iStrSize - 1] = NULL;
 
@@ -548,7 +548,7 @@ LTBOOL SpecialFXPlugin::ParseFCF( const char *szFcfPath, char **aszStrings, uint
 
 		// Seek past the state
 		uint32 dwDummy;
-		fscanf( pFxFile, "%s %lu", szTag, &dwDummy );
+		fscanf( pFxFile, "%s %u", szTag, &dwDummy );	// %lu wrote 8 bytes into a uint32 on LP64
 		
 		if( bChildren )
 		{
@@ -557,7 +557,7 @@ LTBOOL SpecialFXPlugin::ParseFCF( const char *szFcfPath, char **aszStrings, uint
 			// Read in how many
 		
 			int nNumGroups;
-			fscanf( pFxFile, "%s %lu", szTag, &nNumGroups );
+			fscanf( pFxFile, "%s %d", szTag, &nNumGroups );	// %lu wrote 8 bytes into an int on LP64
 			
 			if( nNumGroups == 0 )
 			{
@@ -574,7 +574,7 @@ LTBOOL SpecialFXPlugin::ParseFCF( const char *szFcfPath, char **aszStrings, uint
 				fscanf( pFxFile, "%s", szTag );
 				fseek( pFxFile, 1, SEEK_CUR );
 				fgets(szName, ARRAY_LEN(szName), pFxFile );
-				int iStrSize = strlen( szName );
+				int iStrSize = (int)strlen( szName );
 				if( (iStrSize > 0) && (szName[iStrSize - 1] == '\n') )
 					szName[iStrSize - 1] = NULL;
 				
@@ -591,7 +591,7 @@ LTBOOL SpecialFXPlugin::ParseFCF( const char *szFcfPath, char **aszStrings, uint
 				fscanf( pFxFile, "%s %i", szTag, &iDummy );
 				fscanf( pFxFile, "%s %i", szTag, &iDummy );
 				fscanf( pFxFile, "%s %i", szTag, &bChildren );
-				fscanf( pFxFile, "%s %lu", szTag, &dwDummy );
+				fscanf( pFxFile, "%s %u", szTag, &dwDummy );	// %lu wrote 8 bytes into a uint32 on LP64
 			}
 		}
 

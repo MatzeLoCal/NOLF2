@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalDrawWeapon.h"
 #include "AIGoalMgr.h"
 #include "AISenseRecorderAbstract.h"
@@ -117,6 +117,7 @@ void CAIGoalDrawWeapon::ActivateGoal()
 					}
 				}
 				break;
+			default: break;
 		}
 	}
 }

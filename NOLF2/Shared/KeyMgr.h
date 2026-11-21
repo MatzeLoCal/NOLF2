@@ -13,7 +13,7 @@
 
 #include "GameButeMgr.h"
 #include "ltbasetypes.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "IDList.h"
 #include "ButeListReader.h"
 

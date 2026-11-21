@@ -235,7 +235,7 @@ class CAnimationContext
 
 		void Save(ILTMessage_Write *pMsg);
 		void Load(ILTMessage_Read *pMsg);
-#endif _CLIENTBUILD
+#endif // _CLIENTBUILD
 
 		// Updates
 

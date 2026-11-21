@@ -10,14 +10,14 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "TO2GameServerShell.h"
 #include "GameStartPoint.h"
 #include "ServerMissionMgr.h"
-#include "iserverdir.h"
+#include "IServerDir.h"
 #include "PlayerObj.h"
-#include "msgids.h"
-#include "iserverdir_titan.h"
+#include "MsgIDs.h"
+#include "IServerDir_Titan.h"
 
 // Refresh every 5 seconds
 const uint32 k_nRepublishDelay = 5000;
@@ -157,7 +157,7 @@ LTRESULT CTO2GameServerShell::OnServerInitialized()
 	// local that dies at the end of this function. If WONAPI/Titan is ever
 	// ported, this must become Writeuint64((uint64)(uintptr_t)&startupInfo) with
 	// the reader fixed in lockstep, and the lifetime problem solved too.
-	cMsg.Writeuint32(( uint32 )&startupInfo );
+	cMsg.Writeuint32(( uint32 )(uintptr_t)&startupInfo );
 	pServerDir->SetStartupInfo( *cMsg.Read( ));
 
 	return nResult;
@@ -222,6 +222,7 @@ void CTO2GameServerShell::Update(LTFLOAT timeElapsed)
 				GetServerDir()->ProcessRequestList();
 			}
 			break;
+		default: break;
 	};
 
 
@@ -328,7 +329,7 @@ void CTO2GameServerShell::Update(LTFLOAT timeElapsed)
 		}
 
 
-		cMsg.Writeuint32(( uint32 )&peerInfo );
+		cMsg.Writeuint32(( uint32 )(uintptr_t)&peerInfo );
 		GetServerDir()->SetActivePeerInfo(IServerDirectory::ePeerInfo_Service, *cMsg.Read());
 
 		// Tell the world about me...

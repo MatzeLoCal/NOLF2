@@ -91,7 +91,7 @@ HSURFACE CInterfaceSurfMgr::GetSurface(char *lpszSurface)
 #ifdef __PSX2
     int nBufferSize=strlen(lpszSurface)+1;
 #else
-    int nBufferSize=_mbstrlen(lpszSurface)+1;
+    int nBufferSize=(int)(_mbstrlen(lpszSurface)+1);
 #endif
 	pSharedSurface->m_lpszPathName=debug_newa(char, nBufferSize);
 #ifdef __PSX2

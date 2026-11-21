@@ -19,7 +19,7 @@
 #define __TEMPLATE_LIST_H__
 
 #include "ltlink.h"
-#include "globals.h"
+#include "Globals.h"
 #include "BankedList.h"
 
 enum TListItemType { TLIT_FIRST=0, TLIT_NEXT, TLIT_CURRENT, TLIT_LAST };
@@ -46,7 +46,7 @@ class CTList
 		void	AddTail(T);
         LTBOOL   RemoveHead();
         LTBOOL   Remove(T);
-		int		GetLength() const { return m_list.m_nElements; }
+		int		GetLength() const { return (int)m_list.m_nElements; }
 		void	Clear();
 
 		T*		GetItem(TListItemType et);

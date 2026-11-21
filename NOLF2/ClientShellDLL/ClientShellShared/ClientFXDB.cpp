@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "FxFlags.h"
 #include "FxDefs.h"
 #include "iltmessage.h"
@@ -70,7 +70,7 @@ inline void	ReadTextFile( ILTStream *pStream, const char *szFormat, T *t1, T *t2
 	strtok( szLine, "\n" );
 	sscanf( szLine, szFormat, szTag, t1, t2, t3, t4, t5 );
 	
-	if( LT_OK != pStream->SeekTo( dwPos + strlen( szLine ) ))
+	if( LT_OK != pStream->SeekTo( (uint32)(dwPos + strlen( szLine )) ))
 	{
 		g_pLTClient->CPrint( "Couldn't set the file ptr position for *.fxf file" );
 	}
@@ -519,6 +519,7 @@ bool CClientFXDB::ReadFXProp( bool bText, ILTStream* pFxFile, FX_PROP& fxProp )
 				break;
 
 			case FX_PROP::PATH	  : ReadTextFile( pFxFile, "%s %s", fxProp.m_data.m_sVal ); break;
+			default: break;
 		}							
 	}
 	else
@@ -546,6 +547,7 @@ bool CClientFXDB::ReadFXProp( bool bText, ILTStream* pFxFile, FX_PROP& fxProp )
 			case FX_PROP::VECTOR4 : pFxFile->Read(&fxProp.m_data.m_fVec4, sizeof(float) * 4); break;
 			case FX_PROP::CLRKEY  : pFxFile->Read(&fxProp.m_data.m_clrKey, sizeof(FX_PROP::FX_CLRKEY) ); break;
 			case FX_PROP::PATH	  : pFxFile->Read(&fxProp.m_data.m_sVal, 128); break;
+			default: break;
 		}							
 	}
 

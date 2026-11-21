@@ -1,6 +1,13 @@
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "ProfileUtils.h"
-#include "ButeMgr.h"
+#include "butemgr.h"
 #include "ltbasedefs.h"
 #include "ModelButeMgr.h"
 #include "CommonUtilities.h"
@@ -82,9 +89,9 @@ static void DelimitedStringToStringSet( std::string const& sDelimitedString, Str
 	uint32 nPos = 0;
 	while( nPos < sDelimitedString.size( ))
 	{
-		uint32 nNextPos = sDelimitedString.find( ',', nPos );
-		if( nNextPos == std::string::npos )
-			nNextPos = sDelimitedString.size( );
+		uint32 nNextPos = (uint32)sDelimitedString.find( ',', nPos );
+		if( nNextPos == (uint32)std::string::npos )	// npos is 64-bit here: unmatched, the loop never ended
+			nNextPos = (uint32)sDelimitedString.size( );
 
 		uint32 nNumChars = nNextPos - nPos;
 		std::string sItem = sDelimitedString.substr( nPos, nNumChars );
@@ -237,6 +244,7 @@ const char*	ServerGameOptions::GetCampaignName() const
 		return m_DD.m_sCampaignName.c_str();
 		break;
 		
+	default: break;
 	};
 
 	return DEFAULT_CAMPAIGN;
@@ -257,6 +265,7 @@ void ServerGameOptions::SetCampaignName(const char*	pszName)
 	case eGameTypeDoomsDay:
 		m_DD.m_sCampaignName = pszName;
 		break;
+	default: break;
 	};
 }
 
@@ -279,6 +288,7 @@ const char*	ServerGameOptions::GetSessionName() const
 		return m_DD.m_sSessionName.c_str();
 		break;
 		
+	default: break;
 	};
 
 
@@ -300,6 +310,7 @@ void ServerGameOptions::SetSessionName(const char*	pszName)
 	case eGameTypeDoomsDay:
 		m_DD.m_sSessionName = pszName;
 		break;
+	default: break;
 	};
 }
 

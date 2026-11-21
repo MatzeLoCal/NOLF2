@@ -10,11 +10,11 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include <stdlib.h>
 #include "ServerUtilities.h"
 #include "iltserver.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "SoundTypes.h"
 #include "CVarTrack.h"
 #include "ObjectMsgs.h"
@@ -23,7 +23,7 @@
 #include "UberAssert.h"
 #include "GameServerShell.h"
 #include "PlayerObj.h"
-#include "FXDefs.h"
+#include "FxDefs.h"
 #include "GameBaseLite.h"
 #include "ParsedMsg.h"
 
@@ -320,7 +320,7 @@ void ObjectCPrint(HOBJECT hObject, const char *pMsg, ...)
 	va_start(marker, pMsg);
 	_vsnprintf(msg, msg_length, pMsg, marker);
 	va_end(marker);
-	msg[msg_length] = '\0';
+	msg[msg_length - 1] = '\0';	// was msg[msg_length]: one byte past the buffer
 
 	char szName[64];
 	if(hObject)
@@ -345,7 +345,7 @@ void ObjectCPrint(const char *pName, const char *pMsg, ...)
 	va_start(marker, pMsg);
 	_vsnprintf(msg, msg_length, pMsg, marker);
 	va_end(marker);
-	msg[msg_length] = '\0';
+	msg[msg_length - 1] = '\0';	// was msg[msg_length]: one byte past the buffer
 
 	g_pLTServer->CPrint("%f %s : %s",
 		g_pLTServer->GetTime(),

@@ -12,7 +12,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "HUDMgr.h"
 	#include "InterfaceResMgr.h"
 	#include "PopupMgr.h"

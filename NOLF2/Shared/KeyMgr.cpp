@@ -8,7 +8,14 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "KeyMgr.h"
 #include "IDList.h"
 
@@ -256,7 +263,7 @@ void CKeyMgr::Save( ILTMessage_Write *pMsg, uint32 dwSaveFlags )
 	if( !pMsg )
 		return;
 
-	uint32 dwEntries = m_mapKeyControl.size();
+	uint32 dwEntries = (uint32)m_mapKeyControl.size();
 	pMsg->Writeuint32( dwEntries );
 
 	KeyControlMap::iterator iter = m_mapKeyControl.begin();
@@ -368,7 +375,7 @@ LTBOOL CKeyMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStrings,
 		pKey = g_pKeyMgr->GetKey(i);
 		if (pKey && pKey->szName[0])
 		{
-            uint32 dwImpactFXNameLen = strlen(pKey->szName);
+            uint32 dwImpactFXNameLen = (uint32)strlen(pKey->szName);
 
 			if (dwImpactFXNameLen < cMaxStringLength && ((*pcStrings) + 1) < cMaxStrings)
 			{

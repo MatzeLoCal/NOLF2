@@ -14,7 +14,7 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MsgIDs.h"
 #include "Searcher.h"
 #include "PlayerMgr.h"

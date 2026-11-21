@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIINFORMATIONVOLUMEMGR_H__
 #include "AIInformationVolumeMgr.h"		

@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "LayoutMgr.h"
 #include "InterfaceMgr.h"
 
@@ -864,7 +864,7 @@ uint32 CLayoutMgr::GetScreenSelectedColor(eScreenID screenId)
 {
 	char* pTag = (char*)g_pInterfaceMgr->GetScreenMgr()->GetScreenName(screenId);
     LTVector vColor;
-	if (screenId != MENU_ID_NONE && m_buteMgr.Exist(pTag,LO_SELECTED_COLOR))
+	if (screenId != SCREEN_ID_NONE && m_buteMgr.Exist(pTag,LO_SELECTED_COLOR))
 	{
 		vColor = m_buteMgr.GetVector(pTag, LO_SELECTED_COLOR);
 	}
@@ -884,7 +884,7 @@ uint32 CLayoutMgr::GetScreenNonSelectedColor(eScreenID screenId)
 {
 	char* pTag = (char*)g_pInterfaceMgr->GetScreenMgr()->GetScreenName(screenId);
     LTVector vColor;
-	if (screenId != MENU_ID_NONE && m_buteMgr.Exist(pTag,LO_NONSELECTED_COLOR))
+	if (screenId != SCREEN_ID_NONE && m_buteMgr.Exist(pTag,LO_NONSELECTED_COLOR))
 	{
 		vColor = m_buteMgr.GetVector(pTag, LO_NONSELECTED_COLOR);
 	}
@@ -904,7 +904,7 @@ uint32 CLayoutMgr::GetScreenDisabledColor(eScreenID screenId)
 {
 	char* pTag = (char*)g_pInterfaceMgr->GetScreenMgr()->GetScreenName(screenId);
     LTVector vColor;
-	if (screenId != MENU_ID_NONE && m_buteMgr.Exist(pTag,LO_DISABLED_COLOR))
+	if (screenId != SCREEN_ID_NONE && m_buteMgr.Exist(pTag,LO_DISABLED_COLOR))
 	{
 		vColor = m_buteMgr.GetVector(pTag, LO_DISABLED_COLOR);
 	}

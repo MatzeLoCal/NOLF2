@@ -16,7 +16,7 @@
 
 #include "ClientUtilities.h"
 #include "PerformanceMgr.h"
-#include "ButeMgr.h"
+#include "butemgr.h"
 #include "SkillsButeMgr.h"
 #include "NetDefs.h"
 #include "ProfileUtils.h"

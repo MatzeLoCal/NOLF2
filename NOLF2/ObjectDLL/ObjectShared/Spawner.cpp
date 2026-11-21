@@ -10,10 +10,10 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Spawner.h"
 #include "iltserver.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "SoundMgr.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"

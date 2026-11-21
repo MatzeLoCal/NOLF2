@@ -1,6 +1,6 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStateSniper.h"
 #include "AIHuman.h"
 #include "AINode.h"
@@ -218,6 +218,7 @@ void CAIHumanStateSniper::Update()
 			}
 
 			break;
+		default: break;
 	}
 }
 
@@ -242,6 +243,7 @@ void CAIHumanStateSniper::UpdateAnimation()
 			GetAnimationContext()->SetProp(kAPG_Posture, m_ePose);
 			m_pStrategyShoot->UpdateAnimation();
 			break;
+		default: break;
 	}
 }
 

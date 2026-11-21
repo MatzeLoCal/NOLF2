@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIGOALOBSTRUCT_H__
 #include "AIGoalObstruct.h"		

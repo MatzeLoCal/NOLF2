@@ -197,7 +197,7 @@ LTRESULT CClientMgr::AddSharedTexture3(FileIdentifier *pIdent, SharedTexture* &p
         pTexture = (SharedTexture*)pIdent->m_pData; }
     else {
         pTexture = m_SharedTextureBank.Allocate();
-        memset(pTexture, 0, sizeof(*pTexture));
+        memset((void*)pTexture, 0, sizeof(*pTexture));   // (void*): zeroing also clears m_Format's vtable pointer -- harmless, nothing calls PFormat::Init virtually
         dl_AddHead(&m_SharedTextures, &pTexture->m_Link, pTexture);
         pTexture->m_pFile = pIdent;
         pIdent->m_pData = pTexture; }

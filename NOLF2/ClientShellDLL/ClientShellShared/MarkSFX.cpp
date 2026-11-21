@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MarkSFX.h"
 #include "iltclient.h"
 #include "ltlink.h"

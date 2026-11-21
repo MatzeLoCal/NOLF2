@@ -14,7 +14,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "CommandButeMgr.h"
 	#include "CommandMgr.h"
 	#include "ClientServerShared.h"

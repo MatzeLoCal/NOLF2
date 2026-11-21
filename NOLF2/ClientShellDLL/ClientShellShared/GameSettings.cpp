@@ -7,7 +7,7 @@
 // (c) 1997-2002 Monolith Productions, Inc.  All Rights Reserved
 //
 // ----------------------------------------------------------------------- //
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GameClientShell.h"
 #include "iltclient.h"
 #include "GameSettings.h"

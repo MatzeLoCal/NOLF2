@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "PolyDebrisFX.h"
 #include "GameClientShell.h"
 #include "VarTrack.h"

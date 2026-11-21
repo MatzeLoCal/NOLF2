@@ -180,7 +180,7 @@ void dprintfExcludeRegions::Scan(char *Str) {
 		}
 		else *P = '\0';
 	 }
-	 From = atol(TmpStr);
+	 From = (int)atol(TmpStr);
 	 if (*Str == '-') {
 		Str = strpbrk(Str,"0123456789");
 	   if (Str == NULL) return;
@@ -193,7 +193,7 @@ void dprintfExcludeRegions::Scan(char *Str) {
 		  }
 		  else *P = '\0';
 	   }
-	   To = atol(TmpStr);
+	   To = (int)atol(TmpStr);
 	 }
 	 else To = From;
 	 Add (From,To);
@@ -539,13 +539,13 @@ void dprintfmonoprint(char *message )
             ATTR + message[i++];
     }
 #else
-  printf(message);
+  printf("%s", message);
 #endif
 #else
   OutputDebugString(message);
 #endif
 #else
-  printf(message);
+  printf("%s", message);
 #endif
 }
 
@@ -858,6 +858,7 @@ dprintfinittype::dprintfinittype () {
       dprintffile = fopen ("PRN","w");
       if (dprintffile == NULL) dprintfOutType = DPRINTF_NOTHING;
       break;
+    default: break;
   }
 }
 
@@ -888,6 +889,7 @@ dprintfinittype::~dprintfinittype () {
 #endif
 #endif
 
+    default: break;
   }
 }
 #endif

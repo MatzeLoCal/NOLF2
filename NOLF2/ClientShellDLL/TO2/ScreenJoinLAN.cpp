@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenJoinLAN.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -145,7 +145,7 @@ uint32 CScreenJoinLAN::OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t
 		    if (g_pGameClientShell->IsWorldLoaded())
 		    {
 
-				if (IsCurrentGame(m_lstSessions[dwParam1]))
+				if (IsCurrentGame(m_lstSessions[(uint32)dwParam1]))
 				{
 					HLOCALOBJ hPlayerObj = g_pLTClient->GetClientObject();
 					if (g_pGameClientShell->IsWorldLoaded() && hPlayerObj)

@@ -171,7 +171,7 @@ static void con_ObjectInfo(int argc, char *argv[])
         }
 
         ++classCounts[index];
-        classBytes[index] = pObj->sd->m_pClass->m_ClassObjectSize;
+        classBytes[index] = (int)pObj->sd->m_pClass->m_ClassObjectSize;
         totalClassBytes[index] += pObj->sd->m_pClass->m_ClassObjectSize;
 
         if (!(pObj->m_InternalFlags & IFLAG_INACTIVE_MASK))
@@ -187,7 +187,7 @@ static void con_ObjectInfo(int argc, char *argv[])
     {
         totalBytes += totalClassBytes[i];
                 
-		for (int32 j = strlen(classNames[i]); j < 30; j++)
+		for (int32 j = (int32)strlen(classNames[i]); j < 30; j++)
         {
 			(classNames[i])[j] = ' ';
         }

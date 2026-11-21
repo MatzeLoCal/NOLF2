@@ -9,16 +9,16 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MissionMgr.h"
 #include "GameClientShell.h"
 #include "VarTrack.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "WinUtil.h"
 #include "MissionButeMgr.h"
 #include "PlayerMgr.h"
 #include "ClientSaveLoadMgr.h"
-#include "clientresshared.h"
+#include "ClientResShared.h"
 #include "ClientMultiplayerMgr.h"
 #include "ProfileMgr.h"
 #include "ScreenPreload.h"
@@ -719,6 +719,7 @@ bool CMissionMgr::HandleEndGame( ILTMessage_Read& msg  )
 			case eGameTypeDoomsDay:
 				g_pInterfaceMgr->SwitchToScreen(SCREEN_ID_END_DM_MISSION);
 				break;
+			default: break;
 		}
 	}
 	else

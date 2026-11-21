@@ -104,9 +104,11 @@ Text storage is defined statically for better performance.
 // if debugging is not turned on, these macros will resolve to comments, and
 // the CUIDebug class will not be defined.
 
-#define CUI_DBG //
-#define CUI_ERR //
-#define CUI_PRINT //
+// ('//' cannot work: comments are stripped BEFORE macros expand, so every call
+// was left as a bare ("...", args); expression. No-ops that take the arguments.)
+#define CUI_DBG(...)	((void)0)
+#define CUI_ERR(...)	((void)0)
+#define CUI_PRINT(...)	((void)0)
 
 
 #endif  //__DEBUG

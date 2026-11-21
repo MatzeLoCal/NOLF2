@@ -8,7 +8,7 @@
 #ifndef _FINAL
 #include "linesystem.h"
 #include "ltobjectcreate.h"
-#endif _FINAL
+#endif // _FINAL
 
 extern int32 g_bPrediction;
 

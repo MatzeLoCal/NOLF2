@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ScreenPreload.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -17,7 +17,7 @@
 #include "GameClientShell.h"
 #include "ClientMultiplayerMgr.h"
 #include "MissionMgr.h"
-#include "iserverdir.h"
+#include "IServerDir.h"
 
 extern bool g_bLAN;
 

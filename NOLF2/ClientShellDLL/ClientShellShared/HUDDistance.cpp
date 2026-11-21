@@ -14,7 +14,7 @@
 // Includes...
 //
 	
-	#include "stdafx.h"
+	#include "StdAfx.h"
 	#include "HUDDistance.h"
 
 

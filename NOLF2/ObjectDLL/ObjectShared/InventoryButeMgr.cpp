@@ -11,7 +11,7 @@
 ****************************************************************************/
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "InventoryButeMgr.h"
 
 // Globals/statics
@@ -104,8 +104,8 @@ void CInventoryButeMgr::ReadItem()
 	// Create new goal set and add it to list.
 	GEN_INVENTORY_ITEM_DEF def;
 
-	sprintf(def.szName,m_buteMgr.GetString(s_aTagName,"Name",""));
-	sprintf(def.szCmd,m_buteMgr.GetString(s_aTagName,"Cmd",""));
+	sprintf(def.szName,"%s",m_buteMgr.GetString(s_aTagName,"Name",""));
+	sprintf(def.szCmd,"%s",m_buteMgr.GetString(s_aTagName,"Cmd",""));
 	
 	m_lstItems.push_back(def);
 }

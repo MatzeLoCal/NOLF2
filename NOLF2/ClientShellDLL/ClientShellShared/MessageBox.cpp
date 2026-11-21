@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "MessageBox.h"
 #include "ScreenCommands.h"
 #include "InterfaceMgr.h"

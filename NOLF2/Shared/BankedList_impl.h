@@ -24,7 +24,7 @@ private:
     friend class t_Parent::t_Iter;
 #else
     friend t_Parent;
-    friend t_Parent::t_Iter;
+    friend typename t_Parent::t_Iter;
 #endif
 
 	// Is this bank currently full?
@@ -210,7 +210,7 @@ template <typename T>
 uint32 CBankedListBank<T>::GetIndexAtPtr(T *pPtr)
 {
 	if (((int*)pPtr >= m_aData) && ((int*)pPtr < &m_aData[k_SizeOfData]))
-		return ((int*)pPtr - m_aData) / k_DataPitch;
+		return (uint32)(((int*)pPtr - m_aData) / k_DataPitch);
 	else
 		return t_Parent::k_SizeOfBank;
 }

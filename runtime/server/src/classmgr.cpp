@@ -361,7 +361,7 @@ void CClassData::DisplayObjectTicks()
 
 			LTStrCpy(szObjectName, pCurObjectTickData->m_ObjectName, sizeof(szObjectName));
 
-			for (uint32 i = strlen(szObjectName); i < sizeof(szObjectName) - 2; i++)
+			for (uint32 i = (uint32)strlen(szObjectName); i < sizeof(szObjectName) - 2; i++)
 			{
 				szObjectName[i] = ' ';
 			}
@@ -385,7 +385,7 @@ void CClassData::GetClassName(char* pClassNameBuffer, uint32 nBufferLen, LTBOOL 
 
 	if (bPadWithSpace)
 	{
-		for (uint32 i = strlen(pClassNameBuffer); i < nBufferLen - 2; i++)
+		for (uint32 i = (uint32)strlen(pClassNameBuffer); i < nBufferLen - 2; i++)
 		{
 			pClassNameBuffer[i] = ' ';
 		}
@@ -399,7 +399,7 @@ void CClassData::GetClassName(char* pClassNameBuffer, uint32 nBufferLen, LTBOOL 
 
 CClassMgr::CClassMgr()
 {
-    memset(this, 0, sizeof(CClassMgr));
+    memset((void*)this, 0, sizeof(CClassMgr));
 }
 
 CClassMgr::~CClassMgr()
@@ -408,7 +408,7 @@ CClassMgr::~CClassMgr()
 }
 
 LTBOOL CClassMgr::Init() {
-    memset(this, 0, sizeof(CClassMgr));
+    memset((void*)this, 0, sizeof(CClassMgr));
 
     return LTTRUE;
 }
@@ -448,7 +448,7 @@ void CClassMgr::Term()
 
 CClassData* CClassMgr::FindClassData(const char *pName)
 {
-    HHashElement *hElement = hs_FindElement(m_hClassNameHash, pName, strlen(pName));
+    HHashElement *hElement = hs_FindElement(m_hClassNameHash, pName, (uint32)strlen(pName));
 
     if (hElement)
     {
@@ -712,7 +712,7 @@ static LTRESULT InitExtraClassData(CClassMgr *pClassMgr)
         LT_MEM_TRACK_ALLOC(pClassMgr->m_ClassDatas = new CClassData[nClasses],LT_MEM_TYPE_MISC);
         pClassMgr->m_nClassDatas = nClasses;
 
-        memset(pClassMgr->m_ClassDatas, 0, sizeof(CClassData)*nClasses);
+        memset((void*)pClassMgr->m_ClassDatas, 0, sizeof(CClassData)*nClasses);
 
  
         for (i=0; i < nClasses; i++)
@@ -721,12 +721,12 @@ static LTRESULT InitExtraClassData(CClassMgr *pClassMgr)
             
             pClassData = &pClassMgr->m_ClassDatas[i];
             
-            LT_MEM_TRACK_ALLOC(sb_Init2(&pClassData->m_ObjectBank, pClass->m_ClassObjectSize, 1, 1), LT_MEM_TYPE_MISC);      
+            LT_MEM_TRACK_ALLOC(sb_Init2(&pClassData->m_ObjectBank, (uint32)pClass->m_ClassObjectSize, 1, 1), LT_MEM_TYPE_MISC);      
             pClassData->m_ClassID = (uint16)i;
             pClassData->m_pClass = pClass;
             pClass->m_pInternal[pClassMgr->m_ClassIndex] = pClassData;
 
-            hElement = hs_AddElement(pClassMgr->m_hClassNameHash, pClass->m_ClassName, strlen(pClass->m_ClassName));
+            hElement = hs_AddElement(pClassMgr->m_hClassNameHash, pClass->m_ClassName, (uint32)strlen(pClass->m_ClassName));
             if (!hElement)
                 RETURN_ERROR(1, InitExtraClassData, LT_ERROR);
 
@@ -766,8 +766,8 @@ static void SetupClassFunctions(CClassMgr *pClassMgr)
         pClass = pClasses[i];
 
 
-        SetupClassNullFunctions(pClass, (char*)&pClass->m_ConstructFn - (char*)pClass);
-        SetupClassNullFunctions(pClass, (char*)&pClass->m_DestructFn - (char*)pClass);
+        SetupClassNullFunctions(pClass, (uint32)((char*)&pClass->m_ConstructFn - (char*)pClass));
+        SetupClassNullFunctions(pClass, (uint32)((char*)&pClass->m_DestructFn - (char*)pClass));
     }
 }
 

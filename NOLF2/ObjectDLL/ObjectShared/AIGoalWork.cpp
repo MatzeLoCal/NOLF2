@@ -9,7 +9,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIGoalWork.h"
 #include "AIGoalMgr.h"
 #include "AI.h"
@@ -158,6 +158,7 @@ void CAIGoalWork::DeactivateGoal()
 				m_pGoalMgr->UnlockGoal( this );
 			}
 			return;
+		default: break;
 	}
 
 
@@ -233,6 +234,7 @@ LTBOOL CAIGoalWork::HandleSpecialDamageDeactivation()
 		case DT_SLIPPERY:
 			eDamage = kAP_DamageSlipping;
 			break;
+		default: break;
 	}
 
 	// Check if a damage animation exists for the current activity.

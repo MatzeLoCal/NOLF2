@@ -1,6 +1,6 @@
 // (c) 1997-2000 Monolith Productions, Inc.  All Rights Reserved
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AIBrain.h"
 #include "AIHuman.h"
 #include "AITarget.h"
@@ -218,6 +218,7 @@ void CAIBrain::GetDodgeStatus(DodgeStatus* peDodgeStatus, Direction* peDirection
 										}
 									}
 									break;
+								default: break;
 							}
 
 							// Swap direction and try again.
@@ -389,6 +390,7 @@ RangeStatus CAIBrain::GetRangeStatus(EnumAIWeaponType eWeaponType, const LTVecto
 			fRangeMinSqr = m_pBrain->fAttackThrownRangeMin*m_pBrain->fAttackThrownRangeMin;
 			fRangeMaxSqr = m_pBrain->fAttackThrownRangeMax*m_pBrain->fAttackThrownRangeMax;
 			break;
+		default: break;
 	}
 
 	LTFLOAT fDistanceSqr = vSourcePos.DistSqr(GetAI()->GetTarget()->GetVisiblePosition());

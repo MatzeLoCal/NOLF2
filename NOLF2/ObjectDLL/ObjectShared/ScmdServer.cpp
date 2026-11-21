@@ -11,7 +11,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScmdServer.h"
 #include "ScmdShared.h"
 #include "GameServerShell.h"
@@ -359,8 +359,8 @@ bool ScmdServer_Impl::HandleScmdMessage( HCLIENT hClient, ILTMessage_Read& msg )
 
 	// Check if we're not controlled by an admin.  Since Login is the only
 	// command you can send without being logged in, it has special handling.
-	if( eScmdCommand != kScmdCommandLogin &&
-		( m_eAdminControl == kAdminControlNone ) ||
+	if( (eScmdCommand != kScmdCommandLogin &&
+		( m_eAdminControl == kAdminControlNone )) ||
 		( m_eAdminControl == kAdminControlClient && hClient != m_hAdminClient ) ||
 		( m_eAdminControl == kAdminControlServerapp && hClient != NULL ))
 	{
@@ -432,6 +432,7 @@ bool ScmdServer_Impl::HandleScmdMessage( HCLIENT hClient, ILTMessage_Read& msg )
 			return HandleSetGameOption( hClient, msg );
 			break;
 
+		default: break;
 	}
 
 	return false;
@@ -458,7 +459,7 @@ bool ScmdServer_Impl::HandleLogin( HCLIENT hClient, ILTMessage_Read& msg )
 		return true;
 	}
 
-#pragma message( "FIXFIX:  Need to make the password use a public key, rather than just hash." )
+// FIXFIX:  Need to make the password use a public key, rather than just hash.
 
 	// Read the password they sent in.
 	uint32 nHashedPassword = msg.Readuint32( );

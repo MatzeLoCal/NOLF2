@@ -14,11 +14,11 @@
 // Includes...
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientSaveLoadMgr.h"
 #include "GameClientShell.h"
 #include "MissionMgr.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "ClientMultiplayerMgr.h"
 #include "CMoveMgr.h"
 #include "ClientResShared.h"

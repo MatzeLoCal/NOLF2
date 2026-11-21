@@ -47,7 +47,7 @@ enum EnumAIGoalType : int
 static const char* s_aszGoalTypes[] =
 {
 	#define GOAL_TYPE_AS_STRING 1
-	#include "AIGOALTypeEnums.h"
+	#include "AIGoalTypeEnums.h"
 	#undef GOAL_TYPE_AS_STRING
 };
 

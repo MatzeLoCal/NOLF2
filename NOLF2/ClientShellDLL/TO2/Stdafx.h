@@ -29,7 +29,7 @@
 #include "iltmessage.h"
 #include "iltsoundmgr.h"
 
-#include "globals.h"
+#include "Globals.h"
 
 #include "iltmodel.h"
 #include "ilttransform.h"

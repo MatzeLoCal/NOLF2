@@ -11,7 +11,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "GameServerShell.h"
 #include "PlayerObj.h"
 #include "iltserver.h"
@@ -41,7 +41,7 @@
 #include "AICentralKnowledgeMgr.h"
 #include "ServerTrackedNodeMgr.h"
 #include "GlobalServerMgr.h"
-#include "iserverdir.h"
+#include "IServerDir.h"
 #include "ObjectTemplateMgr.h"
 #include "LiteObjectMgr.h"
 #include "GameBaseLite.h"
@@ -345,13 +345,14 @@ LTRESULT CGameServerShell::OnServerInitialized()
 			ApplyWeaponRestrictions( );
 		}
 		break;
+		default: break;
 	}
 
 	// Seed the random number generator so GetRandom() isn't the same each game.
 	// IMPORTANT: reseeding the random number generator should not happen all the time
 	// as it can lead to GetRandom() not acting as random as you might think.
 	
-	srand(time(NULL));
+	srand((unsigned int)time(NULL));
 
 	return LT_OK;
 }
@@ -721,7 +722,7 @@ LPBASECLASS	CGameServerShell::OnClientEnterWorld(HCLIENT hClient)
 	}
 
 	// Set our clientname from the netclientdata.
-	g_pLTServer->SetClientName( hClient, pszClientName, strlen( pszClientName ) + 1 );
+	g_pLTServer->SetClientName( hClient, pszClientName, (int)(strlen( pszClientName ) + 1) );
 
 	// See if we can use a player from one of the clientrefs.
 	pPlayer = PickClientRefPlayer( hClient );
@@ -820,7 +821,7 @@ void CGameServerShell::SendObjectivesDataToClient( HCLIENT hClient )
 	CAutoMessage cMsg;
 	cMsg.Writeuint8( MID_OBJECTIVES_DATA );
 
-	int nNumObj = m_Objectives.m_IDArray.size();
+	int nNumObj = (int)m_Objectives.m_IDArray.size();
 
 	//send total number of objectives
     cMsg.Writeuint8((uint8)nNumObj);
@@ -833,7 +834,7 @@ void CGameServerShell::SendObjectivesDataToClient( HCLIENT hClient )
 	}
 
 	//send total number of optional objectives
-	nNumObj = m_OptionalObjectives.m_IDArray.size();
+	nNumObj = (int)m_OptionalObjectives.m_IDArray.size();
     cMsg.Writeuint8((uint8)nNumObj);
 
 	//send list of optional objectives
@@ -843,7 +844,7 @@ void CGameServerShell::SendObjectivesDataToClient( HCLIENT hClient )
 	}
 
 	//send total number of completed objectives
-	nNumObj = m_CompletedObjectives.m_IDArray.size();
+	nNumObj = (int)m_CompletedObjectives.m_IDArray.size();
     cMsg.Writeuint8((uint8)nNumObj);
 
 	//send list of general completed objectives
@@ -853,7 +854,7 @@ void CGameServerShell::SendObjectivesDataToClient( HCLIENT hClient )
 	}
 
 	//send total number of mission parameters
-	nNumObj = m_Parameters.m_IDArray.size();
+	nNumObj = (int)m_Parameters.m_IDArray.size();
     cMsg.Writeuint8((uint8)nNumObj);
 
 	//send list of mission parameters
@@ -1085,7 +1086,7 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 #ifdef SOURCE_RELEASE
 			cResponse.Writeuint32( GAME_HANDSHAKE_PASSWORD );
 #else // SOURCE_RELEASE
-			cResponse.Writeuint32((uint32)this ^ MessUp32BitValue(nClientKey, (uint32)(szClientName[0])));
+			cResponse.Writeuint32((uint32)(uintptr_t)this ^ MessUp32BitValue(nClientKey, (uint32)(szClientName[0])));
 #endif // SOURCE_RELEASE
 			cResponse.Writebool((!bIsHost && m_ServerGameOptions.m_bUsePassword));
 			g_pLTServer->SendToClient(cResponse.Read(), hClient, MESSAGE_GUARANTEED);
@@ -1106,14 +1107,12 @@ void CGameServerShell::ProcessHandshake(HCLIENT hClient, ILTMessage_Read *pMsg)
 
 			// Encrypt the first 4 bytes of the client name
 			uint32 nClientName = *((uint32*)( &szClientName[0] ));
-			// Handle short client names...
-			if ((nClientName && 0xFF) == 0)
-				nClientName = 0;
-			else if ((nClientName && 0xFF00) == 0)
-				nClientName &= 0xFF;
-			else if ((nClientName && 0xFF0000) == 0)
-				nClientName &= 0xFFFF;
-			uint32 nXORMask = MessUp32BitValue((uint32)this, (uint32)(szClientName[0]));
+			// Handle short client names... -- as shipped, these tests used LOGICAL && where
+			// a bitwise & was meant: `(nClientName && 0xFF) == 0` is just nClientName == 0, the
+			// branch then sets it to 0 again, and the other two can never be reached. The whole
+			// block therefore never changed the value. It is left out rather than "fixed": the
+			// handshake has to compute what retail clients and servers compute.
+			uint32 nXORMask = MessUp32BitValue((uint32)(uintptr_t)this, (uint32)(szClientName[0]));
 			nClientName ^= nXORMask;
 
 #endif // SOURCE_RELEASE
@@ -1998,6 +1997,7 @@ void CGameServerShell::HandlePlayerCheat (HCLIENT hSender, ILTMessage_Read *pMsg
 		{
 			case CHEAT_NEXTMISSION:		CheatNextMission(pPlayer, nData);	break;
 			case CHEAT_BOOT:			CheatBootPlayer	(pPlayer, nData);	break;
+			default: break;
 		}
 		return;
 	}
@@ -2925,7 +2925,7 @@ GameStartPoint* CGameServerShell::FindStartPoint(CPlayerObj* pPlayer)
 	std::sort(lstValidStartPts.begin(),lstValidStartPts.end(),GameStartPointLesser() );
 
     pStartPt = LTNULL;
-	int nCount = lstValidStartPts.size();
+	int nCount = (int)lstValidStartPts.size();
 
 	// Get the index into the valid list based on game type...
 
@@ -3311,7 +3311,7 @@ void CGameServerShell::UpdateClientPingTimes()
 		cMsg.Writeuint8(MID_PINGTIMES);
 
         hClient = LTNULL;
-        while(hClient = g_pLTServer->GetNextClient(hClient))
+        while((hClient = g_pLTServer->GetNextClient(hClient)))
 		{
             clientID = g_pLTServer->GetClientID(hClient);
             g_pLTServer->GetClientPing(hClient, ping);

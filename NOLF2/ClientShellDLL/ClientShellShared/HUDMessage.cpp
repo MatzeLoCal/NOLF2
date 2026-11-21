@@ -9,7 +9,7 @@
 //-------------------------------------------------------------------------
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GameClientShell.h"
 #include "HUDMessage.h"
 #include "LayoutMgr.h"

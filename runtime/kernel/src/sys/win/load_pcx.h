@@ -69,7 +69,7 @@ public:
                     LoadedBitmap();
     void            Term();
 
-    uint8&          Pixel(uint32 x, uint32 y) {return m_Data[y*m_Pitch+x];}
+    uint8&          Pixel(uint32 x, uint32 y) {return m_Data[(uint32)(y*m_Pitch+x)];}
 
 
     // Tells what format the loaded PCX was.

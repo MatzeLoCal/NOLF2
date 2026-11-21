@@ -16,7 +16,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIGOALSENTRYMARK_H__
 #include "AIGoalSentryMark.h"		

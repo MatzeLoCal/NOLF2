@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "DebrisFX.h"
 #include "iltclient.h"
 #include "ClientUtilities.h"
@@ -361,7 +361,7 @@ LTBOOL CDebrisFX::Update()
             LTBOOL bRemove = LTFALSE;
             LTBOOL bBounced = LTFALSE;
 			LTBOOL bBouncedOnGround = LTFALSE;
-			if (bBounced = UpdateEmitter(&(pTracker->m_Emitter), bRemove, bBouncedOnGround))
+			if ((bBounced = UpdateEmitter(&(pTracker->m_Emitter), bRemove, bBouncedOnGround)))
 			{
 				if (bBouncedOnGround)
 				{

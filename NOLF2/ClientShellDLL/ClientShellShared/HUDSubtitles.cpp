@@ -7,7 +7,7 @@
 // (c) 2001 Monolith Productions, Inc.  All Rights Reserved
 //
 // ----------------------------------------------------------------------- //
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "HUDMgr.h"
 #include "HUDSubtitles.h"
 #include "PlayerMgr.h"

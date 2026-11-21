@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "MissionButeMgr.h"

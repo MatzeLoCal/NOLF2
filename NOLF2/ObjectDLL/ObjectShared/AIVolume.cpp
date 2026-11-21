@@ -9,7 +9,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include <limits.h>
 #include "FastHeap.h"
 #include "ContainerCodes.h"
@@ -1082,7 +1082,7 @@ int AIVolume::Init()
 
     HCLASS  hDoor = g_pLTServer->GetClass("Door");
     HOBJECT hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hDoor))
 		{
@@ -1111,7 +1111,7 @@ int AIVolume::Init()
 	}
 
     hCurObject = LTNULL;
-    while (hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject))
+    while ((hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject)))
 	{
         if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hDoor))
 		{

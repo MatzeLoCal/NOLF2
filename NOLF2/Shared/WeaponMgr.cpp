@@ -10,7 +10,14 @@
 //
 // ----------------------------------------------------------------------- //
 
+#ifdef __clang__	// "stdafx.h" is StdAfx.h in the client module and Stdafx.h in the server one
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-include-path"
+#endif
 #include "stdafx.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "WeaponMgr.h"
 #include "CommonUtilities.h"
 #include "WeaponFXTypes.h"
@@ -252,7 +259,7 @@ void GetStringIfExist( CButeMgr &buteMgr, const char *szTagName, const char *szA
 		// allocate memory for the string and copy the string into it
 		// NOTE: the caller of this function is responsible
 		// for this memory
-		int nLen = strlen(szTemp) + 1;
+		int nLen = (int)(strlen(szTemp) + 1);
 		*pOut = debug_newa( char, nLen );
 		strncpy( *pOut, szTemp, nLen );
 		(*pOut)[nLen-1] = 0;
@@ -1865,7 +1872,7 @@ LTBOOL WEAPON::Init(CButeMgr & buteMgr, char* aTagName)
 
 	if (pTok)
 	{
-		int l = strlen(pTok)+1;
+		int l = (int)(strlen(pTok)+1);
 		szLongName = debug_newa( char, l);
 		LTStrCpy(szLongName,pTok,l);
 	}
@@ -1879,18 +1886,18 @@ LTBOOL WEAPON::Init(CButeMgr & buteMgr, char* aTagName)
 
 	if (pTok)
 	{
-		int l = strlen(pTok)+1;
+		int l = (int)(strlen(pTok)+1);
 		szShortName = debug_newa( char, l);
 		LTStrCpy(szShortName,pTok,l);
 	}
 	else
 	{
-		int l = strlen(szLongName)+1;
+		int l = (int)(strlen(szLongName)+1);
 		szShortName = debug_newa( char, l);
 		LTStrCpy(szShortName,szLongName,l);
 	}
 #else
-	int l = strlen(szName)+1;
+	int l = (int)(strlen(szName)+1);
 	szLongName = debug_newa( char, l);
 	LTStrCpy(szLongName,szName,l);
 	szShortName = debug_newa( char, l);
@@ -2402,7 +2409,7 @@ LTBOOL AMMO::Init(CButeMgr & buteMgr, char* aTagName)
 
 	if (pTok)
 	{
-		int l = strlen(pTok)+1;
+		int l = (int)(strlen(pTok)+1);
 		szLongName = debug_newa( char, l);
 		LTStrCpy(szLongName,pTok,l);
 	}
@@ -2416,18 +2423,18 @@ LTBOOL AMMO::Init(CButeMgr & buteMgr, char* aTagName)
 
 	if (pTok)
 	{
-		int l = strlen(pTok)+1;
+		int l = (int)(strlen(pTok)+1);
 		szShortName = debug_newa( char, l);
 		LTStrCpy(szShortName,pTok,l);
 	}
 	else
 	{
-		int l = strlen(szLongName)+1;
+		int l = (int)(strlen(szLongName)+1);
 		szShortName = debug_newa( char, l);
 		LTStrCpy(szShortName,szLongName,l);
 	}
 #else
-	int l = strlen(szName)+1;
+	int l = (int)(strlen(szName)+1);
 	szLongName = debug_newa( char, l);
 	LTStrCpy(szLongName,szName,l);
 	szShortName = debug_newa( char, l);
@@ -3082,7 +3089,7 @@ void CWeaponMgrPlugin::PopulateStringList(char** aszStrings, uint32* pcStrings,
 		_ASSERT(cMaxStrings > (*pcStrings) + 1);
 
 		pWeapon = g_pWeaponMgr->GetWeapon(i);
-        uint32 dwWeaponNameLen = strlen(pWeapon->szName);
+        uint32 dwWeaponNameLen = (uint32)strlen(pWeapon->szName);
 
 		if (pWeapon && pWeapon->szName[0] &&
 			dwWeaponNameLen < cMaxStringLength &&

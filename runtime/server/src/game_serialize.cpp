@@ -882,7 +882,7 @@ static LTRESULT sm_RestoreNextObject(ILTStream *pStream, LTObject *pObj, uint32 
     // Next position indicators.
 	uint32 nextObjectPos;
     GS_STREAM_READ(nextObjectPos);
-    if (nextObjectPos == (unsigned long)-1)
+    if (nextObjectPos == (uint32)-1)	// was (unsigned long)-1: 64 bits here, never matched (cf. line 617)
         return LT_FINISHED;
 
 	uint32 objDataPos;
@@ -1287,7 +1287,7 @@ LTRESULT sm_RestoreObjects(ILTStream *pStream, uint32 dwParam, uint32 flags)
     LT_MEM_TRACK_ALLOC(pObjects = (LTObject**)dalloc_z(sizeof(LTObject*) * objectCount),LT_MEM_TYPE_MISC);
 
     // Create the objects and restore their engine variable state.
-    pStream->SeekTo(startPos);
+    pStream->SeekTo((uint32)startPos);
     i = 0;
     while ((dResult = sm_CreateNextObject(pStream, &pObjects[i++], dwParam)) == LT_OK);
 
@@ -1302,7 +1302,7 @@ LTRESULT sm_RestoreObjects(ILTStream *pStream, uint32 dwParam, uint32 flags)
         }
 
         // Then tell each object to restore itself.
-        pStream->SeekTo(startPos);
+        pStream->SeekTo((uint32)startPos);
 		s_dwCurRestoreObject = 0;
 		dResult = LT_OK;
         while( dResult == LT_OK && ( int )s_dwCurRestoreObject < objectCount )

@@ -12,7 +12,7 @@
 #define __SKILLS_H__
 
 #include "SkillsButeMgr.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 
 class CParsedMsg;
 

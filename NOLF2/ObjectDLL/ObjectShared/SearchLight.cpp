@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "SearchLight.h"
 #include "iltserver.h"
 #include "ServerUtilities.h"

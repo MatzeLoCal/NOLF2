@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Fire.h"
 #include "ClientServerShared.h"
 #include "ObjectMsgs.h"

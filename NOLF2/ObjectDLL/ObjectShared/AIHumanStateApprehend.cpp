@@ -1,6 +1,6 @@
 // (c) 2002 Monolith Productions, Inc.  All Rights Reserved
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "AIHumanStateApprehend.h"
 #include "AIHuman.h"
 #include "AITarget.h"
@@ -167,6 +167,7 @@ void CAIHumanStateApprehend::Update()
 			}
 
 			break;
+		default: break;
 	}
 
 	if ( m_pStrategyFollowPath->IsSet() )
@@ -191,5 +192,6 @@ void CAIHumanStateApprehend::UpdateAnimation()
 			m_pStrategyFollowPath->UpdateAnimation();
 			GetAnimationContext()->SetProp(kAPG_Awareness, kAP_Investigate);
 			break;
+		default: break;
 	}
 }

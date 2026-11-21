@@ -8,8 +8,8 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
-#include "MsgIds.h"
+#include "Stdafx.h"
+#include "MsgIDs.h"
 #include "Skills.h"
 #include "MissionButeMgr.h"
 #include "GameServerShell.h"

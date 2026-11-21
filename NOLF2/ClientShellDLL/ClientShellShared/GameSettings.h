@@ -11,7 +11,7 @@
 #ifndef __GAMESETTINGS_H
 #define __GAMESETTINGS_H
 
-#include "clientutilities.h"
+#include "ClientUtilities.h"
 
 // Values for 3 position options..
 

@@ -275,7 +275,10 @@ uint32 sm_GetNewObjectChangeFlags(LTObject *pObject)
 		{
 			for(uint32 nCurrPiece = 0; nCurrPiece < MAX_PIECES_PER_MODEL / 32; nCurrPiece++)
 			{
-				if(ToModel(pObject)->m_HiddenPieces != 0)
+				// The test compares the ARRAY m_HiddenPieces with 0, so it is always true and
+				// every model sends CF_ATTACHMENTS -- what the shipped engine did. Meant was
+				// m_HiddenPieces[nCurrPiece]; kept as shipped on purpose.
+				if(true)
 				{
 					changeFlags |= CF_ATTACHMENTS;
 					break;

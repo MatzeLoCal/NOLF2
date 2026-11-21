@@ -14,7 +14,7 @@
 #define __CPLAYER_OBJ_H__
 
 #include "Character.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "CheatDefs.h"
 #include "TemplateList.h"
 #include "CVarTrack.h"

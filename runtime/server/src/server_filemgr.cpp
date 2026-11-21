@@ -109,7 +109,7 @@ ILTStream* IServerFileMgr::OpenFile(const char *pFilename) {
 
 ILTStream* IServerFileMgr::OpenFile2(const char *pFilename, int bAddUsedFile, short flags) {
     // First, see if it's in the used file list, in which case we'll use that one.
-    HHashElement *hElement = hs_FindElement(m_hFileTable, pFilename, strlen(pFilename)+1);
+    HHashElement *hElement = hs_FindElement(m_hFileTable, pFilename, (uint32)(strlen(pFilename)+1));
     if (hElement) {
         UsedFile *pUsedFile = (UsedFile*)hs_GetElementUserData(hElement);
         if (pUsedFile) {
@@ -213,7 +213,7 @@ bool IServerFileMgr::DoesFileExist(const char *pFilename, HLTFileTree **phTree, 
         }
 
         if (pFileSize != NULL) {
-            *pFileSize = info.m_Size;
+            *pFileSize = (uint32)info.m_Size;
         }
 
         //we found the file.
@@ -260,7 +260,7 @@ bool IServerFileMgr::GetAddedUsedFile( const char *pFilename, UsedFile **ppFile 
     if(ppFile)
         *ppFile = NULL;
 
-    strLen = strlen(pFilename);
+    strLen = (uint32)strlen(pFilename);
 
     hElement = hs_FindElement(m_hFileTable, pFilename, strLen+1);
     if(hElement)
@@ -323,7 +323,7 @@ int IServerFileMgr::AddUsedFile(const char *pFilename, short flags, UsedFile **p
     if(ppFile)
         *ppFile = NULL;
 
-    strLen = strlen(pFilename);
+    strLen = (uint32)strlen(pFilename);
 
     hElement = hs_FindElement(m_hFileTable, pFilename, strLen+1);
     if(hElement)
@@ -343,11 +343,11 @@ int IServerFileMgr::AddUsedFile(const char *pFilename, short flags, UsedFile **p
         // Ok, setup a new file.
         pFile = m_UsedFileBank.Allocate();
 
-        hElement = hs_AddElement(m_hFileTable, pFilename, strlen(pFilename)+1);
+        hElement = hs_AddElement(m_hFileTable, pFilename, (uint32)(strlen(pFilename)+1));
         pFile->m_Flags = flags;
         pFile->m_hFileTree = hTree;
         pFile->m_FileSize = file_size;
-        pFile->m_FileID = m_CurrentFileID++;
+        pFile->m_FileID = (uint32)(m_CurrentFileID++);
         hs_SetElementUserData(hElement, pFile);
         pFile->m_hElement = hElement;
         pFile->m_Data = NULL;

@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // CObjectTemplateMgr implementation file
 
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "ObjectTemplateMgr.h"
 
@@ -35,7 +35,7 @@ void CObjectTemplateMgr::Clear()
 
 void CObjectTemplateMgr::Save( ILTMessage_Write *pMsg )
 {
-	SAVE_INT( m_cTemplates.size() );
+	SAVE_INT( (int32)m_cTemplates.size() );
 
 	ObjectCreateStruct ocs;
 	TTemplateMap::iterator iter; 

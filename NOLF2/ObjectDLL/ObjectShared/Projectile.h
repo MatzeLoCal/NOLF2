@@ -19,7 +19,7 @@
 #include "WeaponMgr.h"
 #include "Destructible.h"
 #include "ModelButeMgr.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "ImpactType.h"
 
 LINKTO_MODULE( Projectile );

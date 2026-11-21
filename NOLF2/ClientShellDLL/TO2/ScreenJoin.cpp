@@ -8,16 +8,16 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenJoin.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
 #include "ClientRes.h"
 #include "ClientMultiplayerMgr.h"
-#include "msgids.h"
+#include "MsgIDs.h"
 #include "MissionMgr.h"
 #include "ResShared.h"
-#include "iserverdir.h"
+#include "IServerDir.h"
 
 #include "GameClientShell.h"
 
@@ -416,7 +416,7 @@ uint32 CScreenJoin::OnCommand(uint32 dwCommand, uintptr_t dwParam1, uintptr_t dw
 		if (dwParam1 >= m_cServerList.size())
 			return 0;
 
-		m_nSelectedServer = dwParam1;
+		m_nSelectedServer = (uint32)dwParam1;
 
 		ChangeState(eState_QueryDetails);
 		break;
@@ -704,7 +704,7 @@ void CScreenJoin::DisplayCurServerList()
 		// Add the server
 		uint16 nCtrlIndex = m_pServerListCtrl->AddControl(pCtrl);
 
-		if (nServerIndex = m_nSelectedServer)
+		if ((nServerIndex = m_nSelectedServer))
 			nSelected = nCtrlIndex;
 
 	}
@@ -741,6 +741,7 @@ void CScreenJoin::ReadDetails()
 	case eGameTypeCooperative:
 		ReadCoopDetails(sOptions,cRead);
 		break;
+	default: break;
 	}
 	
 	m_pOptions->SetString(sOptions.c_str());

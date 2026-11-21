@@ -10,10 +10,10 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "PlayerObj.h"
 #include "iltserver.h"
-#include "CommandIds.h"
+#include "CommandIDs.h"
 #include "ServerUtilities.h"
 #include "HHWeaponModel.h"
 #include "GameServerShell.h"
@@ -168,8 +168,8 @@ static LTBOOL ValidateMusicMsg( ILTPreInterface *pInterface, ConParse &cpMsgPara
 	}
 
 	if( cpMsgParams.m_nArgs < nRequiredParams ||
-		(nTimingParam != -1 ) && (cpMsgParams.m_nArgs > nTimingParam) ||
-		(nTimingParam == -1) && (cpMsgParams.m_nArgs > nRequiredParams) )
+		((nTimingParam != -1 ) && (cpMsgParams.m_nArgs > nTimingParam)) ||
+		((nTimingParam == -1) && (cpMsgParams.m_nArgs > nRequiredParams)) )
 	{
 		if( CCommandMgrPlugin::s_bShowMsgErrors )
 		{
@@ -1291,7 +1291,7 @@ bool CPlayerObj::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 	{
 		HCLASS  hClass = g_pLTServer->GetClass("Body");
 		HOBJECT hCurObject = LTNULL;
-		while (hCurObject = g_pLTServer->GetNextObject(hCurObject))
+		while ((hCurObject = g_pLTServer->GetNextObject(hCurObject)))
 		{
 			if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 			{
@@ -1301,7 +1301,7 @@ bool CPlayerObj::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 		}
 
 		hCurObject = LTNULL;
-		while (hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject))
+		while ((hCurObject = g_pLTServer->GetNextInactiveObject(hCurObject)))
 		{
 			if (g_pLTServer->IsKindOf(g_pLTServer->GetObjectClass(hCurObject), hClass))
 			{
@@ -4920,7 +4920,7 @@ char* CPlayerObj::GetDamageSound(DamageType eType)
 	}
 	else
 	{
-		uint32 nRandSelection = GetRandom( 0, pInfo->saPlayerDamageSounds.size( ) - 1 );
+		uint32 nRandSelection = GetRandom( 0, (int)(pInfo->saPlayerDamageSounds.size( ) - 1) );
 		char const* pszDamageSound = pInfo->saPlayerDamageSounds[nRandSelection].c_str( );
 		strcat( s_FileBuffer, pszDamageSound );
 	}
@@ -7242,7 +7242,7 @@ void CPlayerObj::TransferWeapons(Body *pBody, bool bRemove )
 
 						PickupItem *pItem = dynamic_cast<PickupItem *>(g_pLTServer->HandleToObject(pObj->m_hObject ));
 						int n = 0;
-						int sz = PUList.size();
+						int sz = (int)PUList.size();
 						if (sz > 1)
 							n = GetRandom(0,sz-1);
 						iter = PUList.begin();
@@ -7279,7 +7279,7 @@ void CPlayerObj::TransferWeapons(Body *pBody, bool bRemove )
 
 					PickupItem *pItem = dynamic_cast<PickupItem *>(g_pLTServer->HandleToObject(pObj->m_hObject ));
 					int n = 0;
-					int sz = PUList.size();
+					int sz = (int)PUList.size();
 					if (sz > 1)
 						n = GetRandom(0,sz-1);
 					
@@ -7865,6 +7865,7 @@ void CPlayerObj::SetCarriedObject( HOBJECT hObject, bool bTransition /* = false 
 				case kDoomsDay_Core:
 					SetCarrying(CFX_CARRY_DD_CORE);
 					break;
+				default: break;
 				}
 			}
 		}

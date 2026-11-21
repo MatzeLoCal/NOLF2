@@ -1,6 +1,6 @@
 // (c) 1997-2002 Monolith Productions, Inc.  All Rights Reserved
 
-#include "StdAfx.h"
+#include "Stdafx.h"
 #include "AIRegion.h"
 #include "AIVolume.h"
 #include "AIVolumeMgr.h"
@@ -206,7 +206,7 @@ void AIRegion::Save(ILTMessage_Write *pMsg)
 	SAVE_DWORD(m_cSearchers);
 	SAVE_DWORD(m_cPostSearchMsgs);
 	
-	SAVE_DWORD(m_lstVolumes.size());
+	SAVE_DWORD((uint32)m_lstVolumes.size());
 
 	AIVolume* pVolume;
 	AIREGION_VOLUME_LIST::iterator it;

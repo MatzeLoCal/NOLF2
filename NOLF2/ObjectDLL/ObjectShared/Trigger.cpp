@@ -10,12 +10,12 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Trigger.h"
 #include "iltserver.h"
-#include "MsgIds.h"
+#include "MsgIDs.h"
 #include "PlayerObj.h"
-#include "gameservershell.h"
+#include "GameServerShell.h"
 #include "SoundMgr.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"

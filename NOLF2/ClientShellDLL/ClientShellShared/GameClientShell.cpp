@@ -10,15 +10,15 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "GameClientShell.h"
 #include "InterfaceMgr.h"
 #include "PlayerMgr.h"
 #include "AssertMgr.h"
-#include "MsgIds.h"
-#include "CommandIds.h"
+#include "MsgIDs.h"
+#include "CommandIDs.h"
 #include "ClientUtilities.h"
-#include "vkdefs.h"
+#include "VKDefs.h"
 #include "ClientResShared.h"
 #include "SoundTypes.h"
 #include "Music.h"
@@ -1155,14 +1155,14 @@ uint32 CGameClientShell::OnEngineInitialized(RMode *pMode, LTGUID *pAppGuid)
 
 	// Process command line.
 
-	if (hVar = g_pLTClient->GetConsoleVar("join")) // looking for join [ip] format
+	if ((hVar = g_pLTClient->GetConsoleVar("join"))) // looking for join [ip] format
 	{
 		g_pInterfaceMgr->SetCommandLineJoin( true );
 
 		// Change to the splash screen.  We'll start the game after that.
 		GetInterfaceMgr( )->ChangeState(GS_SPLASHSCREEN);
 	}
-	else if (hVar = g_pLTClient->GetConsoleVar("host")) // looking for host [1] format
+	else if ((hVar = g_pLTClient->GetConsoleVar("host"))) // looking for host [1] format
 	{
 		int nHost = atoi(g_pLTClient->GetVarValueString( hVar ));
 		
@@ -1263,7 +1263,7 @@ uint32 CGameClientShell::OnEngineInitialized(RMode *pMode, LTGUID *pAppGuid)
 			GetInterfaceMgr( )->ChangeState(GS_SPLASHSCREEN);
 		}
 	}
-	else if (hVar = g_pLTClient->GetConsoleVar("runworld"))
+	else if ((hVar = g_pLTClient->GetConsoleVar("runworld")))
 	{
 		const char* pMap = g_pLTClient->GetVarValueString(hVar);
 		if (!pMap)
@@ -1729,7 +1729,7 @@ void CGameClientShell::UpdatePlaying()
 				if( g_nStartTicks > 0 )
 				{
 					// Get the time between _ftime's.
-					uint32 nDeltaTimeB = (nEndTimeB.time - g_StartTimeB.time)*1000 + (nEndTimeB.millitm - g_StartTimeB.millitm);
+					uint32 nDeltaTimeB = (uint32)((nEndTimeB.time - g_StartTimeB.time)*1000 + (nEndTimeB.millitm - g_StartTimeB.millitm));
 
 					// Get the time between GetTickCount's.  Account for wrapping.
 					uint32 nDeltaTicks = ( nEndTicks > g_nStartTicks ) ? ( nEndTicks - g_nStartTicks ) : 
@@ -2556,6 +2556,7 @@ void CGameClientShell::HandleMsgMultiplayerOptions( ILTMessage_Read* pMsg )
 		pProfile->m_ServerGameOptions.GetDoomsday().m_nRounds = nRounds;
 		pProfile->m_ServerGameOptions.GetDoomsday().m_bFriendlyFire = bFriendlyFire;
 		break;
+	default: break;
 	}
 
 	pProfile->Save( );
@@ -5170,6 +5171,7 @@ void CGameClientShell::SetGameType(GameType eGameType)
 		}
 		break;
 		
+		default: break;
 	}
 	m_eGameType = eGameType;
 }

@@ -13,8 +13,8 @@
 
 	// Includes....
 
-	#include "basefx.h"
-	#include "debugnew.h"
+	#include "BaseFx.h"
+	#include "DebugNew.h"
 	#include "iltdrawprim.h"
 	#include "iltsoundmgr.h"
 
@@ -22,23 +22,30 @@
 
 	#define NUM_FX								17
 	
+#if defined(__APPLE__)
+	// __declspec(dllexport) is ignored on macOS (clang warns); default visibility exports.
+	#define CLIENTFX_EXPORT __attribute__((visibility("default")))
+#else
+	#define CLIENTFX_EXPORT __declspec(dllexport)
+#endif
+
 	extern "C"
 	{
 
-		__declspec(dllexport) int				fxGetNum();
-		__declspec(dllexport) FX_REF			fxGetRef(int nFx);
+		CLIENTFX_EXPORT int				fxGetNum();
+		CLIENTFX_EXPORT FX_REF			fxGetRef(int nFx);
 	
-		__declspec(dllexport) void				fxDelete(CBaseFX *pDeleteFX);
+		CLIENTFX_EXPORT void				fxDelete(CBaseFX *pDeleteFX);
 
-		__declspec(dllexport) void				fxSetPlayer(HOBJECT hPlayer);
+		CLIENTFX_EXPORT void				fxSetPlayer(HOBJECT hPlayer);
 
-		__declspec(dllexport) void				fxSetAppFocus(bool bAppFocus);
+		CLIENTFX_EXPORT void				fxSetAppFocus(bool bAppFocus);
 
-		__declspec(dllexport) void				fxSetCreateFunction(TCreateClientFXFn pFn, void* pUserData);
+		CLIENTFX_EXPORT void				fxSetCreateFunction(TCreateClientFXFn pFn, void* pUserData);
 
-		__declspec(dllexport) CBaseFXProps*		fxCreatePropList(int nFx);
+		CLIENTFX_EXPORT CBaseFXProps*		fxCreatePropList(int nFx);
 
-		__declspec(dllexport) void				fxFreePropList(CBaseFXProps* pPropList);
+		CLIENTFX_EXPORT void				fxFreePropList(CBaseFXProps* pPropList);
 	}
 
 	// FX Creation functions

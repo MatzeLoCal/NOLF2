@@ -12,7 +12,7 @@
 // Includes...
 //
 
-	#include "stdafx.h"
+	#include "Stdafx.h"
 	#include "TeamDeathMatchMissionMgr.h"
 	#include "TeamMgr.h"
 	#include "MissionButeMgr.h"

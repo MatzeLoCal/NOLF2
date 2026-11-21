@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "Steam.h"
 #include "SFXMsgIds.h"
 #include "ObjectMsgs.h"

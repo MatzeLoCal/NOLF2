@@ -120,7 +120,11 @@ private:
 Exported function so that game modules hooking into the engine can access the memory library
 in the global space
 */
+#if defined(__APPLE__)
+extern "C" __attribute__((visibility("default"))) ILTMemory* LTGetILTMemory()
+#else
 extern "C" __declspec(dllexport) ILTMemory* LTGetILTMemory()
+#endif
 {
 	static CLTMemory s_ILTMemory;
 	return &s_ILTMemory;

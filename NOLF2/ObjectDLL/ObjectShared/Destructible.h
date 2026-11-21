@@ -18,7 +18,7 @@
 #include "ClientServerShared.h"
 #include "DamageTypes.h"
 #include "CommandMgr.h"
-#include "LTObjRef.h"
+#include "ltobjref.h"
 #include "GameBase.h"
 
 struct DamageStruct;

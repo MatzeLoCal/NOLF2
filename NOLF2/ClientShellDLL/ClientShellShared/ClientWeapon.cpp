@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ClientWeapon.h"
 #include "VarTrack.h"
 #include "LayoutMgr.h"
@@ -3042,6 +3042,7 @@ void CClientWeapon::UpdateFiring()
 			}
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -3112,6 +3113,7 @@ void CClientWeapon::UpdateNonFiring()
 			PlayIdleAnimation();
 		}
 		break;
+		default: break;
 	}
 }
 
@@ -3177,7 +3179,7 @@ void CClientWeapon::InitAnimations( bool bAllowSelectOverride )
 		}
 		else
 		{
-			sprintf( buf, ns_szAltFireAnimationName );
+			sprintf( buf, "%s", ns_szAltFireAnimationName );
 		}
 
 		m_nAltFireAnis[ i ] = g_pLTClient->GetAnimIndex( m_hObject, buf );

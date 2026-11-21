@@ -16,7 +16,7 @@
 #include "GameButeMgr.h"
 #include "ClientServerShared.h"
 #include "SurfaceDefs.h"
-#include "../shared/ButeListReader.h"
+#include "../Shared/ButeListReader.h"
 #include "DebugNew.h"
 
 // Defines
@@ -522,7 +522,7 @@ class CModelButeMgr::CModel
 			m_bAIIgnoreBody = LTFALSE;
 			m_bTranslucent = LTFALSE;
 			m_szAnimationMgr = LTNULL;
-			m_fUnalertDamageFactor;
+			m_fUnalertDamageFactor = 0.0f;	// set for every model when the attributes load
 			m_szLoudMovementSnd[0] = 0;
 			m_szQuietMovementSnd[0] = 0;
 			m_nNameId = 0;

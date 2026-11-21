@@ -23,7 +23,7 @@
 //----------------------------------------------------------------------------
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #include "AIHumanStrategyShootStream.h"		
 #include "AIHuman.h"

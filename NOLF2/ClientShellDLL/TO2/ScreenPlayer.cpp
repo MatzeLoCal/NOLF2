@@ -8,7 +8,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "ScreenPlayer.h"
 #include "ScreenMgr.h"
 #include "ScreenCommands.h"
@@ -242,6 +242,7 @@ void CScreenPlayer::OnFocus(LTBOOL bFocus)
 			m_pRight->Show(LTFALSE);
 			m_pModel->Show(LTFALSE);
 			break;
+		default: break;
 		};
 
 		m_sPlayerName = pProfile->m_sPlayerName;
@@ -279,6 +280,7 @@ void CScreenPlayer::OnFocus(LTBOOL bFocus)
 			}
 			pProfile->m_nDMPlayerModel = m_nCurrentModel;
 			break;
+		default: break;
 		};
 
 		pProfile->m_nBandwidthClient = m_nBandwidth;

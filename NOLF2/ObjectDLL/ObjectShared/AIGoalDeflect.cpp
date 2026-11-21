@@ -18,7 +18,7 @@
 
 
 // Includes
-#include "stdafx.h"
+#include "Stdafx.h"
 
 #ifndef __AIGOALDEFLECT_H__
 #include "AIGoalDeflect.h"		

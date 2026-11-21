@@ -682,6 +682,7 @@ LTRESULT CClientMgr::AppInitMusic(const char *pszMusicDLL)
             SetupError(LT_UNABLETOINITMUSICDLL, m_MusicDLLName);
             RETURN_ERROR(1, CClientMgr::AppInitMusic, LT_UNABLETOINITMUSICDLL);
             break;
+        default: break;
     }
 
     return LT_OK;
@@ -1899,7 +1900,7 @@ bool CClientMgr::Render(CameraInstance *pCamera, int drawMode, LTObject **pObjec
     pDesc->m_ObjectListSize = nObjects;
 
     // Sky info.
-    memcpy(&pDesc->m_SkyDef, &m_SkyDef, sizeof(pDesc->m_SkyDef));
+    memcpy((void*)&pDesc->m_SkyDef, &m_SkyDef, sizeof(pDesc->m_SkyDef));
 
     pDesc->m_nSkyObjects = 0;
     pDesc->m_SkyObjects = skyObjects;
@@ -2008,7 +2009,7 @@ bool CClientMgr::MakeCubicEnvMap(CameraInstance *pCamera, uint32 nSize, const ch
 	Desc.m_fActualFrameTime	= 0.0f;
 
     // Sky info.
-    memcpy(&Desc.m_SkyDef, &m_SkyDef, sizeof(Desc.m_SkyDef));
+    memcpy((void*)&Desc.m_SkyDef, &m_SkyDef, sizeof(Desc.m_SkyDef));
 
     Desc.m_nSkyObjects = 0;
     Desc.m_SkyObjects = skyObjects;

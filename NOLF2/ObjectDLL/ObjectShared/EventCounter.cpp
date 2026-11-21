@@ -10,7 +10,7 @@
 //
 // ----------------------------------------------------------------------- //
 
-#include "stdafx.h"
+#include "Stdafx.h"
 #include "EventCounter.h"
 #include "ObjectMsgs.h"
 #include "ParsedMsg.h"
@@ -204,7 +204,7 @@ bool EventCounter::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 		int nCount = 1;
 		if (cMsg.GetArgCount() > 1)
 		{
-			nCount = atol(cMsg.GetArg(1));
+			nCount = (int)(atol(cMsg.GetArg(1)));
 		}
 
 		nCount = (nCount < 1 ? 1 : nCount);
@@ -220,7 +220,7 @@ bool EventCounter::OnTrigger(HOBJECT hSender, const CParsedMsg &cMsg)
 		int nCount = 1;
 		if (cMsg.GetArgCount() > 1)
 		{
-			nCount = atol(cMsg.GetArg(1));
+			nCount = (int)(atol(cMsg.GetArg(1)));
 		}
 
 		nCount = (nCount < 1 ? 1 : nCount);

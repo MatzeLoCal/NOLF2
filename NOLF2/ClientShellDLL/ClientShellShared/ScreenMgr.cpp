@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------------- //
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "ScreenMgr.h"
 #include "ClientButeMgr.h"
 #include "SoundMgr.h"
